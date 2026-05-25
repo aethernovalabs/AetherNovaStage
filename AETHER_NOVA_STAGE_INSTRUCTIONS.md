@@ -137,6 +137,7 @@ Main Location - Sub Location - Detailed Area
 
 Jika location kurang dari 3 tier, stage mengisi bagian yang hilang memakai state lama atau fallback aman.
 Jika location berubah jauh dari state sebelumnya, stage hanya menerima perubahan saat konteks user atau narasi bot memuat cue perpindahan, seperti move, travel, arrive, enter, leave, combat, teleport, time skip, atau scene transition.
+Stage juga menerima perubahan location tanpa kata arrival eksplisit jika narasi terbaru jelas sudah meng-anchor tempat baru, misalnya `inside`, `within`, `common room`, `counter`, `doorway`, atau detail interior lain yang cocok dengan kandidat location.
 Perubahan exact area di main location dan sub location yang sama masih diterima.
 
 ### Time
@@ -168,7 +169,8 @@ Stage juga menyaring thoughts, feelings, expression, dialogue, actions, movement
 Position, clothes/disguise, dan body detail memakai state lama kecuali konteks user atau narasi AI terbaru memberi bukti perubahan.
 Perubahan pakaian didukung oleh evidence berbahasa Inggris seperti change/wear/remove, put on, dressed in, clad in, changes into, atau damage naratif seperti burned/torn/scorched/damaged.
 Stage tidak menghafal daftar jenis pakaian; nama pakaian unik seperti ceremonial mantle, moon-silk kimono, battle robe, academy uniform, atau disguise tetap bisa diterima jika ada evidence perubahan.
-Perubahan posisi didukung oleh cue seperti walk/stop/arrive/sit/stand/reach/collapse.
+Perubahan posisi didukung oleh cue seperti walk/stop/arrive/sit/stand/reach/collapse, dan juga bisa diterima saat location sudah terbukti berpindah scene.
+Body detail yang bersifat kontak sementara, seperti hand resting on a tail, holding, touching, leaning, atau pressing against something, tidak dipertahankan saat posisi atau scene berubah kecuali narasi terbaru masih memberi evidence kontak itu.
 Jika format `You` kacau, stage mengambil bagian yang hilang dari state sebelumnya.
 
 ### NPC

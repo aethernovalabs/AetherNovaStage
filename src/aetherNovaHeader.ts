@@ -34,6 +34,10 @@ interface IdentityStatus {
     status: string;
 }
 
+interface NormalizeStatusOptions {
+    sceneChanged?: boolean;
+}
+
 const CLOCK_PATTERN = /\b([01]?\d|2[0-3]):([0-5]\d)\b/;
 const TIME_OF_DAYS: TimeOfDay[] = ["Morning", "Afternoon", "Evening", "Night"];
 const HEADER_DIVIDER = "***";
@@ -124,6 +128,27 @@ const LOCATION_TRANSITION_CUES = [
     "later",
     "afterward",
     "afterwards",
+];
+
+const LOCATION_SCENE_ANCHOR_CUES = [
+    "inside",
+    "within",
+    "interior",
+    "indoors",
+    "room",
+    "hall",
+    "chamber",
+    "floor",
+    "walls",
+    "ceiling",
+    "doorway",
+    "threshold",
+    "counter",
+    "table",
+    "booth",
+    "stool",
+    "bartender",
+    "patron",
 ];
 
 const POSITION_CHANGE_CUES = [
@@ -277,6 +302,49 @@ const CLOTHING_DAMAGE_WORDS = /\b(burned|burnt|scorched|torn|ripped|shredded|sla
 const VAGUE_STATUS_PATTERN = /\b(mood|emotion|feeling|feelings|thought|thoughts|status|role|happy|sad|angry|calm|nervous|worried|confused|curious|suspicious|jealous|afraid|scared|determined|focused)\b/i;
 const USER_FORBIDDEN_DETAIL_PATTERN = /\b(thinking|thinks|feeling|feels|expression|expressions|smiling|smiles|frowning|grinning|says|said|speaks|asks|answers|chooses|choosing|choice|decides|attacks|attack|transforms|transforming|consents|consent|refuses|dialogue)\b/i;
 const MINOR_THREAD_PATTERN = /\b(normal topic|normal topics|casual question|casual questions|temporary mood|small suspicion|minor jealousy|minor tension|small talk)\b/i;
+const TRANSIENT_YOU_DETAIL_PATTERN = /\b(holding|gripping|grasping|clutching|touching|resting|leaning|pressing|bracing|supporting|pushing|pulling|tugging|hand on|hands on|arm around|arms around|head on|against|upon|on top of)\b/i;
+
+const DETAIL_BODY_PART_CUES = [
+    "hand",
+    "hands",
+    "palm",
+    "palms",
+    "finger",
+    "fingers",
+    "arm",
+    "arms",
+    "elbow",
+    "elbows",
+    "head",
+    "shoulder",
+    "shoulders",
+    "back",
+];
+
+const DETAIL_CONTACT_ACTION_CUES = [
+    "holding",
+    "gripping",
+    "grasping",
+    "clutching",
+    "touching",
+    "resting",
+    "leaning",
+    "pressing",
+    "bracing",
+    "supporting",
+    "against",
+    "upon",
+    "hand remains",
+    "hands remain",
+    "palm remains",
+    "palms remain",
+    "keeps his hand",
+    "keeps her hand",
+    "keeps their hand",
+    "keeps your hand",
+    "keeps one hand",
+    "keeps a hand",
+];
 
 const THREAD_STOP_WORDS = new Set([
     "the",
@@ -299,6 +367,34 @@ const THREAD_STOP_WORDS = new Set([
     "to",
     "of",
     "in",
+]);
+
+const LOCATION_STOP_WORDS = new Set([
+    "main",
+    "sub",
+    "location",
+    "region",
+    "kingdom",
+    "empire",
+    "city",
+    "town",
+    "village",
+    "district",
+    "street",
+    "road",
+    "path",
+    "route",
+    "current",
+    "place",
+    "active",
+    "area",
+    "detailed",
+    "exact",
+    "near",
+    "nearby",
+    "outside",
+    "inside",
+    "room",
 ]);
 
 export function createInitialHeaderState(
@@ -350,12 +446,13 @@ export function normalizeAetherNovaResponse(
     const extracted = extractHeader(content);
     const correctionContext = `${context}\n${extracted.narrative}`;
     const timeLocation = normalizeLocationTimeLine(extracted.locationLine, previousState, correctionContext);
+    const sceneChanged = !sameText(timeLocation.location, previousState.location);
     const state: AetherNovaMessageState = {
         location: timeLocation.location,
         timeOfDay: timeLocation.timeOfDay,
         clock: timeLocation.clock,
-        you: normalizeYouLine(extracted.youLine ?? "", previousState.you, correctionContext),
-        npc: normalizeNpcLine(extracted.npcLine ?? "", previousState.npc, correctionContext),
+        you: normalizeYouLine(extracted.youLine ?? "", previousState.you, correctionContext, {sceneChanged}),
+        npc: normalizeNpcLine(extracted.npcLine ?? "", previousState.npc, correctionContext, {sceneChanged}),
         thread: normalizeThreadLine(extracted.threadLine ?? "", previousState.thread, correctionContext),
     };
 
@@ -594,7 +691,12 @@ function normalizeLocation(rawLocation: string, previousLocation: string, contex
     return locationChangeIsSupported(candidate, previous, context) ? candidate : previous;
 }
 
-function normalizeYouLine(rawLine: string, previousYou: string, context: string = ""): string {
+function normalizeYouLine(
+    rawLine: string,
+    previousYou: string,
+    context: string = "",
+    options: NormalizeStatusOptions = {},
+): string {
     const value = cleanLabeledValue(rawLine, "You");
 
     if (isPlaceholder(value)) {
@@ -606,12 +708,17 @@ function normalizeYouLine(rawLine: string, previousYou: string, context: string 
     const fallbackIdentity = splitIdentity(fallback.identity, "Unknown", "Human");
     const identity = splitIdentity(parsed.identity, fallbackIdentity.left, fallbackIdentity.right);
     const apparentRace = normalizeYouRace(identity.right, fallbackIdentity.right, context);
-    const status = normalizeStatus(parsed.status, fallback.status, "you", apparentRace, context);
+    const status = normalizeStatus(parsed.status, fallback.status, "you", apparentRace, context, options);
 
     return `${identity.left} - ${apparentRace} (${status})`;
 }
 
-function normalizeNpcLine(rawLine: string, previousNpc: string, context: string = ""): string {
+function normalizeNpcLine(
+    rawLine: string,
+    previousNpc: string,
+    context: string = "",
+    options: NormalizeStatusOptions = {},
+): string {
     const value = cleanLabeledValue(rawLine, "NPC");
 
     if (isNoNpcValue(value)) {
@@ -640,18 +747,23 @@ function normalizeNpcLine(rawLine: string, previousNpc: string, context: string 
         const parsed = parseIdentityStatus(entry);
         const identity = splitIdentity(parsed.identity, "Unknown NPC", "Human");
         const fallback = fallbackByName.get(npcIdentityKey(identity.left)) ?? null;
-        return normalizeNpcEntry(entry, fallback, context);
+        return normalizeNpcEntry(entry, fallback, context, options);
     }).join(", ");
 }
 
-function normalizeNpcEntry(rawEntry: string, fallbackEntry: string | null, context: string): string {
+function normalizeNpcEntry(
+    rawEntry: string,
+    fallbackEntry: string | null,
+    context: string,
+    options: NormalizeStatusOptions = {},
+): string {
     const parsed = parseIdentityStatus(rawEntry);
     const fallback = fallbackEntry == null ? null : parseIdentityStatus(fallbackEntry);
     const fallbackIdentity = fallback == null ? null : splitIdentity(fallback.identity, "Unknown NPC", "Human");
     const identity = splitIdentity(parsed.identity, fallbackIdentity?.left ?? "Unknown NPC", fallbackIdentity?.right ?? "Human");
     const status = fallback == null
         ? normalizeNewNpcStatus(parsed.status, identity.right, context)
-        : normalizeStatus(parsed.status, fallback.status || defaultNpcStatusForRace(identity.right), "npc", identity.right, context);
+        : normalizeStatus(parsed.status, fallback.status || defaultNpcStatusForRace(identity.right), "npc", identity.right, context, options);
 
     return `${identity.left} - ${identity.right} (${status})`;
 }
@@ -704,6 +816,7 @@ function normalizeStatus(
     kind: "you" | "npc",
     race: string,
     context: string = "",
+    options: NormalizeStatusOptions = {},
 ): string {
     const defaultStatus = kind === "you" ? DEFAULT_STATE.you.match(/\((.*)\)$/)?.[1] ?? "Standing in scene; Regular clothing; hands visible" : defaultNpcStatusForRace(race);
     const fallbackParts = statusParts(fallbackStatus || defaultStatus, kind);
@@ -715,11 +828,21 @@ function normalizeStatus(
     const rawPosition = normalizePosition(rawParts[0] ?? fallbackPosition, fallbackPosition, kind);
     const inferredClothing = kind === "you" ? inferYouClothingFromContext(context) : null;
     const rawClothing = normalizeClothing(inferredClothing ?? rawParts[1] ?? fallbackClothing, fallbackClothing);
-    const position = statusChangeIsSupported(rawPosition, fallbackPosition, context, "position", kind) ? rawPosition : fallbackPosition;
+    const position = statusChangeIsSupported(rawPosition, fallbackPosition, context, "position", kind)
+        || (options.sceneChanged === true && rawParts[0] != null && !isGenericStatusPart(rawPosition))
+        ? rawPosition
+        : fallbackPosition;
     const clothing = statusChangeIsSupported(rawClothing, fallbackClothing, context, "clothing", kind) ? rawClothing : fallbackClothing;
     const fallbackDetail = normalizeDetail(fallbackParts[2] ?? defaultParts[2], defaultParts[2], kind);
     const rawDetail = normalizeDetail(rawParts[2] ?? fallbackDetail, fallbackDetail, kind);
-    const detail = kind === "you" && !youDetailChangeIsSupported(rawDetail, fallbackDetail, context) ? fallbackDetail : rawDetail;
+    let detail = kind === "you" && !youDetailChangeIsSupported(rawDetail, fallbackDetail, context) ? fallbackDetail : rawDetail;
+
+    if (
+        kind === "you"
+        && staleYouDetailShouldReset(detail, fallbackDetail, position, fallbackPosition, context, options.sceneChanged === true)
+    ) {
+        detail = defaultParts[2] ?? "hands visible";
+    }
 
     return `${position}; ${clothing}; ${detail}`;
 }
@@ -942,7 +1065,42 @@ function locationChangeIsSupported(candidate: string, previous: string, context:
     }
 
     const lowerContext = context.toLowerCase();
+    if (
+        candidateParts.length >= 2
+        && previousParts.length >= 1
+        && sameText(candidateParts[0], previousParts[0])
+        && locationCandidateIsSceneAnchored(candidateParts, lowerContext)
+    ) {
+        return true;
+    }
+
+    if (
+        locationCandidateWasNearbyTarget(candidateParts, previous)
+        && locationCandidateIsSceneAnchored(candidateParts, lowerContext)
+    ) {
+        return true;
+    }
+
     return LOCATION_TRANSITION_CUES.some((cue) => lowerContext.includes(cue));
+}
+
+function locationCandidateIsSceneAnchored(candidateParts: string[], lowerContext: string): boolean {
+    const tokens = meaningfulLocationTokens(candidateParts.slice(1).join(" "));
+
+    if (tokens.length === 0) {
+        return false;
+    }
+
+    const mentionsCandidatePlace = containsAnyCue(lowerContext, tokens);
+    const hasSceneAnchor = containsAnyCue(lowerContext, LOCATION_SCENE_ANCHOR_CUES);
+
+    return mentionsCandidatePlace && hasSceneAnchor;
+}
+
+function locationCandidateWasNearbyTarget(candidateParts: string[], previous: string): boolean {
+    const previousLower = previous.toLowerCase();
+    return meaningfulLocationTokens(candidateParts.slice(1).join(" "))
+        .some((token) => containsAnyCue(previousLower, [token]));
 }
 
 function normalizeYouRace(candidateRace: string, fallbackRace: string, context: string): string {
@@ -1220,6 +1378,49 @@ function youDetailChangeIsSupported(candidate: string, previous: string, context
     return meaningfulDetailWords(candidate).some((word) => lowerContext.includes(word));
 }
 
+function staleYouDetailShouldReset(
+    detail: string,
+    previousDetail: string,
+    position: string,
+    previousPosition: string,
+    context: string,
+    sceneChanged: boolean,
+): boolean {
+    if (!sameText(detail, previousDetail) || !isTransientYouDetail(previousDetail)) {
+        return false;
+    }
+
+    const positionChanged = !sameText(position, previousPosition);
+    if (!sceneChanged && !positionChanged && !contextSuggestsSceneShift(context)) {
+        return false;
+    }
+
+    return !youDetailHasCurrentEvidence(previousDetail, context);
+}
+
+function isTransientYouDetail(value: string): boolean {
+    const clean = cleanFragment(value);
+    return TRANSIENT_YOU_DETAIL_PATTERN.test(clean)
+        || /\b(hand|hands|arm|arms|elbow|elbows|head|shoulder|shoulders|back)\b.*\b(on|upon|against|over|around|resting|braced|pressed)\b/i.test(clean);
+}
+
+function youDetailHasCurrentEvidence(detail: string, context: string): boolean {
+    const lowerContext = context.toLowerCase();
+    const hasBodyPartCue = containsAnyCue(lowerContext, DETAIL_BODY_PART_CUES);
+    const hasContactActionCue = containsAnyCue(lowerContext, DETAIL_CONTACT_ACTION_CUES);
+
+    if (!hasBodyPartCue && !hasContactActionCue) {
+        return false;
+    }
+
+    return meaningfulDetailWords(detail).some((word) => lowerContext.includes(word));
+}
+
+function contextSuggestsSceneShift(context: string): boolean {
+    const lowerContext = context.toLowerCase();
+    return containsAnyCue(lowerContext, LOCATION_TRANSITION_CUES);
+}
+
 function contextHasEvidence(context: string, field: "position" | "clothing"): boolean {
     const lowerContext = context.toLowerCase();
 
@@ -1256,6 +1457,13 @@ function meaningfulDetailWords(value: string): string[] {
         .toLowerCase()
         .split(/[^a-z0-9]+/)
         .filter((word) => word.length > 3 && !["visible", "still", "steady", "hand", "left", "right"].includes(word));
+}
+
+function meaningfulLocationTokens(value: string): string[] {
+    return cleanFragment(value)
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((word) => word.length > 2 && !LOCATION_STOP_WORDS.has(word));
 }
 
 function meaningfulPositionWords(value: string): string[] {
