@@ -19,6 +19,11 @@ interface ExtractedHeader {
     narrative: string;
 }
 
+interface HeaderBlock extends Omit<ExtractedHeader, "narrative"> {
+    start: number;
+    end: number;
+}
+
 interface NormalizedResponse {
     content: string;
     state: AetherNovaMessageState;
@@ -154,6 +159,33 @@ const POSITION_CHANGE_CUES = [
     "battle",
     "scene transition",
     "time skip",
+    "stop",
+    "stops",
+    "stopped",
+    "halt",
+    "halts",
+    "arrive",
+    "arrives",
+    "arrived",
+    "reach",
+    "reaches",
+    "reached",
+    "destination",
+    "jalan",
+    "berjalan",
+    "melangkah",
+    "lari",
+    "berlari",
+    "berhenti",
+    "berdiri",
+    "duduk",
+    "berlutut",
+    "berbaring",
+    "sampai",
+    "tiba",
+    "masuk",
+    "keluar",
+    "mendekat",
 ];
 
 const CLOTHING_CHANGE_CUES = [
@@ -178,10 +210,95 @@ const CLOTHING_CHANGE_CUES = [
     "kimono",
     "robe",
     "uniform",
+    "ganti pakaian",
+    "mengganti pakaian",
+    "berganti pakaian",
+    "pakai",
+    "memakai",
+    "mengenakan",
 ];
 
+const CLOTHING_DAMAGE_CUES = [
+    "burn",
+    "burns",
+    "burned",
+    "burnt",
+    "scorch",
+    "scorched",
+    "tear",
+    "tears",
+    "torn",
+    "rip",
+    "rips",
+    "ripped",
+    "shred",
+    "shredded",
+    "cut",
+    "cuts",
+    "slashed",
+    "bloody",
+    "bloodied",
+    "stained",
+    "soaked",
+    "wet",
+    "muddy",
+    "damaged",
+    "destroyed",
+    "armor cracked",
+    "cloak catches fire",
+    "sleeve catches fire",
+    "terbakar",
+    "hangus",
+    "robek",
+    "sobek",
+    "terkoyak",
+    "berdarah",
+    "basah",
+    "kotor",
+    "berlumpur",
+    "rusak",
+    "hancur",
+];
+
+const CLOTHING_REMOVAL_CUES = [
+    "remove",
+    "removes",
+    "removed",
+    "take off",
+    "takes off",
+    "took off",
+    "strip",
+    "strips",
+    "stripped",
+    "undress",
+    "undresses",
+    "undressed",
+    "bare",
+    "naked",
+    "shirtless",
+    "topless",
+    "without clothes",
+    "without shirt",
+    "without armor",
+    "lepas baju",
+    "melepas baju",
+    "buka baju",
+    "membuka baju",
+    "lepas pakaian",
+    "melepas pakaian",
+    "tanpa pakaian",
+    "tanpa baju",
+    "tanpa kemeja",
+    "tanpa armor",
+    "tanpa zirah",
+    "telanjang",
+    "hanya celana",
+    "hanya menggunakan celana",
+];
+
+const CLOTHING_DAMAGE_WORDS = /\b(burned|burnt|scorched|torn|ripped|shredded|slashed|bloody|bloodied|stained|soaked|wet|muddy|damaged|destroyed|cracked|terbakar|hangus|robek|sobek|terkoyak|berdarah|basah|kotor|berlumpur|rusak|hancur)\b/i;
 const VAGUE_STATUS_PATTERN = /\b(mood|emotion|feeling|feelings|thought|thoughts|status|role|happy|sad|angry|calm|nervous|worried|confused|curious|suspicious|jealous|afraid|scared|determined|focused)\b/i;
-const USER_FORBIDDEN_DETAIL_PATTERN = /\b(thinking|thinks|feeling|feels|expression|expressions|smiling|smiles|frowning|grinning|says|said|speaks|asks|answers|chooses|choosing|choice|decides|attacks|attack|moves|moving|walks|walking|run|runs|running|transforms|transforming|consents|consent|refuses|dialogue)\b/i;
+const USER_FORBIDDEN_DETAIL_PATTERN = /\b(thinking|thinks|feeling|feels|expression|expressions|smiling|smiles|frowning|grinning|says|said|speaks|asks|answers|chooses|choosing|choice|decides|attacks|attack|transforms|transforming|consents|consent|refuses|dialogue)\b/i;
 const MINOR_THREAD_PATTERN = /\b(normal topic|normal topics|casual question|casual questions|temporary mood|small suspicion|minor jealousy|minor tension|small talk)\b/i;
 
 const THREAD_STOP_WORDS = new Set([
@@ -312,28 +429,64 @@ function extractHeader(content: string): ExtractedHeader {
         };
     }
 
+    const scanEnd = Math.min(lines.length, firstContentLine + 40);
+    for (let index = firstContentLine; index < scanEnd; index += 1) {
+        const block = readHeaderBlock(lines, index);
+
+        if (block == null) {
+            continue;
+        }
+
+        const beforeHeader = lines.slice(firstContentLine, block.start).join("\n").trim();
+        const afterHeader = lines.slice(block.end).join("\n").trimStart();
+        const narrative = [beforeHeader, afterHeader].filter((part) => part.length > 0).join("\n\n");
+
+        return {
+            locationLine: block.locationLine,
+            youLine: block.youLine,
+            npcLine: block.npcLine,
+            threadLine: block.threadLine,
+            narrative,
+        };
+    }
+
+    return {
+        locationLine: null,
+        youLine: null,
+        npcLine: null,
+        threadLine: null,
+        narrative: normalized.trimStart(),
+    };
+}
+
+function readHeaderBlock(lines: string[], start: number): HeaderBlock | null {
     let locationLine: string | null = null;
     let youLine: string | null = null;
     let npcLine: string | null = null;
     let threadLine: string | null = null;
-    let sawHeader = false;
-    let headerEnd = firstContentLine;
+    let score = 0;
+    let end = start;
+    let sawDivider = false;
 
-    const scanEnd = Math.min(lines.length, firstContentLine + 10);
-    for (let index = firstContentLine; index < scanEnd; index += 1) {
+    const scanEnd = Math.min(lines.length, start + 10);
+    for (let index = start; index < scanEnd; index += 1) {
         const line = lines[index].trim();
 
         if (line.length === 0) {
-            if (sawHeader) {
-                headerEnd = index + 1;
+            if (score > 0) {
+                end = index + 1;
                 break;
             }
-            continue;
+            return null;
         }
 
         if (isHeaderDivider(line)) {
-            sawHeader = true;
-            headerEnd = index + 1;
+            if (score === 0) {
+                return null;
+            }
+            sawDivider = true;
+            score += 1;
+            end = index + 1;
             break;
         }
 
@@ -342,45 +495,49 @@ function extractHeader(content: string): ExtractedHeader {
 
         if (!locationLine && looksLikeLocationTimeLine(clean)) {
             locationLine = clean;
-            sawHeader = true;
-            headerEnd = index + 1;
+            score += 2;
+            end = index + 1;
             continue;
         }
 
         if (lower.startsWith("you:")) {
             youLine = clean;
-            sawHeader = true;
-            headerEnd = index + 1;
+            score += 1;
+            end = index + 1;
             continue;
         }
 
         if (lower.startsWith("npc:")) {
             npcLine = clean;
-            sawHeader = true;
-            headerEnd = index + 1;
+            score += 1;
+            end = index + 1;
             continue;
         }
 
         if (lower.startsWith("thread:")) {
             threadLine = clean;
-            sawHeader = true;
-            headerEnd = index + 1;
+            score += 1;
+            end = index + 1;
             continue;
-        }
-
-        if (sawHeader) {
-            break;
         }
 
         break;
     }
 
+    const hasHeaderShape = locationLine != null && (youLine != null || npcLine != null || threadLine != null || sawDivider);
+    const hasEnoughHeaderLines = score >= 4 || (score >= 3 && locationLine != null);
+
+    if (!hasHeaderShape && !hasEnoughHeaderLines) {
+        return null;
+    }
+
     return {
+        start,
+        end,
         locationLine,
         youLine,
         npcLine,
         threadLine,
-        narrative: sawHeader ? lines.slice(headerEnd).join("\n").trimStart() : normalized.trimStart(),
     };
 }
 
@@ -537,10 +694,13 @@ function normalizeStatus(
     const fallbackPosition = normalizePosition(fallbackParts[0] ?? defaultParts[0], defaultParts[0], kind);
     const fallbackClothing = normalizeClothing(fallbackParts[1] ?? defaultParts[1], defaultParts[1]);
     const rawPosition = normalizePosition(rawParts[0] ?? fallbackPosition, fallbackPosition, kind);
-    const rawClothing = normalizeClothing(rawParts[1] ?? fallbackClothing, fallbackClothing);
-    const position = statusChangeIsSupported(rawPosition, fallbackPosition, context, "position") ? rawPosition : fallbackPosition;
-    const clothing = statusChangeIsSupported(rawClothing, fallbackClothing, context, "clothing") ? rawClothing : fallbackClothing;
-    const detail = normalizeDetail(rawParts[2] ?? fallbackParts[2] ?? defaultParts[2], fallbackParts[2] ?? defaultParts[2], kind);
+    const inferredClothing = kind === "you" ? inferYouClothingFromContext(context) : null;
+    const rawClothing = normalizeClothing(inferredClothing ?? rawParts[1] ?? fallbackClothing, fallbackClothing);
+    const position = statusChangeIsSupported(rawPosition, fallbackPosition, context, "position", kind) ? rawPosition : fallbackPosition;
+    const clothing = statusChangeIsSupported(rawClothing, fallbackClothing, context, "clothing", kind) ? rawClothing : fallbackClothing;
+    const fallbackDetail = normalizeDetail(fallbackParts[2] ?? defaultParts[2], defaultParts[2], kind);
+    const rawDetail = normalizeDetail(rawParts[2] ?? fallbackDetail, fallbackDetail, kind);
+    const detail = kind === "you" && !youDetailChangeIsSupported(rawDetail, fallbackDetail, context) ? fallbackDetail : rawDetail;
 
     return `${position}; ${clothing}; ${detail}`;
 }
@@ -816,14 +976,150 @@ function statusChangeIsSupported(
     previous: string,
     context: string,
     field: "position" | "clothing",
+    kind: "you" | "npc",
 ): boolean {
-    if (sameText(candidate, previous) || isGenericStatusPart(previous)) {
+    if (sameText(candidate, previous)) {
         return true;
+    }
+
+    if (kind === "npc" && isGenericStatusPart(previous)) {
+        return true;
+    }
+
+    if (kind === "you" && isGenericStatusPart(previous) && contextHasEvidence(context, field)) {
+        return true;
+    }
+
+    if (kind === "you" && field === "clothing") {
+        return youClothingChangeIsSupported(candidate, previous, context);
     }
 
     const lowerContext = context.toLowerCase();
     const cues = field === "position" ? POSITION_CHANGE_CUES : CLOTHING_CHANGE_CUES;
     return cues.some((cue) => lowerContext.includes(cue));
+}
+
+function youClothingChangeIsSupported(candidate: string, previous: string, context: string): boolean {
+    const lowerContext = context.toLowerCase();
+    const lowerCandidate = candidate.toLowerCase();
+
+    if (CLOTHING_REMOVAL_CUES.some((cue) => lowerContext.includes(cue))) {
+        return true;
+    }
+
+    if (
+        CLOTHING_DAMAGE_CUES.some((cue) => lowerContext.includes(cue))
+        && (CLOTHING_DAMAGE_WORDS.test(candidate) || sharesMeaningfulClothingWord(candidate, previous))
+    ) {
+        return true;
+    }
+
+    if (CLOTHING_CHANGE_CUES.some((cue) => lowerContext.includes(cue))) {
+        return true;
+    }
+
+    return CLOTHING_DAMAGE_WORDS.test(lowerCandidate)
+        && CLOTHING_DAMAGE_CUES.some((cue) => lowerContext.includes(cue));
+}
+
+function inferYouClothingFromContext(context: string): string | null {
+    const lowerContext = context.toLowerCase();
+
+    if (
+        lowerContext.includes("hanya menggunakan celana")
+        || lowerContext.includes("hanya celana")
+        || lowerContext.includes("only pants")
+        || lowerContext.includes("pants only")
+    ) {
+        return "Pants only";
+    }
+
+    if (
+        lowerContext.includes("tanpa pakaian")
+        || lowerContext.includes("tanpa baju")
+        || lowerContext.includes("without clothes")
+        || lowerContext.includes("naked")
+        || lowerContext.includes("telanjang")
+    ) {
+        return "Naked";
+    }
+
+    if (
+        lowerContext.includes("tanpa kemeja")
+        || lowerContext.includes("without shirt")
+        || lowerContext.includes("shirtless")
+    ) {
+        return "Shirtless";
+    }
+
+    if (
+        lowerContext.includes("tanpa armor")
+        || lowerContext.includes("tanpa zirah")
+        || lowerContext.includes("without armor")
+        || lowerContext.includes("remove armor")
+        || lowerContext.includes("removes armor")
+        || lowerContext.includes("removed armor")
+    ) {
+        return "Without armor";
+    }
+
+    if (
+        lowerContext.includes("tanpa jubah")
+        || lowerContext.includes("without cloak")
+        || lowerContext.includes("remove cloak")
+        || lowerContext.includes("removes cloak")
+        || lowerContext.includes("removed cloak")
+    ) {
+        return "Without cloak";
+    }
+
+    return null;
+}
+
+function youDetailChangeIsSupported(candidate: string, previous: string, context: string): boolean {
+    if (sameText(candidate, previous) || isGenericStatusPart(previous)) {
+        return true;
+    }
+
+    const lowerContext = context.toLowerCase();
+    const lowerCandidate = candidate.toLowerCase();
+
+    if (CLOTHING_DAMAGE_WORDS.test(lowerCandidate) && CLOTHING_DAMAGE_CUES.some((cue) => lowerContext.includes(cue))) {
+        return true;
+    }
+
+    return meaningfulDetailWords(candidate).some((word) => lowerContext.includes(word));
+}
+
+function contextHasEvidence(context: string, field: "position" | "clothing"): boolean {
+    const lowerContext = context.toLowerCase();
+
+    if (field === "position") {
+        return POSITION_CHANGE_CUES.some((cue) => lowerContext.includes(cue));
+    }
+
+    return CLOTHING_CHANGE_CUES.some((cue) => lowerContext.includes(cue))
+        || CLOTHING_DAMAGE_CUES.some((cue) => lowerContext.includes(cue))
+        || CLOTHING_REMOVAL_CUES.some((cue) => lowerContext.includes(cue));
+}
+
+function sharesMeaningfulClothingWord(candidate: string, previous: string): boolean {
+    const previousWords = new Set(clothingWords(previous));
+    return clothingWords(candidate).some((word) => previousWords.has(word));
+}
+
+function clothingWords(value: string): string[] {
+    return cleanFragment(value)
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((word) => word.length > 2 && !["the", "and", "with", "regular", "clothing"].includes(word));
+}
+
+function meaningfulDetailWords(value: string): string[] {
+    return cleanFragment(value)
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((word) => word.length > 3 && !["visible", "still", "steady", "hand", "left", "right"].includes(word));
 }
 
 function isGenericStatusPart(value: string): boolean {

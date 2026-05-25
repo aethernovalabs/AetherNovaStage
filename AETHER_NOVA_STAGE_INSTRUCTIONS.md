@@ -114,7 +114,7 @@ Tujuannya agar AI mencoba menjaga format header sejak awal, sebelum `afterRespon
 Setelah AI membalas, stage:
 
 1. Membaca isi response AI.
-2. Mendeteksi header di bagian awal response.
+2. Mendeteksi header di beberapa baris awal response, termasuk jika ada teks pendek sebelum header.
 3. Jika header hilang, membuat header dari state terakhir.
 4. Jika header ada tetapi salah, mengoreksi formatnya.
 5. Menormalisasi location, time, `You`, `NPC`, divider `***`, dan `Thread`.
@@ -122,6 +122,7 @@ Setelah AI membalas, stage:
 7. Mengembalikan `modifiedMessage` berisi response yang sudah dikoreksi.
 
 Narasi setelah header tetap dipertahankan.
+Jika AI menulis teks sebelum header, teks itu dipindahkan ke bawah header normal agar tidak menghasilkan dua header.
 
 ## Rules Normalisasi Saat Ini
 
@@ -163,7 +164,9 @@ Format target:
 Stage mencoba menghapus bahasa yang terlalu dramatis dan mempertahankan status fisik yang jelas.
 Stage menolak `Anomaly` sebagai apparent race kecuali sudah revealed atau confirmed di konteks.
 Stage juga menyaring thoughts, feelings, expression, dialogue, actions, movement, transformation, consent, dan choices dari line `You`.
-Position dan clothes/disguise memakai state lama kecuali konteks user atau narasi memberi cue perubahan.
+Position, clothes/disguise, dan body detail memakai state lama kecuali konteks user atau narasi AI terbaru memberi bukti perubahan.
+Perubahan pakaian didukung oleh cue seperti change/wear/remove, `lepas baju`, `tanpa pakaian`, `hanya menggunakan celana`, atau damage naratif seperti burned/torn/scorched, `terbakar`, `robek`, dan `rusak`.
+Perubahan posisi didukung oleh cue seperti walk/stop/arrive/sit/stand, `berjalan`, `berhenti`, `sampai`, `tiba`, `duduk`, dan `berdiri`.
 Jika format `You` kacau, stage mengambil bagian yang hilang dari state sebelumnya.
 
 ### NPC
@@ -280,9 +283,10 @@ Penyesuaian yang sudah diterapkan:
 1. Divider output memakai `***`, bukan `___`.
 2. `beforePrompt` mengingat pesan user terakhir sebagai konteks perubahan location/thread.
 3. Location change dijaga agar tidak berubah jauh tanpa cue perpindahan.
-4. `You` menjaga apparent race, menolak `Anomaly` jika belum revealed/confirmed, menjaga position/clothes dari state lama tanpa cue, dan menyaring thoughts/actions/dialogue/movement.
+4. `You` menjaga apparent race, menolak `Anomaly` jika belum revealed/confirmed, menjaga position/clothes/body detail dari state lama tanpa evidence, dan menyaring thoughts/actions/dialogue.
 5. `NPC: None` diterima saat tidak ada NPC.
 6. `Thread` dinormalisasi dengan pemisah ` ; ` dan item minor/selesai dibersihkan.
+7. Header yang muncul setelah teks pembuka tetap dideteksi, lalu dipindahkan menjadi satu header normal di paling atas.
 
 Jika prompt header asli nanti diubah lagi:
 
