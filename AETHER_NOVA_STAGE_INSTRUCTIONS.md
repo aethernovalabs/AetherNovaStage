@@ -114,7 +114,7 @@ Tujuannya agar AI mencoba menjaga format header sejak awal, sebelum `afterRespon
 Setelah AI membalas, stage:
 
 1. Membaca isi response AI.
-2. Mendeteksi header di beberapa baris awal response, termasuk jika ada teks pendek sebelum header.
+2. Mendeteksi header di beberapa baris awal response, termasuk jika ada teks pendek sebelum header atau jika field header terpisah blank line.
 3. Jika header hilang, membuat header dari state terakhir.
 4. Jika header ada tetapi salah, mengoreksi formatnya.
 5. Menormalisasi location, time, `You`, `NPC`, divider `***`, dan `Thread`.
@@ -123,6 +123,7 @@ Setelah AI membalas, stage:
 
 Narasi setelah header tetap dipertahankan.
 Jika AI menulis teks sebelum header, teks itu dipindahkan ke bawah header normal agar tidak menghasilkan dua header.
+Jika AI menulis header dengan blank line di antara `Location`, `You`, `NPC`, `Thread`, dan `***`, stage tetap menganggapnya sebagai satu header lalu mengeluarkannya lagi dalam format compact tanpa blank line.
 
 ## Rules Normalisasi Saat Ini
 
@@ -290,6 +291,7 @@ Penyesuaian yang sudah diterapkan:
 6. `Thread` dinormalisasi dengan pemisah ` ; ` dan item minor/selesai dibersihkan.
 7. Header yang muncul setelah teks pembuka tetap dideteksi, lalu dipindahkan menjadi satu header normal di paling atas.
 8. Multi-NPC dicocokkan berdasarkan nama agar NPC baru tidak mewarisi pakaian/status NPC lama hanya karena urutan header.
+9. Header yang terpisah blank line tetap dideteksi sebagai satu header agar tidak muncul double header.
 
 Jika prompt header asli nanti diubah lagi:
 

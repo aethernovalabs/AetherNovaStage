@@ -444,18 +444,27 @@ function readHeaderBlock(lines: string[], start: number): HeaderBlock | null {
     let score = 0;
     let end = start;
     let sawDivider = false;
+    let blankLinesInsideHeader = 0;
 
-    const scanEnd = Math.min(lines.length, start + 10);
+    const scanEnd = Math.min(lines.length, start + 16);
     for (let index = start; index < scanEnd; index += 1) {
         const line = lines[index].trim();
 
         if (line.length === 0) {
-            if (score > 0) {
-                end = index + 1;
+            if (score === 0) {
+                return null;
+            }
+
+            blankLinesInsideHeader += 1;
+            if (blankLinesInsideHeader > 4) {
                 break;
             }
-            return null;
+
+            end = index + 1;
+            continue;
         }
+
+        blankLinesInsideHeader = 0;
 
         if (isHeaderDivider(line)) {
             if (score === 0) {
@@ -478,6 +487,9 @@ function readHeaderBlock(lines: string[], start: number): HeaderBlock | null {
         }
 
         if (lower.startsWith("you:")) {
+            if (youLine != null) {
+                break;
+            }
             youLine = clean;
             score += 1;
             end = index + 1;
@@ -485,6 +497,9 @@ function readHeaderBlock(lines: string[], start: number): HeaderBlock | null {
         }
 
         if (lower.startsWith("npc:")) {
+            if (npcLine != null) {
+                break;
+            }
             npcLine = clean;
             score += 1;
             end = index + 1;
@@ -492,6 +507,9 @@ function readHeaderBlock(lines: string[], start: number): HeaderBlock | null {
         }
 
         if (lower.startsWith("thread:")) {
+            if (threadLine != null) {
+                break;
+            }
             threadLine = clean;
             score += 1;
             end = index + 1;
