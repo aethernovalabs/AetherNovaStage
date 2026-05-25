@@ -9,6 +9,7 @@ export interface AetherNovaMessageState {
     you: string;
     npc: string;
     thread: string;
+    wallet: string;
 }
 
 interface ExtractedHeader {
@@ -16,6 +17,7 @@ interface ExtractedHeader {
     youLine: string | null;
     npcLine: string | null;
     threadLine: string | null;
+    walletLine: string | null;
     narrative: string;
 }
 
@@ -34,6 +36,12 @@ interface IdentityStatus {
     status: string;
 }
 
+interface WalletAmounts {
+    gold: number;
+    silver: number;
+    copper: number;
+}
+
 interface NormalizeStatusOptions {
     sceneChanged?: boolean;
 }
@@ -49,6 +57,7 @@ const DEFAULT_STATE: AetherNovaMessageState = {
     you: "Unknown - Human (Standing in scene; Regular clothing; hands visible)",
     npc: "None",
     thread: "None",
+    wallet: "0G ; 0S ; 0C",
 };
 
 const RACE_KEYWORDS = [
@@ -300,6 +309,7 @@ const CLOTHING_REMOVAL_CUES = [
 
 const CLOTHING_DAMAGE_WORDS = /\b(burned|burnt|scorched|torn|ripped|shredded|slashed|bloody|bloodied|stained|soaked|wet|muddy|damaged|destroyed|cracked)\b/i;
 const CLOTHING_SLOT_PATTERN = /\b(cloth|clothes|clothing|outfit|attire|garb|uniform|armor|armour|robe|robes|kimono|yukata|haori|hakama|dress|gown|suit|shirt|blouse|tunic|jacket|coat|cloak|mantle|cape|hood|pants|trousers|jeans|shorts|skirt|leggings|boots|shoes|sandals|gloves|mask|veil|hat|cap|helmet|apron|vest|corset|sash|belt|scarf|shawl|wrap|rags|disguise|leather|silk|linen|cotton|wool|chainmail|mail)\b/i;
+const WALLET_AMOUNT_PATTERN = /\b\d+\s*(?:g|gold|s|silver|c|copper)\b/i;
 const VAGUE_STATUS_PATTERN = /\b(mood|emotion|feeling|feelings|thought|thoughts|status|role|happy|sad|angry|calm|nervous|worried|confused|curious|suspicious|jealous|afraid|scared|determined|focused)\b/i;
 const USER_FORBIDDEN_DETAIL_PATTERN = /\b(thinking|thinks|feeling|feels|expression|expressions|smiling|smiles|frowning|grinning|says|said|speaks|asks|answers|chooses|choosing|choice|decides|attacks|attack|transforms|transforming|consents|consent|refuses|dialogue)\b/i;
 const MINOR_THREAD_PATTERN = /\b(normal topic|normal topics|casual question|casual questions|temporary mood|small suspicion|minor jealousy|minor tension|small talk)\b/i;
@@ -398,6 +408,96 @@ const LOCATION_STOP_WORDS = new Set([
     "room",
 ]);
 
+const WALLET_TRANSACTION_CUES = [
+    "pay",
+    "pays",
+    "paid",
+    "payment",
+    "spend",
+    "spends",
+    "spent",
+    "buy",
+    "buys",
+    "bought",
+    "purchase",
+    "purchases",
+    "purchased",
+    "cost",
+    "costs",
+    "price",
+    "fee",
+    "fare",
+    "toll",
+    "tax",
+    "tip",
+    "tips",
+    "tipped",
+    "bribe",
+    "bribes",
+    "bribed",
+    "rent",
+    "rents",
+    "rented",
+    "sell",
+    "sells",
+    "sold",
+    "receive",
+    "receives",
+    "received",
+    "reward",
+    "rewards",
+    "rewarded",
+    "earn",
+    "earns",
+    "earned",
+    "gain",
+    "gains",
+    "gained",
+    "loot",
+    "loots",
+    "looted",
+    "found",
+    "finds",
+    "gift",
+    "gifts",
+    "gifted",
+    "prize",
+    "bounty",
+    "wage",
+    "wages",
+    "salary",
+    "compensation",
+    "refund",
+    "loses",
+    "lost",
+    "stolen",
+    "robbed",
+    "confiscated",
+    "hands over",
+    "handed over",
+];
+
+const WALLET_MONEY_CUES = [
+    "gold",
+    "silver",
+    "copper",
+    "coin",
+    "coins",
+    "money",
+    "wallet",
+    "purse",
+    "pouch",
+    "payment",
+    "price",
+    "fee",
+    "fare",
+    "reward",
+    "bounty",
+    "tip",
+    "wage",
+    "wages",
+];
+
 export function createInitialHeaderState(
     characters: Record<string, Character>,
     incomingState: unknown,
@@ -424,18 +524,20 @@ export function coerceHeaderState(
         you: normalizeYouLine(raw.you ?? "", fallback.you),
         npc: normalizeNpcLine(raw.npc ?? "", fallback.npc),
         thread: normalizeThreadLine(raw.thread ?? "", fallback.thread, ""),
+        wallet: normalizeWalletLine(raw.wallet ?? "", fallback.wallet, ""),
     };
 }
 
 export function buildStageDirections(state: AetherNovaMessageState): string {
     return [
-        "Maintain Aether Nova header format. Start with exactly four bold header lines followed by *** before narration.",
+        "Maintain Aether Nova header format. Start with exactly five bold header lines followed by *** before narration.",
         `Location: ${state.location}`,
         `Time: ${state.timeOfDay} | ${state.clock}`,
         `You: ${state.you}`,
         `NPC: ${state.npc}`,
         `Thread: ${state.thread}`,
-        "Status format: Position; Clothes/disguise; optional body/racial detail. Keep position/clothes from last state unless the scene clearly changes. Use Thread items separated by \" ; \".",
+        `Wallet: ${state.wallet}`,
+        "Status format: Position; Clothes/disguise; optional body/racial detail. Keep position/clothes from last state unless the scene clearly changes. Use Thread items separated by \" ; \". Wallet changes only with clear in-story transaction/reward/loss evidence.",
     ].join("\n");
 }
 
@@ -455,6 +557,7 @@ export function normalizeAetherNovaResponse(
         you: normalizeYouLine(extracted.youLine ?? "", previousState.you, correctionContext, {sceneChanged}),
         npc: normalizeNpcLine(extracted.npcLine ?? "", previousState.npc, correctionContext, {sceneChanged}),
         thread: normalizeThreadLine(extracted.threadLine ?? "", previousState.thread, correctionContext),
+        wallet: normalizeWalletLine(extracted.walletLine ?? "", previousState.wallet, correctionContext),
     };
 
     return {
@@ -469,6 +572,7 @@ export function formatHeader(state: AetherNovaMessageState): string {
         `**You: ${state.you}**`,
         `**NPC: ${state.npc}**`,
         `**Thread: ${state.thread}**`,
+        `**Wallet: ${state.wallet}**`,
         HEADER_DIVIDER,
     ].join("\n");
 }
@@ -500,6 +604,7 @@ function extractHeader(content: string): ExtractedHeader {
             youLine: null,
             npcLine: null,
             threadLine: null,
+            walletLine: null,
             narrative: "",
         };
     }
@@ -521,6 +626,7 @@ function extractHeader(content: string): ExtractedHeader {
             youLine: block.youLine,
             npcLine: block.npcLine,
             threadLine: block.threadLine,
+            walletLine: block.walletLine,
             narrative,
         };
     }
@@ -530,6 +636,7 @@ function extractHeader(content: string): ExtractedHeader {
         youLine: null,
         npcLine: null,
         threadLine: null,
+        walletLine: null,
         narrative: normalized.trimStart(),
     };
 }
@@ -539,6 +646,7 @@ function readHeaderBlock(lines: string[], start: number): HeaderBlock | null {
     let youLine: string | null = null;
     let npcLine: string | null = null;
     let threadLine: string | null = null;
+    let walletLine: string | null = null;
     let score = 0;
     let end = start;
     let sawDivider = false;
@@ -614,6 +722,16 @@ function readHeaderBlock(lines: string[], start: number): HeaderBlock | null {
             continue;
         }
 
+        if (lower.startsWith("wallet:")) {
+            if (walletLine != null) {
+                break;
+            }
+            walletLine = clean;
+            score += 1;
+            end = index + 1;
+            continue;
+        }
+
         break;
     }
 
@@ -631,6 +749,7 @@ function readHeaderBlock(lines: string[], start: number): HeaderBlock | null {
         youLine,
         npcLine,
         threadLine,
+        walletLine,
     };
 }
 
@@ -809,6 +928,62 @@ function normalizeThreadLine(rawLine: string, previousThread: string, narrative:
     }
 
     return candidate;
+}
+
+function normalizeWalletLine(rawLine: string, previousWallet: string, context: string): string {
+    const previous = normalizeWalletValue(previousWallet) ?? DEFAULT_STATE.wallet;
+    const rawCandidate = cleanLabeledValue(rawLine, "Wallet");
+    const candidate = normalizeWalletValue(rawCandidate);
+
+    if (candidate == null) {
+        return previous;
+    }
+
+    if (sameText(candidate, previous)) {
+        return previous;
+    }
+
+    return walletChangeIsSupported(candidate, previous, context) ? candidate : previous;
+}
+
+function normalizeWalletValue(value: string): string | null {
+    const amounts = parseWalletAmounts(value);
+    return amounts == null ? null : formatWallet(amounts);
+}
+
+function parseWalletAmounts(value: string): WalletAmounts | null {
+    const clean = cleanHeaderText(value).replace(/^wallet\s*:\s*/i, "");
+
+    if (isPlaceholder(clean)) {
+        return null;
+    }
+
+    let matched = false;
+    const amounts: WalletAmounts = {gold: 0, silver: 0, copper: 0};
+    const pattern = /(\d+)\s*(g|gold|s|silver|c|copper)\b/gi;
+    let match = pattern.exec(clean);
+
+    while (match != null) {
+        matched = true;
+        const amount = Math.max(0, Number(match[1]));
+        const unit = match[2].toLowerCase();
+
+        if (unit === "g" || unit === "gold") {
+            amounts.gold = amount;
+        } else if (unit === "s" || unit === "silver") {
+            amounts.silver = amount;
+        } else {
+            amounts.copper = amount;
+        }
+
+        match = pattern.exec(clean);
+    }
+
+    return matched ? amounts : null;
+}
+
+function formatWallet(wallet: WalletAmounts): string {
+    return `${wallet.gold}G ; ${wallet.silver}S ; ${wallet.copper}C`;
 }
 
 function normalizeStatus(
@@ -1599,6 +1774,18 @@ function threadChangeIsSupported(candidate: string, previousThread: string, narr
 
     const lowerNarrative = narrative.toLowerCase();
     return THREAD_TRANSITION_CUES.some((cue) => lowerNarrative.includes(cue));
+}
+
+function walletChangeIsSupported(candidate: string, previousWallet: string, context: string): boolean {
+    if (sameText(candidate, previousWallet)) {
+        return true;
+    }
+
+    const lowerContext = context.toLowerCase();
+    const hasTransactionCue = containsAnyCue(lowerContext, WALLET_TRANSACTION_CUES);
+    const hasMoneyCue = containsAnyCue(lowerContext, WALLET_MONEY_CUES) || WALLET_AMOUNT_PATTERN.test(context);
+
+    return hasTransactionCue && hasMoneyCue;
 }
 
 function meaningfulTokens(value: string): Set<string> {

@@ -61,6 +61,8 @@ state_schema:
         type: string
       thread:
         type: string
+      wallet:
+        type: string
   chat:
     type: object
     properties: {}

@@ -48,6 +48,7 @@ Output AI ditargetkan menjadi:
 **You: Gender - Apparent Race (Position; Clothes/disguise; body detail)**
 **NPC: Full Name - Race (Position; Clothes; body/racial detail), Full Name - Race (Position; Clothes; body/racial detail)**
 **Thread: Main mission/status ; Major obstacle/status**
+**Wallet: XG ; XS ; XC**
 ***
 
 Narrative continues here...
@@ -60,6 +61,7 @@ Contoh:
 **You: Male - Human (Standing near window; Regular shirt; arms crossed)**
 **NPC: Yume Nozomikara - Kitsune (Standing before {{user}}; Kimono; tails still, ears forward, violet-gold eyes bright)**
 **Thread: Prospective meeting with King Halvair (on pause) ; Yume and {{user}} at odds**
+**Wallet: 12G ; 35S ; 8C**
 ***
 ```
 
@@ -75,6 +77,7 @@ State message-level menyimpan header terakhir:
   you: string;
   npc: string;
   thread: string;
+  wallet: string;
 }
 ```
 
@@ -104,9 +107,10 @@ Time: ...
 You: ...
 NPC: ...
 Thread: ...
+Wallet: ...
 ```
 
-Reminder juga menekankan divider `***`, format status `Position; Clothes/disguise; optional body/racial detail`, dan pemisah thread ` ; `.
+Reminder juga menekankan divider `***`, format status `Position; Clothes/disguise; optional body/racial detail`, pemisah thread ` ; `, dan wallet yang hanya boleh berubah dengan evidence transaksi/reward/loss di narasi.
 Tujuannya agar AI mencoba menjaga format header sejak awal, sebelum `afterResponse` perlu memperbaiki.
 
 ### afterResponse
@@ -117,7 +121,7 @@ Setelah AI membalas, stage:
 2. Mendeteksi header di beberapa baris awal response, termasuk jika ada teks pendek sebelum header atau jika field header terpisah blank line.
 3. Jika header hilang, membuat header dari state terakhir.
 4. Jika header ada tetapi salah, mengoreksi formatnya.
-5. Menormalisasi location, time, `You`, `NPC`, divider `***`, dan `Thread`.
+5. Menormalisasi location, time, `You`, `NPC`, divider `***`, `Thread`, dan `Wallet`.
 6. Menyimpan state baru.
 7. Mengembalikan `modifiedMessage` berisi response yang sudah dikoreksi.
 
@@ -197,6 +201,21 @@ Jika AI mengganti thread secara tiba-tiba tanpa dukungan narasi, stage mempertah
 Perubahan thread lebih mungkin diterima jika ada overlap kata penting atau narasi mengandung cue transisi seperti arrival, travel, resolved, mission, quest, objective, atau time skip.
 Stage menghapus item thread yang completed, failed, abandoned, expired, irrelevant, atau minor seperti normal topic, casual question, temporary mood, small suspicion, minor jealousy, dan small talk.
 
+### Wallet
+
+`Wallet` menyimpan uang milik `{{user}}`.
+
+Format target:
+
+```md
+**Wallet: 12G ; 35S ; 8C**
+```
+
+Stage menormalisasi format menjadi `XG ; XS ; XC`.
+Wallet memakai state lama kecuali narasi terbaru memuat evidence ekonomi yang jelas seperti payment, buy, cost, fee, reward, earn, loot, bounty, gift, refund, lost, stolen, robbed, atau confiscated.
+Jika AI mengubah angka wallet tanpa transaksi/reward/loss yang dijelaskan dalam cerita, stage mengembalikan wallet ke state sebelumnya.
+Stage tidak mengizinkan NPC atau narasi membaca wallet sebagai info in-character kecuali uang itu memang diketahui lewat cerita.
+
 ## Batas Stage
 
 Stage ini tidak boleh:
@@ -227,6 +246,7 @@ Tempel system prompt header asli di sini:
 **You: Gender - Apparent Race (Position; Clothes/disguise; body detail)**
 **NPC: Full Name - Race (Position; Clothes; body/racial detail), Full Name - Race (Position; Clothes; body/racial detail)**
 **Thread: Main mission/status ; Major obstacle/status**
+**Wallet: XG ; XS ; XC**
 ***
 
 Rules:
@@ -272,6 +292,12 @@ Rules:
 - Remove completed, failed, abandoned, expired, or irrelevant items.
 - Optional status tags: (on pause), (Pending), (Ongoing), (Secret), (Known: NPC Name), (Known: Group).
 
+[Header WALLET Rule]
+- Format example: "Wallet: 12G ; 35S ; 8C"
+- G=Gold; S=Silver; C=Copper
+- Wallet is the money that {{user}} owns.
+- Wallet changes only through clear in-story transactions
+
 [IMPORTANT]
 - If you make a mistake such as wrong NPC canon info, race, location, status, header format, Thread item, NPC presence, or header data, correct it in the next reply and never preserve the mistake.
 - If a previous reply invented non-canon NPC data, treat it as non-canon and return to official lore.
@@ -294,6 +320,7 @@ Penyesuaian yang sudah diterapkan:
 7. Header yang muncul setelah teks pembuka tetap dideteksi, lalu dipindahkan menjadi satu header normal di paling atas.
 8. Multi-NPC dicocokkan berdasarkan nama agar NPC baru tidak mewarisi pakaian/status NPC lama hanya karena urutan header.
 9. Header yang terpisah blank line tetap dideteksi sebagai satu header agar tidak muncul double header.
+10. `Wallet` ditambahkan sebagai line header dan state; perubahan angka wallet ditolak kecuali narasi memuat evidence transaksi/reward/loss.
 
 Jika prompt header asli nanti diubah lagi:
 
