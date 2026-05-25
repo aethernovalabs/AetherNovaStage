@@ -171,51 +171,49 @@ const POSITION_CHANGE_CUES = [
     "reaches",
     "reached",
     "destination",
-    "jalan",
-    "berjalan",
-    "melangkah",
-    "lari",
-    "berlari",
-    "berhenti",
-    "berdiri",
-    "duduk",
-    "berlutut",
-    "berbaring",
-    "sampai",
-    "tiba",
-    "masuk",
-    "keluar",
-    "mendekat",
 ];
 
 const CLOTHING_CHANGE_CUES = [
     "change clothes",
     "changed clothes",
     "changes clothes",
+    "change into",
+    "changed into",
+    "changes into",
+    "change outfit",
+    "changed outfit",
+    "changes outfit",
     "wear",
     "wears",
     "wearing",
     "wore",
     "put on",
     "puts on",
+    "putting on",
+    "dress in",
+    "dresses in",
+    "dressed in",
+    "clad in",
+    "dons",
+    "donned",
+    "donning",
+    "slip into",
+    "slips into",
+    "slipped into",
+    "wrap in",
+    "wraps in",
+    "wrapped in",
+    "swap into",
+    "swaps into",
+    "swapped into",
+    "new outfit",
+    "new clothes",
     "remove armor",
     "removes armor",
     "removed armor",
-    "disguise",
-    "hood",
-    "cloak",
-    "shirt",
-    "armor",
-    "dress",
-    "kimono",
-    "robe",
-    "uniform",
-    "ganti pakaian",
-    "mengganti pakaian",
-    "berganti pakaian",
-    "pakai",
-    "memakai",
-    "mengenakan",
+    "new disguise",
+    "changes disguise",
+    "changed disguise",
 ];
 
 const CLOTHING_DAMAGE_CUES = [
@@ -247,17 +245,6 @@ const CLOTHING_DAMAGE_CUES = [
     "armor cracked",
     "cloak catches fire",
     "sleeve catches fire",
-    "terbakar",
-    "hangus",
-    "robek",
-    "sobek",
-    "terkoyak",
-    "berdarah",
-    "basah",
-    "kotor",
-    "berlumpur",
-    "rusak",
-    "hancur",
 ];
 
 const CLOTHING_REMOVAL_CUES = [
@@ -280,23 +267,13 @@ const CLOTHING_REMOVAL_CUES = [
     "without clothes",
     "without shirt",
     "without armor",
-    "lepas baju",
-    "melepas baju",
-    "buka baju",
-    "membuka baju",
-    "lepas pakaian",
-    "melepas pakaian",
-    "tanpa pakaian",
-    "tanpa baju",
-    "tanpa kemeja",
-    "tanpa armor",
-    "tanpa zirah",
-    "telanjang",
-    "hanya celana",
-    "hanya menggunakan celana",
+    "without cloak",
+    "remove cloak",
+    "removes cloak",
+    "removed cloak",
 ];
 
-const CLOTHING_DAMAGE_WORDS = /\b(burned|burnt|scorched|torn|ripped|shredded|slashed|bloody|bloodied|stained|soaked|wet|muddy|damaged|destroyed|cracked|terbakar|hangus|robek|sobek|terkoyak|berdarah|basah|kotor|berlumpur|rusak|hancur)\b/i;
+const CLOTHING_DAMAGE_WORDS = /\b(burned|burnt|scorched|torn|ripped|shredded|slashed|bloody|bloodied|stained|soaked|wet|muddy|damaged|destroyed|cracked)\b/i;
 const VAGUE_STATUS_PATTERN = /\b(mood|emotion|feeling|feelings|thought|thoughts|status|role|happy|sad|angry|calm|nervous|worried|confused|curious|suspicious|jealous|afraid|scared|determined|focused)\b/i;
 const USER_FORBIDDEN_DETAIL_PATTERN = /\b(thinking|thinks|feeling|feels|expression|expressions|smiling|smiles|frowning|grinning|says|said|speaks|asks|answers|chooses|choosing|choice|decides|attacks|attack|transforms|transforming|consents|consent|refuses|dialogue)\b/i;
 const MINOR_THREAD_PATTERN = /\b(normal topic|normal topics|casual question|casual questions|temporary mood|small suspicion|minor jealousy|minor tension|small talk)\b/i;
@@ -796,7 +773,7 @@ function normalizeClothing(value: string, fallback: string): string {
     let clean = cleanFragment(value) || safeFallback;
     clean = clean.split(/[,.]/)[0].trim();
     clean = clean.replace(/\s+(and|with)\s+.*$/i, "").trim();
-    clean = limitWords(clean, 6);
+    clean = limitWords(clean, 10);
 
     if (isInvalidStatusPart(clean, "npc")) {
         return safeFallback;
@@ -990,72 +967,121 @@ function statusChangeIsSupported(
         return true;
     }
 
+    if (
+        field === "clothing"
+        && !isGenericStatusPart(previous)
+        && clothingChangeIsNegated(context.toLowerCase())
+        && !containsAnyCue(context, CLOTHING_REMOVAL_CUES)
+        && !containsAnyCue(context, CLOTHING_DAMAGE_CUES)
+    ) {
+        return false;
+    }
+
+    if (kind === "you" && field === "position") {
+        return youPositionChangeIsSupported(candidate, previous, context);
+    }
+
     if (kind === "you" && field === "clothing") {
         return youClothingChangeIsSupported(candidate, previous, context);
     }
 
     const lowerContext = context.toLowerCase();
     const cues = field === "position" ? POSITION_CHANGE_CUES : CLOTHING_CHANGE_CUES;
-    return cues.some((cue) => lowerContext.includes(cue));
+    return containsAnyCue(lowerContext, cues);
+}
+
+function youPositionChangeIsSupported(candidate: string, previous: string, context: string): boolean {
+    const lowerCandidate = candidate.toLowerCase();
+    const lowerContext = context.toLowerCase();
+
+    if (positionMeansWalking(lowerCandidate)) {
+        return containsAnyCue(lowerContext, ["walk", "walks", "walking", "move", "moves", "moving", "step", "steps", "stepping", "approach", "approaches", "continue", "continues"]);
+    }
+
+    if (positionMeansStanding(lowerCandidate)) {
+        return containsAnyCue(lowerContext, ["stand", "stands", "standing", "stood", "stop", "stops", "stopped", "halt", "halts", "arrive", "arrives", "arrived", "reach", "reaches", "reached"]);
+    }
+
+    if (positionMeansSeated(lowerCandidate)) {
+        return containsAnyCue(lowerContext, ["sit", "sits", "sat", "seated", "seat"]);
+    }
+
+    if (positionMeansProne(lowerCandidate)) {
+        return containsAnyCue(lowerContext, ["lie", "lies", "lying", "lay", "laid", "prone", "collapse", "collapses", "collapsed"]);
+    }
+
+    return containsAnyCue(lowerContext, POSITION_CHANGE_CUES)
+        && meaningfulPositionWords(candidate).some((word) => lowerContext.includes(word));
 }
 
 function youClothingChangeIsSupported(candidate: string, previous: string, context: string): boolean {
     const lowerContext = context.toLowerCase();
     const lowerCandidate = candidate.toLowerCase();
+    const hasRemovalCue = containsAnyCue(lowerContext, CLOTHING_REMOVAL_CUES);
+    const hasDamageCue = containsAnyCue(lowerContext, CLOTHING_DAMAGE_CUES);
+    const hasChangeCue = containsAnyCue(lowerContext, CLOTHING_CHANGE_CUES);
 
-    if (CLOTHING_REMOVAL_CUES.some((cue) => lowerContext.includes(cue))) {
+    if (clothingChangeIsNegated(lowerContext) && !hasRemovalCue && !hasDamageCue) {
+        return false;
+    }
+
+    if (hasRemovalCue) {
         return true;
     }
 
     if (
-        CLOTHING_DAMAGE_CUES.some((cue) => lowerContext.includes(cue))
+        hasDamageCue
         && (CLOTHING_DAMAGE_WORDS.test(candidate) || sharesMeaningfulClothingWord(candidate, previous))
     ) {
         return true;
     }
 
-    if (CLOTHING_CHANGE_CUES.some((cue) => lowerContext.includes(cue))) {
+    if (hasChangeCue) {
         return true;
     }
 
     return CLOTHING_DAMAGE_WORDS.test(lowerCandidate)
-        && CLOTHING_DAMAGE_CUES.some((cue) => lowerContext.includes(cue));
+        && containsAnyCue(lowerContext, CLOTHING_DAMAGE_CUES);
+}
+
+function clothingChangeIsNegated(context: string): boolean {
+    return context.includes("does not change clothes")
+        || context.includes("doesn't change clothes")
+        || context.includes("do not change clothes")
+        || context.includes("don't change clothes")
+        || context.includes("no one changes clothes")
+        || context.includes("nobody changes clothes")
+        || context.includes("without changing clothes")
+        || context.includes("no clothing change")
+        || context.includes("no outfit change");
 }
 
 function inferYouClothingFromContext(context: string): string | null {
     const lowerContext = context.toLowerCase();
 
     if (
-        lowerContext.includes("hanya menggunakan celana")
-        || lowerContext.includes("hanya celana")
-        || lowerContext.includes("only pants")
+        lowerContext.includes("only pants")
         || lowerContext.includes("pants only")
     ) {
         return "Pants only";
     }
 
     if (
-        lowerContext.includes("tanpa pakaian")
-        || lowerContext.includes("tanpa baju")
-        || lowerContext.includes("without clothes")
+        lowerContext.includes("without clothes")
         || lowerContext.includes("naked")
-        || lowerContext.includes("telanjang")
     ) {
         return "Naked";
     }
 
     if (
-        lowerContext.includes("tanpa kemeja")
-        || lowerContext.includes("without shirt")
+        lowerContext.includes("without shirt")
         || lowerContext.includes("shirtless")
     ) {
         return "Shirtless";
     }
 
     if (
-        lowerContext.includes("tanpa armor")
-        || lowerContext.includes("tanpa zirah")
-        || lowerContext.includes("without armor")
+        lowerContext.includes("without armor")
         || lowerContext.includes("remove armor")
         || lowerContext.includes("removes armor")
         || lowerContext.includes("removed armor")
@@ -1064,8 +1090,7 @@ function inferYouClothingFromContext(context: string): string | null {
     }
 
     if (
-        lowerContext.includes("tanpa jubah")
-        || lowerContext.includes("without cloak")
+        lowerContext.includes("without cloak")
         || lowerContext.includes("remove cloak")
         || lowerContext.includes("removes cloak")
         || lowerContext.includes("removed cloak")
@@ -1095,12 +1120,12 @@ function contextHasEvidence(context: string, field: "position" | "clothing"): bo
     const lowerContext = context.toLowerCase();
 
     if (field === "position") {
-        return POSITION_CHANGE_CUES.some((cue) => lowerContext.includes(cue));
+        return containsAnyCue(lowerContext, POSITION_CHANGE_CUES);
     }
 
-    return CLOTHING_CHANGE_CUES.some((cue) => lowerContext.includes(cue))
-        || CLOTHING_DAMAGE_CUES.some((cue) => lowerContext.includes(cue))
-        || CLOTHING_REMOVAL_CUES.some((cue) => lowerContext.includes(cue));
+    return containsAnyCue(lowerContext, CLOTHING_CHANGE_CUES)
+        || containsAnyCue(lowerContext, CLOTHING_DAMAGE_CUES)
+        || containsAnyCue(lowerContext, CLOTHING_REMOVAL_CUES);
 }
 
 function sharesMeaningfulClothingWord(candidate: string, previous: string): boolean {
@@ -1120,6 +1145,46 @@ function meaningfulDetailWords(value: string): string[] {
         .toLowerCase()
         .split(/[^a-z0-9]+/)
         .filter((word) => word.length > 3 && !["visible", "still", "steady", "hand", "left", "right"].includes(word));
+}
+
+function meaningfulPositionWords(value: string): string[] {
+    return cleanFragment(value)
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((word) => word.length > 3 && !["near", "beside", "before", "behind", "through", "toward", "from"].includes(word));
+}
+
+function positionMeansWalking(value: string): boolean {
+    return /\b(walk|walking|moving|stepping|approaching|running)\b/i.test(value);
+}
+
+function positionMeansStanding(value: string): boolean {
+    return /\b(stand|standing|stood|stopped|halted)\b/i.test(value);
+}
+
+function positionMeansSeated(value: string): boolean {
+    return /\b(sit|sitting|seated|sat)\b/i.test(value);
+}
+
+function positionMeansProne(value: string): boolean {
+    return /\b(lying|prone|collapsed|kneeling|crouched)\b/i.test(value);
+}
+
+function containsAnyCue(value: string, cues: string[]): boolean {
+    const lowerValue = value.toLowerCase();
+    return cues.some((cue) => {
+        const lowerCue = cue.toLowerCase();
+
+        if (lowerCue.includes(" ")) {
+            return lowerValue.includes(lowerCue);
+        }
+
+        return new RegExp(`\\b${escapeRegExp(lowerCue)}\\b`).test(lowerValue);
+    });
+}
+
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function isGenericStatusPart(value: string): boolean {

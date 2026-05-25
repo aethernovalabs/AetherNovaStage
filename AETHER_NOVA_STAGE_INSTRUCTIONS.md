@@ -165,8 +165,9 @@ Stage mencoba menghapus bahasa yang terlalu dramatis dan mempertahankan status f
 Stage menolak `Anomaly` sebagai apparent race kecuali sudah revealed atau confirmed di konteks.
 Stage juga menyaring thoughts, feelings, expression, dialogue, actions, movement, transformation, consent, dan choices dari line `You`.
 Position, clothes/disguise, dan body detail memakai state lama kecuali konteks user atau narasi AI terbaru memberi bukti perubahan.
-Perubahan pakaian didukung oleh cue seperti change/wear/remove, `lepas baju`, `tanpa pakaian`, `hanya menggunakan celana`, atau damage naratif seperti burned/torn/scorched, `terbakar`, `robek`, dan `rusak`.
-Perubahan posisi didukung oleh cue seperti walk/stop/arrive/sit/stand, `berjalan`, `berhenti`, `sampai`, `tiba`, `duduk`, dan `berdiri`.
+Perubahan pakaian didukung oleh evidence berbahasa Inggris seperti change/wear/remove, put on, dressed in, clad in, changes into, atau damage naratif seperti burned/torn/scorched/damaged.
+Stage tidak menghafal daftar jenis pakaian; nama pakaian unik seperti ceremonial mantle, moon-silk kimono, battle robe, academy uniform, atau disguise tetap bisa diterima jika ada evidence perubahan.
+Perubahan posisi didukung oleh cue seperti walk/stop/arrive/sit/stand/reach/collapse.
 Jika format `You` kacau, stage mengambil bagian yang hilang dari state sebelumnya.
 
 ### NPC
