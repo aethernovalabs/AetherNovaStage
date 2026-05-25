@@ -605,26 +605,50 @@ function normalizeNpcLine(rawLine: string, previousNpc: string, context: string 
     }
 
     const fallbackEntries = splitTopLevel(previousNpc || DEFAULT_STATE.npc, ",");
+    const fallbackByName = new Map<string, string>();
+    for (const fallbackEntry of fallbackEntries) {
+        const fallback = parseIdentityStatus(fallbackEntry);
+        const fallbackIdentity = splitIdentity(fallback.identity, "Unknown NPC", "Human");
+        fallbackByName.set(npcIdentityKey(fallbackIdentity.left), fallbackEntry);
+    }
+
     const entries = splitTopLevel(value, ",").filter((entry) => !isPlaceholder(entry));
 
     if (entries.length === 0) {
         return previousNpc;
     }
 
-    return entries.map((entry, index) => {
-        const fallback = fallbackEntries[index] ?? fallbackEntries[0] ?? DEFAULT_STATE.npc;
+    return entries.map((entry) => {
+        const parsed = parseIdentityStatus(entry);
+        const identity = splitIdentity(parsed.identity, "Unknown NPC", "Human");
+        const fallback = fallbackByName.get(npcIdentityKey(identity.left)) ?? null;
         return normalizeNpcEntry(entry, fallback, context);
     }).join(", ");
 }
 
-function normalizeNpcEntry(rawEntry: string, fallbackEntry: string, context: string): string {
+function normalizeNpcEntry(rawEntry: string, fallbackEntry: string | null, context: string): string {
     const parsed = parseIdentityStatus(rawEntry);
-    const fallback = parseIdentityStatus(fallbackEntry);
-    const fallbackIdentity = splitIdentity(fallback.identity, "Unknown NPC", "Human");
-    const identity = splitIdentity(parsed.identity, fallbackIdentity.left, fallbackIdentity.right);
-    const status = normalizeStatus(parsed.status, fallback.status || defaultNpcStatusForRace(identity.right), "npc", identity.right, context);
+    const fallback = fallbackEntry == null ? null : parseIdentityStatus(fallbackEntry);
+    const fallbackIdentity = fallback == null ? null : splitIdentity(fallback.identity, "Unknown NPC", "Human");
+    const identity = splitIdentity(parsed.identity, fallbackIdentity?.left ?? "Unknown NPC", fallbackIdentity?.right ?? "Human");
+    const status = fallback == null
+        ? normalizeNewNpcStatus(parsed.status, identity.right, context)
+        : normalizeStatus(parsed.status, fallback.status || defaultNpcStatusForRace(identity.right), "npc", identity.right, context);
 
     return `${identity.left} - ${identity.right} (${status})`;
+}
+
+function normalizeNewNpcStatus(rawStatus: string, race: string, context: string): string {
+    const defaultStatus = defaultNpcStatusForRace(race);
+    const defaultParts = statusParts(defaultStatus, "npc");
+    const rawParts = statusParts(rawStatus, "npc");
+    const position = normalizePosition(rawParts[0] ?? defaultParts[0], defaultParts[0], "npc");
+    const inferredClothing = inferNpcClothingFromContext(context);
+    const rawClothing = normalizeClothing(inferredClothing ?? rawParts[1] ?? defaultParts[1], defaultParts[1]);
+    const clothing = inferredClothing != null || newNpcClothingIsSupported(rawClothing, context) ? rawClothing : normalizeClothing(defaultParts[1], "Regular clothing");
+    const detail = normalizeDetail(rawParts[2] ?? defaultParts[2], defaultParts[2], "npc");
+
+    return `${position}; ${clothing}; ${detail}`;
 }
 
 function normalizeThreadLine(rawLine: string, previousThread: string, narrative: string): string {
@@ -1101,6 +1125,68 @@ function inferYouClothingFromContext(context: string): string | null {
     return null;
 }
 
+function inferNpcClothingFromContext(context: string): string | null {
+    const lowerContext = context.toLowerCase();
+
+    if (
+        lowerContext.includes("wears simple")
+        || lowerContext.includes("wearing simple")
+        || lowerContext.includes("in simple clothes")
+        || lowerContext.includes("in simple clothing")
+        || lowerContext.includes("simple clothes")
+        || lowerContext.includes("simple clothing")
+        || lowerContext.includes("simple outfit")
+        || lowerContext.includes("plain clothes")
+        || lowerContext.includes("plain clothing")
+        || lowerContext.includes("plain outfit")
+    ) {
+        return "Simple clothing";
+    }
+
+    if (
+        lowerContext.includes("travel clothes")
+        || lowerContext.includes("travel clothing")
+        || lowerContext.includes("travel outfit")
+        || lowerContext.includes("traveler clothes")
+        || lowerContext.includes("traveler clothing")
+    ) {
+        return "Travel clothing";
+    }
+
+    if (
+        lowerContext.includes("common clothes")
+        || lowerContext.includes("common clothing")
+        || lowerContext.includes("ordinary clothes")
+        || lowerContext.includes("ordinary clothing")
+    ) {
+        return "Ordinary clothing";
+    }
+
+    return null;
+}
+
+function newNpcClothingIsSupported(candidate: string, context: string): boolean {
+    const lowerContext = context.toLowerCase();
+
+    if (sameText(candidate, "Regular clothing")) {
+        return true;
+    }
+
+    if (clothingChangeIsNegated(lowerContext)) {
+        return false;
+    }
+
+    if (
+        !containsAnyCue(lowerContext, CLOTHING_CHANGE_CUES)
+        && !containsAnyCue(lowerContext, CLOTHING_REMOVAL_CUES)
+        && !containsAnyCue(lowerContext, CLOTHING_DAMAGE_CUES)
+    ) {
+        return false;
+    }
+
+    return clothingWords(candidate).some((word) => lowerContext.includes(word));
+}
+
 function youDetailChangeIsSupported(candidate: string, previous: string, context: string): boolean {
     if (sameText(candidate, previous) || isGenericStatusPart(previous)) {
         return true;
@@ -1137,7 +1223,14 @@ function clothingWords(value: string): string[] {
     return cleanFragment(value)
         .toLowerCase()
         .split(/[^a-z0-9]+/)
-        .filter((word) => word.length > 2 && !["the", "and", "with", "regular", "clothing"].includes(word));
+        .filter((word) => word.length > 2 && !["the", "and", "with", "regular", "clothing", "clothes", "outfit"].includes(word));
+}
+
+function npcIdentityKey(value: string): string {
+    return cleanFragment(value)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
 }
 
 function meaningfulDetailWords(value: string): string[] {

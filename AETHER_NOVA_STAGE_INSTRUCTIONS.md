@@ -183,6 +183,7 @@ Format target:
 Stage mendukung lebih dari satu NPC dengan pemisah koma di level atas.
 Stage juga menerima `NPC: None` saat tidak ada NPC di sekitar `{{user}}`.
 Position dan clothes NPC memakai state lama kecuali ada cue visible move, follow, scene change, clothing change, atau armor removal.
+NPC lama dicocokkan berdasarkan nama, bukan urutan. NPC baru tidak boleh mewarisi pakaian NPC lama; jika pakaian NPC baru tidak didukung narasi, gunakan fallback aman seperti `Regular clothing` atau inferensi sederhana seperti `Simple clothing`.
 Detail race-specific tetap dijaga sebagai detail fisik/visible, seperti hands, wings, tail, ears, horns, eyes, claws, weapon, posture, atau anatomy relevan.
 
 ### Thread
@@ -288,6 +289,7 @@ Penyesuaian yang sudah diterapkan:
 5. `NPC: None` diterima saat tidak ada NPC.
 6. `Thread` dinormalisasi dengan pemisah ` ; ` dan item minor/selesai dibersihkan.
 7. Header yang muncul setelah teks pembuka tetap dideteksi, lalu dipindahkan menjadi satu header normal di paling atas.
+8. Multi-NPC dicocokkan berdasarkan nama agar NPC baru tidak mewarisi pakaian/status NPC lama hanya karena urutan header.
 
 Jika prompt header asli nanti diubah lagi:
 
