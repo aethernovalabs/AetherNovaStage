@@ -2,10 +2,10 @@
 #   in which case these values can be managed in the UI.
 
 # The name of the stage.
-# project_name: "Stage Template"
+project_name: "Aether Nova Header Guard"
 
 # A short tagline to show in search.
-# tagline: "A base template for all stages."
+tagline: "Keeps Aether Nova responses on-format without rendering UI."
 
 # 'PUBLIC', 'PRIVATE', or 'UNLISTED'.
 # visibility: 'PUBLIC'
@@ -18,24 +18,20 @@
 #   but leave the text input box.
 # 'FULLSCREEN' will make nothing below the header bar
 #   show except for your stage.
-# position: 'ADJACENT'
+position: NONE
 
 # Self-explanatory.
-# tags:
-#  - 'Stage'
-#  - 'Admin'
-#  - 'Template'
-#  - 'Base'
+tags:
+  - 'Stage'
+  - 'Aether Nova'
+  - 'Header Guard'
 
 # The schema of any user-supplied config.
 # If your stage requires a configuration but has no
 #   defined schema, it won't work.
 config_schema:
   type: object
-  properties:
-    health:
-      type: integer
-      default: 100
+  properties: {}
 
 # The schema of the state that you store.
 # This isn't needed even if you do store state,
@@ -44,22 +40,30 @@ config_schema:
 state_schema:
   init:
     type: object
-    properties:
-      grid:
-        type: string
+    properties: {}
   message:
     type: object
     properties:
-      angry:
-        type: boolean
-        default: true
+      location:
+        type: string
+      timeOfDay:
+        type: string
+        enum:
+          - Morning
+          - Afternoon
+          - Evening
+          - Night
+      clock:
+        type: string
+      you:
+        type: string
+      npc:
+        type: string
+      thread:
+        type: string
   chat:
     type: object
-    properties:
-      visited:
-        type: array
-        items:
-          type: integer
+    properties: {}
 
 # Whether to publish as 'Anonymous' instead of under your username.
 # is_anonymous: false
@@ -74,4 +78,3 @@ state_schema:
 # extension_id is automatically generated on push with a new project;
 #    you should not make or set this value.
 # github_path will be added if it does not exist. It is the URL of the repo.
-
