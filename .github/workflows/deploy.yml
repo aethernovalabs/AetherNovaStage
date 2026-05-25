@@ -16,9 +16,9 @@ jobs:
   build-and-upload:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       - name: Set up Node
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v6
         with:
           node-version: '21.7.1'
 
@@ -131,7 +131,7 @@ jobs:
       - name: Extract version from tag
         id: get_version
         if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
-        run: echo "::set-output name=VERSION::${GITHUB_REF#refs/tags/v}"
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
         # Assumes tag is of form v1.0.0, strips the 'v'
 
       - name: Update package.json version
