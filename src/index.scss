@@ -16,3 +16,12 @@ html, body, #root {
   margin: 0;
   padding: 0;
 }
+
+// This stage is logic-only. Hide the default runner spinner so a delayed
+// INIT event does not briefly show a visual panel.
+.outer,
+.middle,
+.spinner,
+.loading-spinner {
+  display: none !important;
+}
