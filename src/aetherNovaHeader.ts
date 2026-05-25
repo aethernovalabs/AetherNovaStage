@@ -299,6 +299,7 @@ const CLOTHING_REMOVAL_CUES = [
 ];
 
 const CLOTHING_DAMAGE_WORDS = /\b(burned|burnt|scorched|torn|ripped|shredded|slashed|bloody|bloodied|stained|soaked|wet|muddy|damaged|destroyed|cracked)\b/i;
+const CLOTHING_SLOT_PATTERN = /\b(cloth|clothes|clothing|outfit|attire|garb|uniform|armor|armour|robe|robes|kimono|yukata|haori|hakama|dress|gown|suit|shirt|blouse|tunic|jacket|coat|cloak|mantle|cape|hood|pants|trousers|jeans|shorts|skirt|leggings|boots|shoes|sandals|gloves|mask|veil|hat|cap|helmet|apron|vest|corset|sash|belt|scarf|shawl|wrap|rags|disguise|leather|silk|linen|cotton|wool|chainmail|mail)\b/i;
 const VAGUE_STATUS_PATTERN = /\b(mood|emotion|feeling|feelings|thought|thoughts|status|role|happy|sad|angry|calm|nervous|worried|confused|curious|suspicious|jealous|afraid|scared|determined|focused)\b/i;
 const USER_FORBIDDEN_DETAIL_PATTERN = /\b(thinking|thinks|feeling|feels|expression|expressions|smiling|smiles|frowning|grinning|says|said|speaks|asks|answers|chooses|choosing|choice|decides|attacks|attack|transforms|transforming|consents|consent|refuses|dialogue)\b/i;
 const MINOR_THREAD_PATTERN = /\b(normal topic|normal topics|casual question|casual questions|temporary mood|small suspicion|minor jealousy|minor tension|small talk)\b/i;
@@ -1159,7 +1160,15 @@ function statusChangeIsSupported(
         return true;
     }
 
-    if (kind === "npc" && isGenericStatusPart(previous)) {
+    if (kind === "npc" && isGenericStatusPart(previous) && (field !== "clothing" || looksLikeClothingSlot(candidate))) {
+        return true;
+    }
+
+    if (field === "clothing" && isGenericStatusPart(previous) && looksLikeClothingSlot(candidate)) {
+        return true;
+    }
+
+    if (field === "clothing" && looksLikeClothingSlot(candidate) && clothingIsMentioned(candidate, context)) {
         return true;
     }
 
@@ -1348,6 +1357,10 @@ function newNpcClothingIsSupported(candidate: string, context: string): boolean 
         return true;
     }
 
+    if (looksLikeClothingSlot(candidate)) {
+        return true;
+    }
+
     if (clothingChangeIsNegated(lowerContext)) {
         return false;
     }
@@ -1360,7 +1373,7 @@ function newNpcClothingIsSupported(candidate: string, context: string): boolean 
         return false;
     }
 
-    return clothingWords(candidate).some((word) => lowerContext.includes(word));
+    return clothingIsMentioned(candidate, context);
 }
 
 function youDetailChangeIsSupported(candidate: string, previous: string, context: string): boolean {
@@ -1436,6 +1449,23 @@ function contextHasEvidence(context: string, field: "position" | "clothing"): bo
 function sharesMeaningfulClothingWord(candidate: string, previous: string): boolean {
     const previousWords = new Set(clothingWords(previous));
     return clothingWords(candidate).some((word) => previousWords.has(word));
+}
+
+function looksLikeClothingSlot(value: string): boolean {
+    const clean = cleanFragment(value);
+
+    if (isPlaceholder(clean) || isInvalidStatusPart(clean, "npc")) {
+        return false;
+    }
+
+    return sameText(clean, "Regular clothing")
+        || CLOTHING_SLOT_PATTERN.test(clean)
+        || CLOTHING_DAMAGE_WORDS.test(clean);
+}
+
+function clothingIsMentioned(candidate: string, context: string): boolean {
+    const lowerContext = context.toLowerCase();
+    return clothingWords(candidate).some((word) => containsAnyCue(lowerContext, [word]));
 }
 
 function clothingWords(value: string): string[] {

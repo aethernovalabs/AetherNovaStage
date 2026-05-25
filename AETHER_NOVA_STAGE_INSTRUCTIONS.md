@@ -168,7 +168,7 @@ Stage menolak `Anomaly` sebagai apparent race kecuali sudah revealed atau confir
 Stage juga menyaring thoughts, feelings, expression, dialogue, actions, movement, transformation, consent, dan choices dari line `You`.
 Position, clothes/disguise, dan body detail memakai state lama kecuali konteks user atau narasi AI terbaru memberi bukti perubahan.
 Perubahan pakaian didukung oleh evidence berbahasa Inggris seperti change/wear/remove, put on, dressed in, clad in, changes into, atau damage naratif seperti burned/torn/scorched/damaged.
-Stage tidak menghafal daftar jenis pakaian; nama pakaian unik seperti ceremonial mantle, moon-silk kimono, battle robe, academy uniform, atau disguise tetap bisa diterima jika ada evidence perubahan.
+Slot kedua dalam status selalu diperlakukan sebagai clothing/disguise slot. Nama pakaian unik seperti ceremonial mantle, moon-silk kimono, battle robe, academy uniform, haori, robe, armor, cloak, atau disguise bisa diterima sebagai pakaian, terutama saat state sebelumnya masih `Regular clothing` atau pakaian itu disebut lagi di narasi terbaru.
 Perubahan posisi didukung oleh cue seperti walk/stop/arrive/sit/stand/reach/collapse, dan juga bisa diterima saat location sudah terbukti berpindah scene.
 Body detail yang bersifat kontak sementara, seperti hand resting on a tail, holding, touching, leaning, atau pressing against something, tidak dipertahankan saat posisi atau scene berubah kecuali narasi terbaru masih memberi evidence kontak itu.
 Jika format `You` kacau, stage mengambil bagian yang hilang dari state sebelumnya.
@@ -186,7 +186,7 @@ Format target:
 Stage mendukung lebih dari satu NPC dengan pemisah koma di level atas.
 Stage juga menerima `NPC: None` saat tidak ada NPC di sekitar `{{user}}`.
 Position dan clothes NPC memakai state lama kecuali ada cue visible move, follow, scene change, clothing change, atau armor removal.
-NPC lama dicocokkan berdasarkan nama, bukan urutan. NPC baru tidak boleh mewarisi pakaian NPC lama; jika pakaian NPC baru tidak didukung narasi, gunakan fallback aman seperti `Regular clothing` atau inferensi sederhana seperti `Simple clothing`.
+NPC lama dicocokkan berdasarkan nama, bukan urutan. NPC baru tidak boleh mewarisi pakaian NPC lama; jika clothing slot NPC baru memuat item pakaian jelas seperti kimono/robe/uniform/armor, stage boleh menerimanya, kalau tidak gunakan fallback aman seperti `Regular clothing` atau inferensi sederhana seperti `Simple clothing`.
 Detail race-specific tetap dijaga sebagai detail fisik/visible, seperti hands, wings, tail, ears, horns, eyes, claws, weapon, posture, atau anatomy relevan.
 
 ### Thread
