@@ -434,7 +434,7 @@ const WALLET_AMOUNT_PATTERN = /\b\d+\s*(?:g|gold|s|silver|c|copper)\b/i;
 const VAGUE_STATUS_PATTERN = /\b(mood|emotion|feeling|feelings|thought|thoughts|status|role|happy|sad|angry|calm|nervous|worried|confused|curious|suspicious|jealous|afraid|scared|determined|focused)\b/i;
 const USER_FORBIDDEN_DETAIL_PATTERN = /\b(thinking|thinks|feeling|feels|expression|expressions|smiling|smiles|frowning|grinning|says|said|speaks|asks|answers|chooses|choosing|choice|decides|attacks|attack|transforms|transforming|consents|consent|refuses|dialogue)\b/i;
 const MINOR_THREAD_PATTERN = /\b(normal topic|normal topics|casual question|casual questions|temporary mood|small suspicion|minor jealousy|minor tension|small talk)\b/i;
-const TRANSIENT_YOU_DETAIL_PATTERN = /\b(holding|gripping|grasping|clutching|touching|stroking|caressing|petting|rubbing|resting|leaning|pressing|bracing|supporting|pushing|pulling|tugging|drawing|lifting|lowering|cleaning|wiping|washing|brushing|drying|patting|hand on|hands on|arm around|arms around|head on|against|upon|on top of)\b/i;
+const TRANSIENT_YOU_DETAIL_PATTERN = /\b(holding|gripping|grasping|clutching|touching|stroking|caressing|petting|rubbing|tilted|tilting|cocked|angled|resting|leaning|pressing|bracing|supporting|pushing|pulling|tugging|drawing|lifting|lowering|cleaning|wiping|washing|brushing|drying|patting|hand on|hands on|arm around|arms around|head on|against|upon|on top of)\b/i;
 
 const DETAIL_BODY_PART_CUES = [
     "hand",
@@ -459,6 +459,9 @@ const DETAIL_BODY_PART_CUES = [
     "shoulder",
     "shoulders",
     "back",
+    "body",
+    "torso",
+    "waist",
 ];
 
 const DETAIL_CONTACT_ACTION_CUES = [
@@ -631,6 +634,36 @@ const DETAIL_SETTLED_BODY_CUES = [
     "arms at sides",
     "hands by sides",
     "arms by sides",
+];
+
+const DETAIL_POSTURE_CHANGE_CUES = [
+    "turn",
+    "turns",
+    "turned",
+    "turning",
+    "face",
+    "faces",
+    "facing",
+    "toward",
+    "towards",
+    "pull back",
+    "pulls back",
+    "pulled back",
+    "drawing back",
+    "draws back",
+    "withdraw",
+    "withdraws",
+    "withdrew",
+    "withdrawn",
+    "straighten",
+    "straightens",
+    "straightened",
+    "level",
+    "leveled",
+    "steady",
+    "forward",
+    "head level",
+    "body turned",
 ];
 
 const THREAD_STOP_WORDS = new Set([
@@ -1958,6 +1991,10 @@ function youDetailChangeIsSupported(candidate: string, previous: string, context
         return true;
     }
 
+    if (postureYouDetailIsSupported(candidate, context)) {
+        return true;
+    }
+
     return meaningfulDetailWords(candidate).some((word) => lowerContext.includes(word));
 }
 
@@ -1991,7 +2028,24 @@ function staleYouDetailCanYieldToCandidate(candidate: string, previous: string, 
     return isGenericStatusPart(candidate)
         || visibleYouInteractionDetailIsSupported(candidate, context)
         || settledYouDetailIsSupported(candidate, context)
+        || postureYouDetailIsSupported(candidate, context)
         || meaningfulDetailWords(candidate).some((word) => containsAnyCue(context, [word]));
+}
+
+function postureYouDetailIsSupported(candidate: string, context: string): boolean {
+    const lowerCandidate = candidate.toLowerCase();
+    const lowerContext = context.toLowerCase();
+
+    if (!containsAnyCue(lowerContext, DETAIL_POSTURE_CHANGE_CUES)) {
+        return false;
+    }
+
+    const candidateHasPostureCue = containsAnyCue(lowerCandidate, DETAIL_POSTURE_CHANGE_CUES);
+    const candidateHasBodyCue = containsAnyCue(lowerCandidate, DETAIL_BODY_PART_CUES);
+    const candidateWords = meaningfulDetailWords(candidate);
+    const mentionsSameTarget = candidateWords.some((word) => containsAnyCue(lowerContext, [word]));
+
+    return candidateHasPostureCue || (candidateHasBodyCue && mentionsSameTarget);
 }
 
 function settledYouDetailIsSupported(candidate: string, context: string): boolean {

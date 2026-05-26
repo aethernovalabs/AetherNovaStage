@@ -183,6 +183,7 @@ Body detail yang bersifat kontak sementara, seperti hand resting on a tail, hold
 Body detail juga boleh mencatat interaksi tangan yang terlihat dan sementara, seperti `hand cleaning Yume's face`, `wiping Yume's cheek`, atau `brushing hair aside`, selama narasi terbaru memang menyebut aksi visible itu.
 Kontak sementara lama seperti `stroking Yume's head` boleh diganti oleh detail baru yang aman seperti `hands visible` atau interaksi objek seperti `pulling cup` / `pulling blanket` jika narasi terbaru tidak lagi mendukung kontak lama, meskipun lokasi masih sama.
 Kontak sementara lama seperti `hands on head` juga boleh diganti oleh posture pasif yang masuk akal saat bergerak, seperti `hands lowered`, `hands down`, atau `arms at sides`, jika narasi terbaru menunjukkan movement/position change.
+Pose sementara lama seperti `head tilted` boleh diganti oleh detail posture baru seperti `facing him`, `body turned toward him`, atau `head level` jika narasi terbaru menyebut pull back, turn, face, atau straighten.
 Jika format `You` kacau, stage mengambil bagian yang hilang dari state sebelumnya.
 
 ### NPC
