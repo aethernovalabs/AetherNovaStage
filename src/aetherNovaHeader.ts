@@ -606,6 +606,33 @@ const DETAIL_OBJECT_INTERACTION_CUES = [
     "table",
 ];
 
+const DETAIL_SETTLED_BODY_CUES = [
+    "lowered",
+    "lower",
+    "down",
+    "low",
+    "relaxed",
+    "loose",
+    "free",
+    "at side",
+    "at sides",
+    "by side",
+    "by sides",
+    "to side",
+    "to sides",
+    "hanging",
+    "lowered hands",
+    "lowered arms",
+    "hands lowered",
+    "arms lowered",
+    "hands down",
+    "arms down",
+    "hands at sides",
+    "arms at sides",
+    "hands by sides",
+    "arms by sides",
+];
+
 const THREAD_STOP_WORDS = new Set([
     "the",
     "and",
@@ -1963,7 +1990,21 @@ function staleYouDetailCanYieldToCandidate(candidate: string, previous: string, 
 
     return isGenericStatusPart(candidate)
         || visibleYouInteractionDetailIsSupported(candidate, context)
+        || settledYouDetailIsSupported(candidate, context)
         || meaningfulDetailWords(candidate).some((word) => containsAnyCue(context, [word]));
+}
+
+function settledYouDetailIsSupported(candidate: string, context: string): boolean {
+    const lowerCandidate = candidate.toLowerCase();
+    const lowerContext = context.toLowerCase();
+
+    if (!containsAnyCue(lowerCandidate, DETAIL_BODY_PART_CUES) || !containsAnyCue(lowerCandidate, DETAIL_SETTLED_BODY_CUES)) {
+        return false;
+    }
+
+    return containsAnyCue(lowerContext, POSITION_CHANGE_CUES)
+        || containsAnyCue(lowerContext, LOCATION_TRANSITION_CUES)
+        || containsAnyCue(lowerContext, DETAIL_SETTLED_BODY_CUES);
 }
 
 function staleYouDetailShouldReset(
