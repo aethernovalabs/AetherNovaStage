@@ -113,6 +113,32 @@ const THREAD_TRANSITION_CUES = [
     "non-canon",
 ];
 
+const THREAD_INFERENCE_CUES = [
+    "mission",
+    "quest",
+    "objective",
+    "task",
+    "contract",
+    "order",
+    "orders",
+    "ordered",
+    "appointment",
+    "meeting",
+    "audience",
+    "promise",
+    "promises",
+    "promised",
+    "vow",
+    "vows",
+    "vowed",
+    "deadline",
+    "hunt",
+    "hunting",
+    "travel goal",
+    "major obstacle",
+    "unresolved conflict",
+];
+
 const LOCATION_TRANSITION_CUES = [
     "move",
     "moves",
@@ -1266,19 +1292,20 @@ function normalizeNewNpcStatus(rawStatus: string, race: string, context: string)
 
 function normalizeThreadLine(rawLine: string, previousThread: string, narrative: string): string {
     const rawCandidate = cleanLabeledValue(rawLine, "Thread");
+    const inferredThread = inferThreadFromNarrative(narrative);
 
     if (isNoThreadValue(rawCandidate)) {
-        return "None";
+        return inferredThread ?? "None";
     }
 
     if (isPlaceholder(rawCandidate)) {
-        return previousThread;
+        return inferredThread ?? previousThread;
     }
 
     const candidate = normalizeThreadValue(rawCandidate);
 
     if (candidate.length === 0) {
-        return previousThread;
+        return inferredThread ?? previousThread;
     }
 
     if (
@@ -1287,10 +1314,269 @@ function normalizeThreadLine(rawLine: string, previousThread: string, narrative:
         && !sameText(candidate, previousThread)
         && !threadChangeIsSupported(candidate, previousThread, narrative)
     ) {
-        return previousThread;
+        return inferredThread != null && threadChangeIsSupported(inferredThread, previousThread, narrative)
+            ? mergeThreadInference(previousThread, inferredThread)
+            : previousThread;
+    }
+
+    if (inferredThread != null && threadShouldUseNarrativeInference(candidate, previousThread, inferredThread)) {
+        return mergeThreadInference(candidate, inferredThread);
     }
 
     return candidate;
+}
+
+function inferThreadFromNarrative(narrative: string): string | null {
+    const sentences = threadSentences(narrative);
+    const items: string[] = [];
+
+    for (const sentence of sentences) {
+        const item = inferThreadItemFromSentence(sentence);
+
+        if (item == null || items.some((existing) => threadItemsOverlap(existing, item))) {
+            continue;
+        }
+
+        items.push(item);
+
+        if (items.length >= 2) {
+            break;
+        }
+    }
+
+    const thread = normalizeThreadValue(items.join(" ; "));
+    return thread.length > 0 ? thread : null;
+}
+
+function threadSentences(narrative: string): string[] {
+    return normalizeLineEndings(narrative)
+        .split(/(?:[.!?]+["']?\s+|\n+)/g)
+        .map(cleanThreadSentence)
+        .filter((sentence) => sentence.length > 0 && sentence.length <= 220 && containsAnyCue(sentence, THREAD_INFERENCE_CUES));
+}
+
+function cleanThreadSentence(value: string): string {
+    return cleanHeaderText(value)
+        .replace(/^(?:\{\{char\}\}|\{\{user\}\}|[A-Z][A-Za-z'._-]*(?:\s+[A-Z][A-Za-z'._-]*){0,2}):\s*/, "")
+        .replace(/^["'*]+|["'*]+$/g, "")
+        .trim();
+}
+
+function inferThreadItemFromSentence(sentence: string): string | null {
+    if (isTerminalThreadItem(sentence)) {
+        return null;
+    }
+
+    return extractMissionThreadItem(sentence)
+        ?? extractAppointmentThreadItem(sentence)
+        ?? extractPromiseThreadItem(sentence)
+        ?? extractTravelThreadItem(sentence)
+        ?? extractObstacleThreadItem(sentence);
+}
+
+function extractMissionThreadItem(sentence: string): string | null {
+    const explicitTo = sentence.match(/\b(mission|quest|objective|task|contract|order|orders|ordered)\b[^.!?\n:;]{0,60}?\bto\s+([^.!?;]{4,140})/i);
+    if (explicitTo != null) {
+        return formatThreadActionItem(threadKindLabel(explicitTo[1]), explicitTo[2], "Ongoing");
+    }
+
+    const explicitColon = sentence.match(/\b(mission|quest|objective|task|contract|order|orders|ordered)\b[^:]{0,60}:\s*([^.!?;]{4,140})/i);
+    if (explicitColon != null) {
+        return formatThreadActionItem(threadKindLabel(explicitColon[1]), explicitColon[2], "Ongoing");
+    }
+
+    const hunt = sentence.match(/\bhunt(?:ing)?\s+(?:for|of)?\s*([^.!?;]{4,120})/i);
+    if (
+        hunt != null
+        && (
+            containsAnyCue(sentence, ["mission", "quest", "contract", "bounty", "order", "objective", "task", "deadline"])
+            || /\bthe hunt\b/i.test(sentence)
+        )
+    ) {
+        return formatThreadActionItem("Hunt", hunt[1], "Ongoing");
+    }
+
+    const instructed = sentence.match(/\b(?:orders?|ordered|instructs?|instructed|tasks?|tasked)\s+(?:\{\{user\}\}|you|him|her|them)?\s*(?:to|with)\s+([^.!?;]{4,140})/i);
+    if (instructed != null) {
+        return formatThreadActionItem("Order", instructed[1], "Ongoing");
+    }
+
+    return null;
+}
+
+function extractAppointmentThreadItem(sentence: string): string | null {
+    const match = sentence.match(/\b(appointment|meeting|audience)\b\s+(with|at|before|for)\s+([^.!?;]{4,120})/i);
+    if (match == null) {
+        return null;
+    }
+
+    return formatThreadSentenceItem(`${match[1]} ${match[2]} ${match[3]}`, "Pending");
+}
+
+function extractPromiseThreadItem(sentence: string): string | null {
+    const match = sentence.match(/\b(?:promise|promises|promised|vow|vows|vowed|swear|swears|swore)\b[^.!?;]{0,50}?\b(?:to|that)\s+([^.!?;]{4,140})/i);
+    if (match == null) {
+        return null;
+    }
+
+    return formatThreadActionItem("Promise", match[1], "Pending");
+}
+
+function extractTravelThreadItem(sentence: string): string | null {
+    if (!containsAnyCue(sentence, ["travel goal", "mission", "quest", "objective", "task", "contract", "order", "deadline"])) {
+        return null;
+    }
+
+    const match = sentence.match(/\b(?:travel|journey|head|go|return|reach|escort|deliver)\s+(?:to|toward|towards|for|back to)\s+([^.!?;]{4,140})/i);
+    if (match == null) {
+        return null;
+    }
+
+    return formatThreadActionItem("Travel", match[1], "Ongoing");
+}
+
+function extractObstacleThreadItem(sentence: string): string | null {
+    const blocked = sentence.match(/\b(?:paused|blocked|delayed|stopped|held back|prevented)\b[^.!?;]{0,90}?\b(?:by|until|because of)\s+([^.!?;]{4,140})/i);
+    if (blocked != null) {
+        return formatThreadSentenceItem(`major obstacle: ${blocked[1]}`, null);
+    }
+
+    if (containsAnyCue(sentence, ["major obstacle", "unresolved conflict"])) {
+        return formatThreadSentenceItem(sentence, null);
+    }
+
+    return null;
+}
+
+function threadKindLabel(kind: string): string {
+    const lower = kind.toLowerCase();
+
+    if (lower.includes("quest")) {
+        return "Quest";
+    }
+
+    if (lower.includes("contract")) {
+        return "Contract";
+    }
+
+    if (lower.includes("order")) {
+        return "Order";
+    }
+
+    return "Mission";
+}
+
+function formatThreadActionItem(label: string, rawBody: string, status: "Ongoing" | "Pending"): string | null {
+    const body = cleanThreadObject(rawBody);
+
+    if (body.length === 0) {
+        return null;
+    }
+
+    if (label === "Hunt") {
+        return `Hunt for ${stripLeadingPreposition(body)} (${status})`;
+    }
+
+    return `${label} to ${stripLeadingTo(body)} (${status})`;
+}
+
+function formatThreadSentenceItem(rawValue: string, status: "Ongoing" | "Pending" | null): string | null {
+    const value = capitalizeThreadItem(cleanThreadObject(rawValue));
+
+    if (value.length === 0) {
+        return null;
+    }
+
+    return status == null ? value : `${value} (${status})`;
+}
+
+function cleanThreadObject(value: string): string {
+    return limitWords(
+        cleanFragment(value)
+            .replace(/^["'*]+|["'*]+$/g, "")
+            .replace(/\b(?:while|as|because|however)\b.*$/i, "")
+            .replace(/\bbut\b.*$/i, "")
+            .replace(/^(?:that|the|a|an)\s+/i, "")
+            .replace(/^(?:\{\{user\}\}|you|he|she|they)\s+/i, "")
+            .replace(/^(?:must|need(?:s)? to|has to|have to|should|will|would|can)\s+/i, "")
+            .trim(),
+        14,
+    );
+}
+
+function stripLeadingTo(value: string): string {
+    return cleanFragment(value).replace(/^to\s+/i, "");
+}
+
+function stripLeadingPreposition(value: string): string {
+    return cleanFragment(value).replace(/^(?:for|of|to)\s+/i, "");
+}
+
+function capitalizeThreadItem(value: string): string {
+    const clean = cleanFragment(value);
+    return clean.length === 0 ? "" : `${clean[0].toUpperCase()}${clean.slice(1)}`;
+}
+
+function threadItemsOverlap(left: string, right: string): boolean {
+    if (sameText(left, right)) {
+        return true;
+    }
+
+    const leftTokens = meaningfulTokens(left);
+    const rightTokens = meaningfulTokens(right);
+
+    if (leftTokens.size === 0 || rightTokens.size === 0) {
+        return false;
+    }
+
+    const sharedTokens = [...leftTokens].filter((token) => rightTokens.has(token));
+    return sharedTokens.length >= 2 || sharedTokens.some((token) => token.length >= 4);
+}
+
+function threadShouldUseNarrativeInference(candidate: string, previousThread: string, inferredThread: string): boolean {
+    if (sameText(candidate, inferredThread) || threadItemsOverlap(candidate, inferredThread)) {
+        return false;
+    }
+
+    return sameText(candidate, previousThread) || isGenericThreadCandidate(candidate);
+}
+
+function mergeThreadInference(baseThread: string, inferredThread: string): string {
+    const baseItems = isGenericThreadCandidate(baseThread) || isNoThreadValue(baseThread) ? [] : splitThreadItems(baseThread);
+    const inferredItems = splitThreadItems(inferredThread);
+    const merged = [...baseItems];
+
+    for (const item of inferredItems) {
+        if (merged.some((existing) => threadItemsOverlap(existing, item))) {
+            continue;
+        }
+
+        merged.push(item);
+
+        if (merged.length >= 2) {
+            break;
+        }
+    }
+
+    const thread = normalizeThreadValue(merged.slice(0, 2).join(" ; "));
+    return thread.length > 0 ? thread : inferredThread;
+}
+
+function splitThreadItems(value: string): string[] {
+    return value
+        .split(/\s*;\s*/g)
+        .map(cleanFragment)
+        .filter((item) => item.length > 0 && !isTerminalThreadItem(item));
+}
+
+function isGenericThreadCandidate(value: string): boolean {
+    const lower = cleanFragment(value).toLowerCase();
+
+    return lower.length === 0
+        || lower === DEFAULT_STATE.thread.toLowerCase()
+        || lower === "main mission/status"
+        || lower.includes("main mission/status")
+        || lower.includes("current mission / pending event");
 }
 
 function coerceWalletState(

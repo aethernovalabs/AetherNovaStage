@@ -211,6 +211,8 @@ Detail race-specific tetap dijaga sebagai detail fisik/visible, seperti hands, w
 
 Jika AI mengganti thread secara tiba-tiba tanpa dukungan narasi, stage mempertahankan thread sebelumnya.
 Perubahan thread lebih mungkin diterima jika ada overlap kata penting atau narasi mengandung cue transisi seperti arrival, travel, resolved, mission, quest, objective, atau time skip.
+Jika header `Thread` kosong, `None`, placeholder, atau masih mengulang thread lama, stage boleh membaca narasi terbaru untuk menangkap thread penting yang eksplisit seperti mission, quest, objective, task, appointment, promise, hunt/quest, deadline, order, contract, travel goal, major obstacle, atau major unresolved conflict.
+Deteksi dari narasi harus konservatif: stage hanya mengambil frasa yang benar-benar tertulis di narasi, memberi status sederhana seperti `(Ongoing)` atau `(Pending)`, dan tidak membuat tujuan baru secara kreatif.
 Stage menghapus item thread yang completed, failed, abandoned, expired, irrelevant, atau minor seperti normal topic, casual question, temporary mood, small suspicion, minor jealousy, dan small talk.
 
 ### Wallet
@@ -357,6 +359,7 @@ Penyesuaian yang sudah diterapkan:
 11. `walletInitialized` ditambahkan agar wallet awal dari first message/alternate first message bisa diterima tanpa dipaksa menjadi default `0G ; 0S ; 0C`.
 12. Formatter narasi ringan ditambahkan untuk italic narrative paragraphs, dialog speaker lines, inline emphasis menjadi single quote, dan action beat single-quoted di dalam dialog menjadi italic.
 13. NPC clothing adjustment ditambahkan agar pakaian lama seperti slipped under-robe tidak dipertahankan saat narasi terbaru merapikan/menambahkan layered garment baru seperti over-robe.
+14. Thread inference dari narasi ditambahkan agar mission/quest/contract/promise/appointment/travel goal/major obstacle yang eksplisit tetap masuk ke line `Thread` saat header kosong, `None`, placeholder, atau stale.
 
 Jika prompt header asli nanti diubah lagi:
 
