@@ -132,6 +132,18 @@ const THREAD_INFERENCE_CUES = [
     "vows",
     "vowed",
     "deadline",
+    "meet",
+    "visit",
+    "speak",
+    "talk",
+    "ask",
+    "information",
+    "info",
+    "intel",
+    "lead",
+    "clue",
+    "whereabouts",
+    "location",
     "hunt",
     "hunting",
     "travel goal",
@@ -760,6 +772,25 @@ const THREAD_STOP_WORDS = new Set([
     "in",
 ]);
 
+const THREAD_SUBGOAL_TARGET_STOP_WORDS = new Set([
+    ...THREAD_STOP_WORDS,
+    "seeking",
+    "seek",
+    "find",
+    "finding",
+    "market",
+    "intel",
+    "information",
+    "info",
+    "lead",
+    "leads",
+    "clue",
+    "clues",
+    "today",
+    "ongoing",
+    "pending",
+]);
+
 const LOCATION_STOP_WORDS = new Set([
     "main",
     "sub",
@@ -1292,7 +1323,7 @@ function normalizeNewNpcStatus(rawStatus: string, race: string, context: string)
 
 function normalizeThreadLine(rawLine: string, previousThread: string, narrative: string): string {
     const rawCandidate = cleanLabeledValue(rawLine, "Thread");
-    const inferredThread = inferThreadFromNarrative(narrative);
+    const inferredThread = inferThreadFromNarrative(narrative, previousThread);
 
     if (isNoThreadValue(rawCandidate)) {
         return inferredThread ?? "None";
@@ -1326,12 +1357,12 @@ function normalizeThreadLine(rawLine: string, previousThread: string, narrative:
     return candidate;
 }
 
-function inferThreadFromNarrative(narrative: string): string | null {
-    const sentences = threadSentences(narrative);
+function inferThreadFromNarrative(narrative: string, previousThread: string): string | null {
+    const sentences = threadSentences(narrative, previousThread);
     const items: string[] = [];
 
     for (const sentence of sentences) {
-        const item = inferThreadItemFromSentence(sentence);
+        const item = inferThreadItemFromSentence(sentence, previousThread);
 
         if (item == null || items.some((existing) => threadItemsOverlap(existing, item))) {
             continue;
@@ -1348,11 +1379,18 @@ function inferThreadFromNarrative(narrative: string): string | null {
     return thread.length > 0 ? thread : null;
 }
 
-function threadSentences(narrative: string): string[] {
+function threadSentences(narrative: string, previousThread: string): string[] {
     return normalizeLineEndings(narrative)
         .split(/(?:[.!?]+["']?\s+|\n+)/g)
         .map(cleanThreadSentence)
-        .filter((sentence) => sentence.length > 0 && sentence.length <= 220 && containsAnyCue(sentence, THREAD_INFERENCE_CUES));
+        .filter((sentence) => {
+            return sentence.length > 0
+                && sentence.length <= 220
+                && (
+                    containsAnyCue(sentence, THREAD_INFERENCE_CUES)
+                    || sentenceCouldInferLinkedSubgoal(sentence, previousThread)
+                );
+        });
 }
 
 function cleanThreadSentence(value: string): string {
@@ -1362,16 +1400,119 @@ function cleanThreadSentence(value: string): string {
         .trim();
 }
 
-function inferThreadItemFromSentence(sentence: string): string | null {
+function inferThreadItemFromSentence(sentence: string, previousThread: string): string | null {
     if (isTerminalThreadItem(sentence)) {
         return null;
     }
 
-    return extractMissionThreadItem(sentence)
+    return extractLinkedSubgoalThreadItem(sentence, previousThread)
+        ?? extractMissionThreadItem(sentence)
         ?? extractAppointmentThreadItem(sentence)
         ?? extractPromiseThreadItem(sentence)
         ?? extractTravelThreadItem(sentence)
         ?? extractObstacleThreadItem(sentence);
+}
+
+function sentenceCouldInferLinkedSubgoal(sentence: string, previousThread: string): boolean {
+    return !isGenericThreadCandidate(previousThread)
+        && !isNoThreadValue(previousThread)
+        && extractThreadContactName(sentence) != null
+        && referencedThreadTarget(previousThread, sentence) != null;
+}
+
+function extractLinkedSubgoalThreadItem(sentence: string, previousThread: string): string | null {
+    const contactName = extractThreadContactName(sentence);
+    const target = referencedThreadTarget(previousThread, sentence);
+
+    if (contactName == null || target == null) {
+        return null;
+    }
+
+    const status = linkedSubgoalIsOngoing(sentence) ? "Ongoing" : "Pending";
+
+    if (sameText(contactName, target)) {
+        return `Meet ${contactName} (${status})`;
+    }
+
+    return `Meet ${contactName} to ${linkedSubgoalPurpose(sentence, target)} (${status})`;
+}
+
+function extractThreadContactName(sentence: string): string | null {
+    const patterns = [
+        /\b(?:meet|visit|see|find)\s+(?:with\s+)?([A-Z][A-Za-z'._-]{1,40})\b/,
+        /\b(?:speak|talk)\s+(?:with|to)\s+([A-Z][A-Za-z'._-]{1,40})\b/,
+        /\bask\s+([A-Z][A-Za-z'._-]{1,40})\b/,
+    ];
+
+    for (const pattern of patterns) {
+        const match = sentence.match(pattern);
+        if (match != null && !isCommonNarrativeSubject(match[1])) {
+            return cleanFragment(match[1]);
+        }
+    }
+
+    return null;
+}
+
+function referencedThreadTarget(previousThread: string, sentence: string): string | null {
+    const previousTokens = meaningfulTokens(previousThread);
+    const words = sentence.match(/[A-Za-z][A-Za-z'_-]{2,}/g) ?? [];
+
+    for (const word of words) {
+        const token = word.toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+        if (previousTokens.has(token) && !THREAD_SUBGOAL_TARGET_STOP_WORDS.has(token)) {
+            return cleanFragment(word);
+        }
+    }
+
+    return null;
+}
+
+function linkedSubgoalPurpose(sentence: string, target: string): string {
+    const targetPattern = escapeRegExp(target);
+
+    if (new RegExp(`\\bask\\b[^.!?;]{0,80}\\babout\\s+${targetPattern}\\b`, "i").test(sentence)) {
+        return `ask about ${target}`;
+    }
+
+    if (
+        new RegExp(`\\b(?:where|whereabouts|location)\\b[^.!?;]{0,80}\\b${targetPattern}\\b`, "i").test(sentence)
+        || new RegExp(`\\b${targetPattern}\\b[^.!?;]{0,80}\\b(?:where|whereabouts|location)\\b`, "i").test(sentence)
+    ) {
+        return `learn ${target}'s whereabouts`;
+    }
+
+    if (
+        new RegExp(`\\b(?:information|info|intel|lead|clue|clues)\\b[^.!?;]{0,80}\\b${targetPattern}\\b`, "i").test(sentence)
+        || new RegExp(`\\b${targetPattern}\\b[^.!?;]{0,80}\\b(?:information|info|intel|lead|clue|clues)\\b`, "i").test(sentence)
+    ) {
+        return `get ${target} information`;
+    }
+
+    return `ask about ${target}`;
+}
+
+function linkedSubgoalIsOngoing(sentence: string): boolean {
+    return containsAnyCue(sentence, [
+        "started",
+        "start to",
+        "starts to",
+        "stand up",
+        "stood up",
+        "go meet",
+        "go visit",
+        "go ask",
+        "we'll go",
+        "we will go",
+        "lead the way",
+        "head to",
+        "heading to",
+        "set out",
+        "sets out",
+        "move to",
+        "moving to",
+    ]);
 }
 
 function extractMissionThreadItem(sentence: string): string | null {
@@ -1530,7 +1671,7 @@ function threadItemsOverlap(left: string, right: string): boolean {
     }
 
     const sharedTokens = [...leftTokens].filter((token) => rightTokens.has(token));
-    return sharedTokens.length >= 2 || sharedTokens.some((token) => token.length >= 4);
+    return sharedTokens.length >= 2;
 }
 
 function threadShouldUseNarrativeInference(candidate: string, previousThread: string, inferredThread: string): boolean {
@@ -1544,7 +1685,9 @@ function threadShouldUseNarrativeInference(candidate: string, previousThread: st
 function mergeThreadInference(baseThread: string, inferredThread: string): string {
     const baseItems = isGenericThreadCandidate(baseThread) || isNoThreadValue(baseThread) ? [] : splitThreadItems(baseThread);
     const inferredItems = splitThreadItems(inferredThread);
-    const merged = [...baseItems];
+    const merged = inferredItems.length > 0
+        ? baseItems.map(markThreadParentPendingForSubgoal)
+        : [...baseItems];
 
     for (const item of inferredItems) {
         if (merged.some((existing) => threadItemsOverlap(existing, item))) {
@@ -1560,6 +1703,20 @@ function mergeThreadInference(baseThread: string, inferredThread: string): strin
 
     const thread = normalizeThreadValue(merged.slice(0, 2).join(" ; "));
     return thread.length > 0 ? thread : inferredThread;
+}
+
+function markThreadParentPendingForSubgoal(item: string): string {
+    const clean = cleanFragment(item);
+
+    if (/\(\s*today\s*\)$/i.test(clean)) {
+        return clean.replace(/\(\s*today\s*\)$/i, "(Pending)");
+    }
+
+    if (/\([^)]+\)$/.test(clean)) {
+        return clean;
+    }
+
+    return `${clean} (Pending)`;
 }
 
 function splitThreadItems(value: string): string[] {

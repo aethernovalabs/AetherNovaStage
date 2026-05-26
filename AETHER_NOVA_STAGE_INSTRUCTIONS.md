@@ -213,6 +213,7 @@ Jika AI mengganti thread secara tiba-tiba tanpa dukungan narasi, stage mempertah
 Perubahan thread lebih mungkin diterima jika ada overlap kata penting atau narasi mengandung cue transisi seperti arrival, travel, resolved, mission, quest, objective, atau time skip.
 Jika header `Thread` kosong, `None`, placeholder, atau masih mengulang thread lama, stage boleh membaca narasi terbaru untuk menangkap thread penting yang eksplisit seperti mission, quest, objective, task, appointment, promise, hunt/quest, deadline, order, contract, travel goal, major obstacle, atau major unresolved conflict.
 Deteksi dari narasi harus konservatif: stage hanya mengambil frasa yang benar-benar tertulis di narasi, memberi status sederhana seperti `(Ongoing)` atau `(Pending)`, dan tidak membuat tujuan baru secara kreatif.
+Stage juga boleh membuat sub-goal yang terhubung dengan thread lama jika konteks terbaru menyebut rencana jelas untuk bertemu/berbicara/bertanya kepada NPC tertentu tentang target yang sudah ada di thread lama, misalnya `meet Kaelen first to ask her about Debi`. Dalam kasus seperti ini, misi utama boleh ditandai `(Pending)` dan sub-goal baru ditandai `(Ongoing)` jika user sudah mulai bergerak atau menyuruh NPC memimpin jalan.
 Stage menghapus item thread yang completed, failed, abandoned, expired, irrelevant, atau minor seperti normal topic, casual question, temporary mood, small suspicion, minor jealousy, dan small talk.
 
 ### Wallet
@@ -360,6 +361,7 @@ Penyesuaian yang sudah diterapkan:
 12. Formatter narasi ringan ditambahkan untuk italic narrative paragraphs, dialog speaker lines, inline emphasis menjadi single quote, dan action beat single-quoted di dalam dialog menjadi italic.
 13. NPC clothing adjustment ditambahkan agar pakaian lama seperti slipped under-robe tidak dipertahankan saat narasi terbaru merapikan/menambahkan layered garment baru seperti over-robe.
 14. Thread inference dari narasi ditambahkan agar mission/quest/contract/promise/appointment/travel goal/major obstacle yang eksplisit tetap masuk ke line `Thread` saat header kosong, `None`, placeholder, atau stale.
+15. Thread linked sub-goal ditambahkan agar rencana seperti `meet Kaelen to ask about Debi` bisa ditambahkan dari konteks user/narasi tanpa mengganti misi utama.
 
 Jika prompt header asli nanti diubah lagi:
 
