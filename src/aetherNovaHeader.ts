@@ -434,7 +434,7 @@ const WALLET_AMOUNT_PATTERN = /\b\d+\s*(?:g|gold|s|silver|c|copper)\b/i;
 const VAGUE_STATUS_PATTERN = /\b(mood|emotion|feeling|feelings|thought|thoughts|status|role|happy|sad|angry|calm|nervous|worried|confused|curious|suspicious|jealous|afraid|scared|determined|focused)\b/i;
 const USER_FORBIDDEN_DETAIL_PATTERN = /\b(thinking|thinks|feeling|feels|expression|expressions|smiling|smiles|frowning|grinning|says|said|speaks|asks|answers|chooses|choosing|choice|decides|attacks|attack|transforms|transforming|consents|consent|refuses|dialogue)\b/i;
 const MINOR_THREAD_PATTERN = /\b(normal topic|normal topics|casual question|casual questions|temporary mood|small suspicion|minor jealousy|minor tension|small talk)\b/i;
-const TRANSIENT_YOU_DETAIL_PATTERN = /\b(holding|gripping|grasping|clutching|touching|resting|leaning|pressing|bracing|supporting|pushing|pulling|tugging|cleaning|wiping|washing|brushing|drying|patting|hand on|hands on|arm around|arms around|head on|against|upon|on top of)\b/i;
+const TRANSIENT_YOU_DETAIL_PATTERN = /\b(holding|gripping|grasping|clutching|touching|stroking|caressing|petting|rubbing|resting|leaning|pressing|bracing|supporting|pushing|pulling|tugging|drawing|lifting|lowering|cleaning|wiping|washing|brushing|drying|patting|hand on|hands on|arm around|arms around|head on|against|upon|on top of)\b/i;
 
 const DETAIL_BODY_PART_CUES = [
     "hand",
@@ -467,6 +467,18 @@ const DETAIL_CONTACT_ACTION_CUES = [
     "grasping",
     "clutching",
     "touching",
+    "stroke",
+    "strokes",
+    "stroking",
+    "caress",
+    "caresses",
+    "caressing",
+    "pet",
+    "pets",
+    "petting",
+    "rub",
+    "rubs",
+    "rubbing",
     "clean",
     "cleans",
     "cleaning",
@@ -490,6 +502,21 @@ const DETAIL_CONTACT_ACTION_CUES = [
     "pressing",
     "bracing",
     "supporting",
+    "pull",
+    "pulls",
+    "pulling",
+    "tug",
+    "tugs",
+    "tugging",
+    "draw",
+    "draws",
+    "drawing",
+    "lift",
+    "lifts",
+    "lifting",
+    "lower",
+    "lowers",
+    "lowering",
     "against",
     "upon",
     "hand remains",
@@ -526,6 +553,57 @@ const DETAIL_VISIBLE_INTERACTION_CUES = [
     "touch",
     "touches",
     "touching",
+    "stroke",
+    "strokes",
+    "stroking",
+    "caress",
+    "caresses",
+    "caressing",
+    "pet",
+    "pets",
+    "petting",
+    "rub",
+    "rubs",
+    "rubbing",
+    "pull",
+    "pulls",
+    "pulling",
+    "tug",
+    "tugs",
+    "tugging",
+    "draw",
+    "draws",
+    "drawing",
+    "lift",
+    "lifts",
+    "lifting",
+    "lower",
+    "lowers",
+    "lowering",
+];
+
+const DETAIL_OBJECT_INTERACTION_CUES = [
+    "cup",
+    "mug",
+    "glass",
+    "bottle",
+    "blanket",
+    "sheet",
+    "cloth",
+    "towel",
+    "curtain",
+    "door",
+    "handle",
+    "rope",
+    "weapon",
+    "sword",
+    "knife",
+    "staff",
+    "book",
+    "bag",
+    "pouch",
+    "chair",
+    "table",
 ];
 
 const THREAD_STOP_WORDS = new Set([
@@ -1233,7 +1311,11 @@ function normalizeStatus(
     const clothing = statusChangeIsSupported(rawClothing, fallbackClothing, context, "clothing", kind) ? rawClothing : fallbackClothing;
     const fallbackDetail = normalizeDetail(fallbackParts[2] ?? defaultParts[2], defaultParts[2], kind);
     const rawDetail = normalizeDetail(rawParts[2] ?? fallbackDetail, fallbackDetail, kind);
-    let detail = kind === "you" && !youDetailChangeIsSupported(rawDetail, fallbackDetail, context) ? fallbackDetail : rawDetail;
+    let detail = rawDetail;
+
+    if (kind === "you" && !youDetailChangeIsSupported(rawDetail, fallbackDetail, context)) {
+        detail = staleYouDetailCanYieldToCandidate(rawDetail, fallbackDetail, context) ? rawDetail : fallbackDetail;
+    }
 
     if (
         kind === "you"
@@ -1853,10 +1935,24 @@ function visibleYouInteractionDetailIsSupported(candidate: string, context: stri
 
     const candidateHasBodyTarget = containsAnyCue(lowerCandidate, DETAIL_BODY_PART_CUES);
     const contextHasBodyTarget = containsAnyCue(lowerContext, DETAIL_BODY_PART_CUES);
+    const candidateHasObjectTarget = containsAnyCue(lowerCandidate, DETAIL_OBJECT_INTERACTION_CUES);
+    const contextHasObjectTarget = containsAnyCue(lowerContext, DETAIL_OBJECT_INTERACTION_CUES);
     const candidateWords = meaningfulDetailWords(candidate);
     const mentionsSameTarget = candidateWords.some((word) => containsAnyCue(lowerContext, [word]));
 
-    return (candidateHasBodyTarget && contextHasBodyTarget) || mentionsSameTarget;
+    return (candidateHasBodyTarget && contextHasBodyTarget)
+        || (candidateHasObjectTarget && contextHasObjectTarget)
+        || mentionsSameTarget;
+}
+
+function staleYouDetailCanYieldToCandidate(candidate: string, previous: string, context: string): boolean {
+    if (!isTransientYouDetail(previous) || youDetailHasCurrentEvidence(previous, context)) {
+        return false;
+    }
+
+    return isGenericStatusPart(candidate)
+        || visibleYouInteractionDetailIsSupported(candidate, context)
+        || meaningfulDetailWords(candidate).some((word) => containsAnyCue(context, [word]));
 }
 
 function staleYouDetailShouldReset(
