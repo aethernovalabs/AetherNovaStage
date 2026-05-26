@@ -179,6 +179,7 @@ Clothing slot boleh berisi kondisi pakaian yang relevan, seperti naked, fully na
 Perubahan posisi didukung oleh cue seperti walk/stop/arrive/sit/stand/reach/collapse, dan juga bisa diterima saat location sudah terbukti berpindah scene.
 Position slot boleh mencantumkan scene blocking dengan nama NPC atau `{{user}}`, arah, dan jarak, seperti `Standing left of Yume`, `Sitting to the right of {{user}}`, `Standing six steps before {{user}}`, atau `Standing beside Yume near the door`.
 Body detail yang bersifat kontak sementara, seperti hand resting on a tail, holding, touching, leaning, atau pressing against something, tidak dipertahankan saat posisi atau scene berubah kecuali narasi terbaru masih memberi evidence kontak itu.
+Body detail juga boleh mencatat interaksi tangan yang terlihat dan sementara, seperti `hand cleaning Yume's face`, `wiping Yume's cheek`, atau `brushing hair aside`, selama narasi terbaru memang menyebut aksi visible itu.
 Jika format `You` kacau, stage mengambil bagian yang hilang dari state sebelumnya.
 
 ### NPC

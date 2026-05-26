@@ -434,7 +434,7 @@ const WALLET_AMOUNT_PATTERN = /\b\d+\s*(?:g|gold|s|silver|c|copper)\b/i;
 const VAGUE_STATUS_PATTERN = /\b(mood|emotion|feeling|feelings|thought|thoughts|status|role|happy|sad|angry|calm|nervous|worried|confused|curious|suspicious|jealous|afraid|scared|determined|focused)\b/i;
 const USER_FORBIDDEN_DETAIL_PATTERN = /\b(thinking|thinks|feeling|feels|expression|expressions|smiling|smiles|frowning|grinning|says|said|speaks|asks|answers|chooses|choosing|choice|decides|attacks|attack|transforms|transforming|consents|consent|refuses|dialogue)\b/i;
 const MINOR_THREAD_PATTERN = /\b(normal topic|normal topics|casual question|casual questions|temporary mood|small suspicion|minor jealousy|minor tension|small talk)\b/i;
-const TRANSIENT_YOU_DETAIL_PATTERN = /\b(holding|gripping|grasping|clutching|touching|resting|leaning|pressing|bracing|supporting|pushing|pulling|tugging|hand on|hands on|arm around|arms around|head on|against|upon|on top of)\b/i;
+const TRANSIENT_YOU_DETAIL_PATTERN = /\b(holding|gripping|grasping|clutching|touching|resting|leaning|pressing|bracing|supporting|pushing|pulling|tugging|cleaning|wiping|washing|brushing|drying|patting|hand on|hands on|arm around|arms around|head on|against|upon|on top of)\b/i;
 
 const DETAIL_BODY_PART_CUES = [
     "hand",
@@ -448,6 +448,14 @@ const DETAIL_BODY_PART_CUES = [
     "elbow",
     "elbows",
     "head",
+    "face",
+    "cheek",
+    "cheeks",
+    "forehead",
+    "chin",
+    "mouth",
+    "nose",
+    "hair",
     "shoulder",
     "shoulders",
     "back",
@@ -459,6 +467,24 @@ const DETAIL_CONTACT_ACTION_CUES = [
     "grasping",
     "clutching",
     "touching",
+    "clean",
+    "cleans",
+    "cleaning",
+    "wipe",
+    "wipes",
+    "wiping",
+    "wash",
+    "washes",
+    "washing",
+    "brush",
+    "brushes",
+    "brushing",
+    "dry",
+    "dries",
+    "drying",
+    "pat",
+    "pats",
+    "patting",
     "resting",
     "leaning",
     "pressing",
@@ -476,6 +502,30 @@ const DETAIL_CONTACT_ACTION_CUES = [
     "keeps your hand",
     "keeps one hand",
     "keeps a hand",
+];
+
+const DETAIL_VISIBLE_INTERACTION_CUES = [
+    "clean",
+    "cleans",
+    "cleaning",
+    "wipe",
+    "wipes",
+    "wiping",
+    "wash",
+    "washes",
+    "washing",
+    "brush",
+    "brushes",
+    "brushing",
+    "dry",
+    "dries",
+    "drying",
+    "pat",
+    "pats",
+    "patting",
+    "touch",
+    "touches",
+    "touching",
 ];
 
 const THREAD_STOP_WORDS = new Set([
@@ -1302,7 +1352,7 @@ function normalizeDetail(value: string, fallback: string, kind: "you" | "npc"): 
     if (kind === "you") {
         clean = stripDramaticLanguage(clean);
         clean = clean.split(/[,.]/)[0].trim();
-        clean = limitWords(clean, 8);
+        clean = limitWords(clean, 12);
     } else {
         clean = limitWords(clean, 24);
     }
@@ -1784,7 +1834,29 @@ function youDetailChangeIsSupported(candidate: string, previous: string, context
         return true;
     }
 
+    if (visibleYouInteractionDetailIsSupported(candidate, context)) {
+        return true;
+    }
+
     return meaningfulDetailWords(candidate).some((word) => lowerContext.includes(word));
+}
+
+function visibleYouInteractionDetailIsSupported(candidate: string, context: string): boolean {
+    const lowerCandidate = candidate.toLowerCase();
+    const lowerContext = context.toLowerCase();
+    const candidateHasAction = containsAnyCue(lowerCandidate, DETAIL_VISIBLE_INTERACTION_CUES);
+    const contextHasAction = containsAnyCue(lowerContext, DETAIL_VISIBLE_INTERACTION_CUES);
+
+    if (!candidateHasAction || !contextHasAction) {
+        return false;
+    }
+
+    const candidateHasBodyTarget = containsAnyCue(lowerCandidate, DETAIL_BODY_PART_CUES);
+    const contextHasBodyTarget = containsAnyCue(lowerContext, DETAIL_BODY_PART_CUES);
+    const candidateWords = meaningfulDetailWords(candidate);
+    const mentionsSameTarget = candidateWords.some((word) => containsAnyCue(lowerContext, [word]));
+
+    return (candidateHasBodyTarget && contextHasBodyTarget) || mentionsSameTarget;
 }
 
 function staleYouDetailShouldReset(
