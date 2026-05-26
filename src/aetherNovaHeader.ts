@@ -10,6 +10,7 @@ export interface AetherNovaMessageState {
     npc: string;
     thread: string;
     wallet: string;
+    walletInitialized: boolean;
 }
 
 interface ExtractedHeader {
@@ -42,6 +43,11 @@ interface WalletAmounts {
     copper: number;
 }
 
+interface NormalizedWallet {
+    value: string;
+    initialized: boolean;
+}
+
 interface NormalizeStatusOptions {
     sceneChanged?: boolean;
 }
@@ -58,6 +64,7 @@ const DEFAULT_STATE: AetherNovaMessageState = {
     npc: "None",
     thread: "None",
     wallet: "0G ; 0S ; 0C",
+    walletInitialized: false,
 };
 
 const RACE_KEYWORDS = [
@@ -516,6 +523,7 @@ export function coerceHeaderState(
     const raw = incomingState as Partial<AetherNovaMessageState> & {time?: string};
     const rawTime = typeof raw.time === "string" ? raw.time : "";
     const clock = normalizeClock(raw.clock ?? rawTime, fallback.clock);
+    const walletState = coerceWalletState(raw, fallback);
 
     return {
         location: normalizeLocation(raw.location ?? "", fallback.location),
@@ -524,7 +532,8 @@ export function coerceHeaderState(
         you: normalizeYouLine(raw.you ?? "", fallback.you),
         npc: normalizeNpcLine(raw.npc ?? "", fallback.npc),
         thread: normalizeThreadLine(raw.thread ?? "", fallback.thread, ""),
-        wallet: normalizeWalletLine(raw.wallet ?? "", fallback.wallet, ""),
+        wallet: walletState.value,
+        walletInitialized: walletState.initialized,
     };
 }
 
@@ -550,6 +559,12 @@ export function normalizeAetherNovaResponse(
     const correctionContext = `${context}\n${extracted.narrative}`;
     const timeLocation = normalizeLocationTimeLine(extracted.locationLine, previousState, correctionContext);
     const sceneChanged = !sameText(timeLocation.location, previousState.location);
+    const wallet = normalizeWalletLine(
+        extracted.walletLine ?? "",
+        previousState.wallet,
+        correctionContext,
+        previousState.walletInitialized === true,
+    );
     const state: AetherNovaMessageState = {
         location: timeLocation.location,
         timeOfDay: timeLocation.timeOfDay,
@@ -557,7 +572,8 @@ export function normalizeAetherNovaResponse(
         you: normalizeYouLine(extracted.youLine ?? "", previousState.you, correctionContext, {sceneChanged}),
         npc: normalizeNpcLine(extracted.npcLine ?? "", previousState.npc, correctionContext, {sceneChanged}),
         thread: normalizeThreadLine(extracted.threadLine ?? "", previousState.thread, correctionContext),
-        wallet: normalizeWalletLine(extracted.walletLine ?? "", previousState.wallet, correctionContext),
+        wallet: wallet.value,
+        walletInitialized: wallet.initialized,
     };
 
     return {
@@ -930,20 +946,62 @@ function normalizeThreadLine(rawLine: string, previousThread: string, narrative:
     return candidate;
 }
 
-function normalizeWalletLine(rawLine: string, previousWallet: string, context: string): string {
+function coerceWalletState(
+    raw: Partial<AetherNovaMessageState>,
+    fallback: AetherNovaMessageState,
+): NormalizedWallet {
+    const rawWallet = typeof raw.wallet === "string" ? normalizeWalletValue(raw.wallet) : null;
+    const fallbackWallet = normalizeWalletValue(fallback.wallet) ?? DEFAULT_STATE.wallet;
+    const explicitInitialized = typeof raw.walletInitialized === "boolean" ? raw.walletInitialized : null;
+
+    if (rawWallet != null) {
+        return {
+            value: rawWallet,
+            initialized: explicitInitialized ?? true,
+        };
+    }
+
+    return {
+        value: fallbackWallet,
+        initialized: explicitInitialized ?? fallback.walletInitialized,
+    };
+}
+
+function normalizeWalletLine(
+    rawLine: string,
+    previousWallet: string,
+    context: string,
+    previousInitialized: boolean,
+): NormalizedWallet {
     const previous = normalizeWalletValue(previousWallet) ?? DEFAULT_STATE.wallet;
     const rawCandidate = cleanLabeledValue(rawLine, "Wallet");
     const candidate = normalizeWalletValue(rawCandidate);
 
     if (candidate == null) {
-        return previous;
+        return {
+            value: previous,
+            initialized: previousInitialized,
+        };
+    }
+
+    if (!previousInitialized) {
+        return {
+            value: candidate,
+            initialized: true,
+        };
     }
 
     if (sameText(candidate, previous)) {
-        return previous;
+        return {
+            value: previous,
+            initialized: true,
+        };
     }
 
-    return walletChangeIsSupported(candidate, previous, context) ? candidate : previous;
+    return {
+        value: walletChangeIsSupported(candidate, previous, context) ? candidate : previous,
+        initialized: true,
+    };
 }
 
 function normalizeWalletValue(value: string): string | null {

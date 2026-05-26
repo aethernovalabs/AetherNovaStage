@@ -63,6 +63,8 @@ state_schema:
         type: string
       wallet:
         type: string
+      walletInitialized:
+        type: boolean
   chat:
     type: object
     properties: {}

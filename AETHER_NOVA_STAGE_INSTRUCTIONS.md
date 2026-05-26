@@ -78,9 +78,11 @@ State message-level menyimpan header terakhir:
   npc: string;
   thread: string;
   wallet: string;
+  walletInitialized: boolean;
 }
 ```
 
+`walletInitialized` adalah flag internal stage untuk membedakan wallet yang benar-benar sudah tersimpan dari fallback kosong `0G ; 0S ; 0C`.
 State ini dipakai ulang saat AI lupa menulis header, menulis field kosong, atau menulis field yang tidak bisa dipercaya.
 
 ## Cara Kerja
@@ -214,6 +216,7 @@ Format target:
 Stage menormalisasi format menjadi `XG ; XS ; XC`.
 Wallet memakai state lama kecuali narasi terbaru memuat evidence ekonomi yang jelas seperti payment, buy, cost, fee, reward, earn, loot, bounty, gift, refund, lost, stolen, robbed, atau confiscated.
 Jika AI mengubah angka wallet tanpa transaksi/reward/loss yang dijelaskan dalam cerita, stage mengembalikan wallet ke state sebelumnya.
+Jika belum ada wallet yang pernah tersimpan, wallet valid pertama dari header dipakai sebagai nilai awal, termasuk first message atau alternate first message; stage tidak memaksa angka awal menjadi `0G ; 0S ; 0C`.
 Stage tidak mengizinkan NPC atau narasi membaca wallet sebagai info in-character kecuali uang itu memang diketahui lewat cerita.
 
 ## Batas Stage
@@ -321,6 +324,7 @@ Penyesuaian yang sudah diterapkan:
 8. Multi-NPC dicocokkan berdasarkan nama agar NPC baru tidak mewarisi pakaian/status NPC lama hanya karena urutan header.
 9. Header yang terpisah blank line tetap dideteksi sebagai satu header agar tidak muncul double header.
 10. `Wallet` ditambahkan sebagai line header dan state; perubahan angka wallet ditolak kecuali narasi memuat evidence transaksi/reward/loss.
+11. `walletInitialized` ditambahkan agar wallet awal dari first message/alternate first message bisa diterima tanpa dipaksa menjadi default `0G ; 0S ; 0C`.
 
 Jika prompt header asli nanti diubah lagi:
 
