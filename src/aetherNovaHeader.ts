@@ -60,7 +60,7 @@ const DEFAULT_STATE: AetherNovaMessageState = {
     location: "Unknown Region - Current Place - Active Area",
     timeOfDay: "Morning",
     clock: "09:00",
-    you: "Unknown - Human (Standing in scene; Regular clothing; hands visible)",
+    you: "Unknown - Human (Standing; Regular clothing; hands visible)",
     npc: "None",
     thread: "None",
     wallet: "0G ; 0S ; 0C",
@@ -1294,7 +1294,7 @@ function normalizeStatus(
     context: string = "",
     options: NormalizeStatusOptions = {},
 ): string {
-    const defaultStatus = kind === "you" ? DEFAULT_STATE.you.match(/\((.*)\)$/)?.[1] ?? "Standing in scene; Regular clothing; hands visible" : defaultNpcStatusForRace(race);
+    const defaultStatus = kind === "you" ? DEFAULT_STATE.you.match(/\((.*)\)$/)?.[1] ?? "Standing; Regular clothing; hands visible" : defaultNpcStatusForRace(race);
     const fallbackParts = statusParts(fallbackStatus || defaultStatus, kind);
     const defaultParts = statusParts(defaultStatus, kind);
     const rawParts = statusParts(rawStatus, kind);
@@ -1392,9 +1392,10 @@ function normalizeIdentityPart(value: string, fallback: string): string {
 }
 
 function normalizePosition(value: string, fallback: string, kind: "you" | "npc"): string {
-    const defaultFallback = kind === "you" ? "Standing in scene" : "Standing nearby";
+    const defaultFallback = kind === "you" ? "Standing" : "Standing nearby";
     const safeFallback = safeStatusFallback(fallback, defaultFallback, kind);
     let clean = cleanFragment(value) || safeFallback;
+    clean = stripGenericScenePosition(clean);
 
     if (kind === "you") {
         clean = stripDramaticLanguage(clean);
@@ -1411,6 +1412,16 @@ function normalizePosition(value: string, fallback: string, kind: "you" | "npc")
     }
 
     return cleanFragment(clean) || safeFallback;
+}
+
+function stripGenericScenePosition(value: string): string {
+    const clean = cleanFragment(value)
+        .replace(/\b(?:in|within|inside)\s+(?:the\s+)?(?:current\s+)?scene\b/gi, "")
+        .replace(/\bscene\b/gi, "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    return cleanFragment(clean);
 }
 
 function normalizeClothing(value: string, fallback: string): string {
@@ -2103,7 +2114,8 @@ function escapeRegExp(value: string): string {
 
 function isGenericStatusPart(value: string): boolean {
     const lower = cleanFragment(value).toLowerCase();
-    return lower === "standing in scene"
+    return lower === "standing"
+        || lower === "standing in scene"
         || lower === "standing nearby"
         || lower === "regular clothing"
         || lower === "hands visible"
