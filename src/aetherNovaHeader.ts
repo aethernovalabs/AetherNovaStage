@@ -174,14 +174,19 @@ const POSITION_CHANGE_CUES = [
     "walk",
     "walks",
     "walked",
+    "walking",
     "stand",
     "stands",
     "stood",
+    "standing",
     "sit",
     "sits",
     "sat",
+    "sitting",
+    "seated",
     "kneel",
     "kneels",
+    "kneeling",
     "lean",
     "leans",
     "turn",
@@ -212,6 +217,63 @@ const POSITION_CHANGE_CUES = [
     "reaches",
     "reached",
     "destination",
+    "left of",
+    "right of",
+    "left side",
+    "right side",
+    "next to",
+    "in front of",
+    "across from",
+    "facing",
+    "steps away",
+    "steps before",
+    "paces away",
+    "paces before",
+    "berdiri",
+    "duduk",
+    "berlutut",
+    "sebelah kiri",
+    "sebelah kanan",
+    "di kiri",
+    "di kanan",
+    "di samping",
+    "di hadapan",
+    "di depan",
+    "di belakang",
+    "langkah",
+];
+
+const POSITION_SPATIAL_CUES = [
+    "left of",
+    "right of",
+    "left side",
+    "right side",
+    "beside",
+    "next to",
+    "near",
+    "before",
+    "behind",
+    "in front of",
+    "across from",
+    "facing",
+    "toward",
+    "towards",
+    "ahead",
+    "opposite",
+    "between",
+    "steps",
+    "paces",
+    "arm's length",
+    "sebelah kiri",
+    "sebelah kanan",
+    "di kiri",
+    "di kanan",
+    "di samping",
+    "di hadapan",
+    "di depan",
+    "di belakang",
+    "menghadap",
+    "langkah",
 ];
 
 const CLOTHING_CHANGE_CUES = [
@@ -1198,12 +1260,12 @@ function normalizePosition(value: string, fallback: string, kind: "you" | "npc")
 
     if (kind === "you") {
         clean = stripDramaticLanguage(clean);
-        clean = clean.replace(/\b(with|bearing|radiating|showing)\b.*$/i, "").trim();
-        clean = clean.split(/[,.]/)[0].trim();
-        clean = limitWords(clean, 8);
+        clean = clean.replace(/\b(bearing|radiating|showing)\b.*$/i, "").trim();
+        clean = clean.split(/[.]/)[0].trim();
+        clean = limitWords(clean, 14);
     } else {
-        clean = clean.split(/[,.]/)[0].trim();
-        clean = limitWords(clean, 12);
+        clean = clean.split(/[.]/)[0].trim();
+        clean = limitWords(clean, 16);
     }
 
     if (isInvalidStatusPart(clean, kind)) {
@@ -1464,6 +1526,10 @@ function statusChangeIsSupported(
         return false;
     }
 
+    if (field === "position" && spatialPositionChangeIsSupported(candidate, context)) {
+        return true;
+    }
+
     if (kind === "you" && field === "position") {
         return youPositionChangeIsSupported(candidate, previous, context);
     }
@@ -1480,6 +1546,10 @@ function statusChangeIsSupported(
 function youPositionChangeIsSupported(candidate: string, previous: string, context: string): boolean {
     const lowerCandidate = candidate.toLowerCase();
     const lowerContext = context.toLowerCase();
+
+    if (spatialPositionChangeIsSupported(candidate, context)) {
+        return true;
+    }
 
     if (positionMeansWalking(lowerCandidate)) {
         return containsAnyCue(lowerContext, ["walk", "walks", "walking", "move", "moves", "moving", "step", "steps", "stepping", "approach", "approaches", "continue", "continues"]);
@@ -1499,6 +1569,22 @@ function youPositionChangeIsSupported(candidate: string, previous: string, conte
 
     return containsAnyCue(lowerContext, POSITION_CHANGE_CUES)
         && meaningfulPositionWords(candidate).some((word) => lowerContext.includes(word));
+}
+
+function spatialPositionChangeIsSupported(candidate: string, context: string): boolean {
+    const lowerCandidate = candidate.toLowerCase();
+    const lowerContext = context.toLowerCase();
+
+    if (!containsAnyCue(lowerCandidate, POSITION_SPATIAL_CUES)) {
+        return false;
+    }
+
+    const words = meaningfulPositionWords(candidate);
+    const mentionsAnchor = words.some((word) => containsAnyCue(lowerContext, [word]));
+    const mentionsSpatialRelation = containsAnyCue(lowerContext, POSITION_SPATIAL_CUES)
+        || containsAnyCue(lowerContext, POSITION_CHANGE_CUES);
+
+    return mentionsAnchor && mentionsSpatialRelation;
 }
 
 function youClothingChangeIsSupported(candidate: string, previous: string, context: string): boolean {
