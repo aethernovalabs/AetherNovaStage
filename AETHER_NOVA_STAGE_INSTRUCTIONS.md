@@ -246,6 +246,7 @@ Yume: "Dialogue text."
 ```
 
 Inline emphasis kecil di dalam narasi/dialog seperti `*want*` diganti menjadi `'want'` agar tidak bertabrakan dengan wrapper narasi.
+Jika baris dialog mencampur dialog dan action beat dalam single quote, stage mengubah action beat itu menjadi italic tanpa memecah dialog, misalnya `Yume: "Good." 'Her lips curve.' "And..."` menjadi `Yume: "Good." *Her lips curve.* "And..."`.
 Stage tidak mengubah isi kalimat, pilihan kata, atau urutan narasi/dialog.
 
 ## Batas Stage
@@ -354,7 +355,7 @@ Penyesuaian yang sudah diterapkan:
 9. Header yang terpisah blank line tetap dideteksi sebagai satu header agar tidak muncul double header.
 10. `Wallet` ditambahkan sebagai line header dan state; perubahan angka wallet ditolak kecuali narasi memuat evidence transaksi/reward/loss.
 11. `walletInitialized` ditambahkan agar wallet awal dari first message/alternate first message bisa diterima tanpa dipaksa menjadi default `0G ; 0S ; 0C`.
-12. Formatter narasi ringan ditambahkan untuk italic narrative paragraphs, dialog speaker lines, dan inline emphasis menjadi single quote.
+12. Formatter narasi ringan ditambahkan untuk italic narrative paragraphs, dialog speaker lines, inline emphasis menjadi single quote, dan action beat single-quoted di dalam dialog menjadi italic.
 13. NPC clothing adjustment ditambahkan agar pakaian lama seperti slipped under-robe tidak dipertahankan saat narasi terbaru merapikan/menambahkan layered garment baru seperti over-robe.
 
 Jika prompt header asli nanti diubah lagi:

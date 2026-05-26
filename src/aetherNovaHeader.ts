@@ -2410,7 +2410,7 @@ function parseDialogueLine(line: string): {speaker: string; text: string; bold: 
 }
 
 function normalizeDialogueText(value: string): string {
-    const clean = replaceInlineEmphasis(stripOuterSingleItalic(value.trim()));
+    const clean = formatInlineNarrationInDialogue(replaceInlineEmphasis(stripOuterSingleItalic(value.trim())));
 
     if (clean.length === 0) {
         return "";
@@ -2421,6 +2421,33 @@ function normalizeDialogueText(value: string): string {
     }
 
     return `"${clean}"`;
+}
+
+function formatInlineNarrationInDialogue(value: string): string {
+    return value.replace(/(^|[\s([{])'([^'\n]{2,180})'(?=$|[\s).,!?:;\]}])/g, (match, prefix: string, inner: string) => {
+        const clean = inner.trim();
+        return looksLikeInlineNarrationBeat(clean) ? `${prefix}*${clean}*` : match;
+    });
+}
+
+function looksLikeInlineNarrationBeat(value: string): boolean {
+    const clean = cleanFragment(value);
+    const words = clean.split(/\s+/).filter(Boolean);
+
+    if (words.length < 2) {
+        return false;
+    }
+
+    return inlineNarrationStartsLikeBeat(clean) || inlineNarrationHasBeatAction(clean);
+}
+
+function inlineNarrationStartsLikeBeat(value: string): boolean {
+    return /^(?:he|she|they|it|his|her|their|the|yume)\b/i.test(value)
+        || /^[A-Z][A-Za-z'._-]*\b/.test(value);
+}
+
+function inlineNarrationHasBeatAction(value: string): boolean {
+    return /\b(?:lip|lips|mouth|smile|smiles|smiled|grin|grins|grinned|eye|eyes|gaze|tail|tails|ear|ears|hand|hands|finger|fingers|arm|arms|shoulder|shoulders|head|face|cheek|cheeks|nod|nods|nodded|tilt|tilts|tilted|curve|curves|curved|glance|glances|glanced|look|looks|looked|turn|turns|turned|step|steps|stepped|breath|breathes|breathed|sigh|sighs|sighed|voice|posture)\b/i.test(value);
 }
 
 function isQuotedDialogueText(value: string): boolean {
