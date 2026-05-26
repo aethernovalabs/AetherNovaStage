@@ -130,6 +130,7 @@ Setelah AI membalas, stage:
 Narasi setelah header tetap dipertahankan.
 Jika AI menulis teks sebelum header, teks itu dipindahkan ke bawah header normal agar tidak menghasilkan dua header.
 Jika AI menulis header dengan blank line di antara `Location`, `You`, `NPC`, `Thread`, dan `***`, stage tetap menganggapnya sebagai satu header lalu mengeluarkannya lagi dalam format compact tanpa blank line.
+Setelah header selesai, stage juga menjalankan formatter narasi ringan: paragraf narasi dibungkus `*...*`, baris dialog speaker dijaga sebagai `Name: "..."` atau `**Name:** "..."`, dan inline emphasis kecil seperti `*word*` diganti menjadi `'word'`.
 
 ## Rules Normalisasi Saat Ini
 
@@ -226,6 +227,25 @@ Wallet memakai state lama kecuali narasi terbaru memuat evidence ekonomi yang je
 Jika AI mengubah angka wallet tanpa transaksi/reward/loss yang dijelaskan dalam cerita, stage mengembalikan wallet ke state sebelumnya.
 Jika belum ada wallet yang pernah tersimpan, wallet valid pertama dari header dipakai sebagai nilai awal, termasuk first message atau alternate first message; stage tidak memaksa angka awal menjadi `0G ; 0S ; 0C`.
 Stage tidak mengizinkan NPC atau narasi membaca wallet sebagai info in-character kecuali uang itu memang diketahui lewat cerita.
+
+### Narrative Format
+
+Stage menjaga format narasi tanpa rewrite besar.
+Paragraf narasi biasa dibungkus single italic:
+
+```md
+*Narrative text.*
+```
+
+Dialog speaker dijaga sebagai:
+
+```md
+Yume: "Dialogue text."
+**Yume:** "Dialogue text."
+```
+
+Inline emphasis kecil di dalam narasi/dialog seperti `*want*` diganti menjadi `'want'` agar tidak bertabrakan dengan wrapper narasi.
+Stage tidak mengubah isi kalimat, pilihan kata, atau urutan narasi/dialog.
 
 ## Batas Stage
 
@@ -333,6 +353,7 @@ Penyesuaian yang sudah diterapkan:
 9. Header yang terpisah blank line tetap dideteksi sebagai satu header agar tidak muncul double header.
 10. `Wallet` ditambahkan sebagai line header dan state; perubahan angka wallet ditolak kecuali narasi memuat evidence transaksi/reward/loss.
 11. `walletInitialized` ditambahkan agar wallet awal dari first message/alternate first message bisa diterima tanpa dipaksa menjadi default `0G ; 0S ; 0C`.
+12. Formatter narasi ringan ditambahkan untuk italic narrative paragraphs, dialog speaker lines, dan inline emphasis menjadi single quote.
 
 Jika prompt header asli nanti diubah lagi:
 

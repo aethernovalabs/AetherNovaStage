@@ -2244,7 +2244,7 @@ function inferRace(character: Character): string {
 }
 
 function formatResponse(state: AetherNovaMessageState, narrative: string): string {
-    const cleanNarrative = narrative.trimStart();
+    const cleanNarrative = normalizeNarrativeFormat(narrative);
     const header = formatHeader(state);
 
     if (cleanNarrative.length === 0) {
@@ -2252,6 +2252,147 @@ function formatResponse(state: AetherNovaMessageState, narrative: string): strin
     }
 
     return `${header}\n\n${cleanNarrative}`;
+}
+
+function normalizeNarrativeFormat(narrative: string): string {
+    const clean = normalizeLineEndings(narrative).trim();
+
+    if (clean.length === 0) {
+        return "";
+    }
+
+    return clean
+        .split(/\n{2,}/)
+        .map((block) => normalizeNarrativeBlock(block))
+        .filter((block) => block.length > 0)
+        .join("\n\n");
+}
+
+function normalizeNarrativeBlock(block: string): string {
+    return block
+        .split("\n")
+        .map((line) => normalizeNarrativeLine(line))
+        .filter((line) => line.length > 0)
+        .join("\n");
+}
+
+function normalizeNarrativeLine(line: string): string {
+    const clean = line.trim();
+
+    if (clean.length === 0) {
+        return "";
+    }
+
+    const dialogue = normalizeDialogueLine(clean);
+    if (dialogue != null) {
+        return dialogue;
+    }
+
+    const content = replaceInlineEmphasis(stripOuterSingleItalic(clean));
+    return content.length === 0 ? "" : `*${content}*`;
+}
+
+function normalizeDialogueLine(line: string): string | null {
+    const clean = stripOuterSingleItalic(line.trim());
+    const parsed = parseDialogueLine(clean);
+
+    if (parsed == null) {
+        return null;
+    }
+
+    const speaker = parsed.bold ? `**${parsed.speaker}:**` : `${parsed.speaker}:`;
+    const text = normalizeDialogueText(parsed.text);
+
+    return text.length === 0 ? speaker : `${speaker} ${text}`;
+}
+
+function parseDialogueLine(line: string): {speaker: string; text: string; bold: boolean} | null {
+    const boldColon = line.match(/^\*\*([^*\n:]{1,80}):\*\*\s*(.*)$/);
+    if (boldColon != null && isValidSpeakerName(boldColon[1])) {
+        return {speaker: cleanSpeakerName(boldColon[1]), text: boldColon[2].trim(), bold: true};
+    }
+
+    const boldNameColon = line.match(/^\*\*([^*\n:]{1,80})\*\*:\s*(.*)$/);
+    if (boldNameColon != null && isValidSpeakerName(boldNameColon[1])) {
+        return {speaker: cleanSpeakerName(boldNameColon[1]), text: boldNameColon[2].trim(), bold: true};
+    }
+
+    const plainColon = line.match(/^([^:"\n]{1,80}):\s*(.*)$/);
+    if (plainColon != null && isValidSpeakerName(plainColon[1])) {
+        const speaker = cleanSpeakerName(plainColon[1]);
+        const text = plainColon[2].trim();
+
+        if (isQuotedDialogueText(text) || isSimpleSpeakerName(speaker)) {
+            return {speaker, text, bold: false};
+        }
+    }
+
+    const missingColon = line.match(/^([A-Z][A-Za-z0-9'._ -]{0,60})\s+(".*)$/);
+    if (missingColon != null && isValidSpeakerName(missingColon[1]) && !isCommonNarrativeSubject(missingColon[1])) {
+        return {speaker: cleanSpeakerName(missingColon[1]), text: missingColon[2].trim(), bold: false};
+    }
+
+    return null;
+}
+
+function normalizeDialogueText(value: string): string {
+    const clean = replaceInlineEmphasis(stripOuterSingleItalic(value.trim()));
+
+    if (clean.length === 0) {
+        return "";
+    }
+
+    if (clean.startsWith("\"")) {
+        return clean;
+    }
+
+    return `"${clean}"`;
+}
+
+function isQuotedDialogueText(value: string): boolean {
+    return value.trim().startsWith("\"");
+}
+
+function isSimpleSpeakerName(value: string): boolean {
+    const clean = cleanSpeakerName(value);
+
+    return clean === "{{char}}" || clean === "{{user}}" || !/\s/.test(clean);
+}
+
+function stripOuterSingleItalic(value: string): string {
+    const clean = value.trim();
+
+    if (clean.startsWith("*") && clean.endsWith("*") && !clean.startsWith("**") && !clean.endsWith("**")) {
+        return clean.slice(1, -1).trim();
+    }
+
+    return clean;
+}
+
+function replaceInlineEmphasis(value: string): string {
+    return value.replace(/(^|[^*])\*([^*\n]{1,80})\*(?!\*)/g, (_match, prefix: string, inner: string) => {
+        return `${prefix}'${inner.trim()}'`;
+    });
+}
+
+function cleanSpeakerName(value: string): string {
+    return cleanFragment(value).replace(/:$/, "");
+}
+
+function isValidSpeakerName(value: string): boolean {
+    const clean = cleanSpeakerName(value);
+
+    if (clean.length === 0 || clean.length > 80 || /[.!?]/.test(clean)) {
+        return false;
+    }
+
+    return clean === "{{char}}"
+        || clean === "{{user}}"
+        || /^[A-Z][A-Za-z0-9'._ -]*(?:\s+\{\{user\}\})?$/.test(clean);
+}
+
+function isCommonNarrativeSubject(value: string): boolean {
+    return /^(he|she|they|it|you|i|we|the|a|an|his|her|their)$/i.test(cleanSpeakerName(value));
 }
 
 function threadChangeIsSupported(candidate: string, previousThread: string, narrative: string): boolean {
