@@ -255,6 +255,24 @@ const CLOTHING_CHANGE_CUES = [
     "new disguise",
     "changes disguise",
     "changed disguise",
+    "only wearing",
+    "wears only",
+    "wearing only",
+    "left sleeve",
+    "right sleeve",
+    "loose shirt",
+    "loose pants",
+    "baggy shirt",
+    "baggy pants",
+    "shirt caught",
+    "pants caught",
+    "sleeve caught",
+    "clothes caught",
+    "clothing caught",
+    "baju longgar",
+    "celana longgar",
+    "hanya memakai",
+    "tersangkut",
 ];
 
 const CLOTHING_DAMAGE_CUES = [
@@ -283,9 +301,31 @@ const CLOTHING_DAMAGE_CUES = [
     "muddy",
     "damaged",
     "destroyed",
+    "frayed",
+    "singed",
+    "loose",
+    "loosened",
+    "baggy",
+    "caught",
+    "catches",
+    "snag",
+    "snags",
+    "snagged",
+    "stuck",
+    "hooked",
+    "tangled",
+    "slipping",
+    "untucked",
+    "unbuttoned",
+    "unfastened",
+    "missing sleeve",
     "armor cracked",
     "cloak catches fire",
     "sleeve catches fire",
+    "robek",
+    "terbakar",
+    "longgar",
+    "tersangkut",
 ];
 
 const CLOTHING_REMOVAL_CUES = [
@@ -312,10 +352,16 @@ const CLOTHING_REMOVAL_CUES = [
     "remove cloak",
     "removes cloak",
     "removed cloak",
+    "only pants",
+    "pants only",
+    "wearing only pants",
+    "wears only pants",
+    "only wearing pants",
+    "hanya memakai celana",
 ];
 
-const CLOTHING_DAMAGE_WORDS = /\b(burned|burnt|scorched|torn|ripped|shredded|slashed|bloody|bloodied|stained|soaked|wet|muddy|damaged|destroyed|cracked)\b/i;
-const CLOTHING_SLOT_PATTERN = /\b(cloth|clothes|clothing|outfit|attire|garb|uniform|armor|armour|robe|robes|kimono|yukata|haori|hakama|dress|gown|suit|shirt|blouse|tunic|jacket|coat|cloak|mantle|cape|hood|pants|trousers|jeans|shorts|skirt|leggings|boots|shoes|sandals|gloves|mask|veil|hat|cap|helmet|apron|vest|corset|sash|belt|scarf|shawl|wrap|rags|disguise|leather|silk|linen|cotton|wool|chainmail|mail)\b/i;
+const CLOTHING_DAMAGE_WORDS = /\b(burned|burnt|scorched|torn|ripped|shredded|slashed|bloody|bloodied|stained|soaked|wet|muddy|damaged|destroyed|cracked|frayed|singed|loose|loosened|baggy|caught|snagged|stuck|hooked|tangled|slipping|untucked|unbuttoned|unfastened|missing|robek|terbakar|longgar|tersangkut)\b/i;
+const CLOTHING_SLOT_PATTERN = /\b(cloth|clothes|clothing|outfit|attire|garb|uniform|armor|armour|robe|robes|kimono|yukata|haori|hakama|dress|gown|suit|shirt|blouse|tunic|jacket|coat|cloak|mantle|cape|hood|pants|pant|trousers|jeans|shorts|skirt|leggings|boots|shoes|sandals|gloves|mask|veil|hat|cap|helmet|apron|vest|corset|sash|belt|scarf|shawl|wrap|rags|disguise|leather|silk|linen|cotton|wool|chainmail|mail|sleeve|sleeves|collar|hem|cuff|cuffs|waistband|pantleg|pantlegs|baju|celana|pakaian|kemeja|lengan baju|kain)\b/i;
 const WALLET_AMOUNT_PATTERN = /\b\d+\s*(?:g|gold|s|silver|c|copper)\b/i;
 const VAGUE_STATUS_PATTERN = /\b(mood|emotion|feeling|feelings|thought|thoughts|status|role|happy|sad|angry|calm|nervous|worried|confused|curious|suspicious|jealous|afraid|scared|determined|focused)\b/i;
 const USER_FORBIDDEN_DETAIL_PATTERN = /\b(thinking|thinks|feeling|feels|expression|expressions|smiling|smiles|frowning|grinning|says|said|speaks|asks|answers|chooses|choosing|choice|decides|attacks|attack|transforms|transforming|consents|consent|refuses|dialogue)\b/i;
@@ -1170,9 +1216,8 @@ function normalizePosition(value: string, fallback: string, kind: "you" | "npc")
 function normalizeClothing(value: string, fallback: string): string {
     const safeFallback = safeStatusFallback(fallback, "Regular clothing", "npc");
     let clean = cleanFragment(value) || safeFallback;
-    clean = clean.split(/[,.]/)[0].trim();
-    clean = clean.replace(/\s+(and|with)\s+.*$/i, "").trim();
-    clean = limitWords(clean, 10);
+    clean = clean.replace(/\s+/g, " ").trim();
+    clean = limitWords(clean, 18);
 
     if (isInvalidStatusPart(clean, "npc")) {
         return safeFallback;
@@ -1471,6 +1516,10 @@ function youClothingChangeIsSupported(candidate: string, previous: string, conte
         return true;
     }
 
+    if (looksLikeClothingSlot(candidate) && clothingIsMentioned(candidate, context)) {
+        return true;
+    }
+
     if (
         hasDamageCue
         && (CLOTHING_DAMAGE_WORDS.test(candidate) || sharesMeaningfulClothingWord(candidate, previous))
@@ -1504,6 +1553,11 @@ function inferYouClothingFromContext(context: string): string | null {
     if (
         lowerContext.includes("only pants")
         || lowerContext.includes("pants only")
+        || lowerContext.includes("only wearing pants")
+        || lowerContext.includes("wearing only pants")
+        || lowerContext.includes("wears only pants")
+        || lowerContext.includes("only in pants")
+        || lowerContext.includes("hanya memakai celana")
     ) {
         return "Pants only";
     }
@@ -1676,7 +1730,8 @@ function contextHasEvidence(context: string, field: "position" | "clothing"): bo
 
     return containsAnyCue(lowerContext, CLOTHING_CHANGE_CUES)
         || containsAnyCue(lowerContext, CLOTHING_DAMAGE_CUES)
-        || containsAnyCue(lowerContext, CLOTHING_REMOVAL_CUES);
+        || containsAnyCue(lowerContext, CLOTHING_REMOVAL_CUES)
+        || CLOTHING_SLOT_PATTERN.test(lowerContext);
 }
 
 function sharesMeaningfulClothingWord(candidate: string, previous: string): boolean {
@@ -1705,7 +1760,7 @@ function clothingWords(value: string): string[] {
     return cleanFragment(value)
         .toLowerCase()
         .split(/[^a-z0-9]+/)
-        .filter((word) => word.length > 2 && !["the", "and", "with", "regular", "clothing", "clothes", "outfit"].includes(word));
+        .filter((word) => word.length > 2 && !["the", "and", "with", "regular", "clothing", "clothes", "outfit", "only"].includes(word));
 }
 
 function npcIdentityKey(value: string): string {
