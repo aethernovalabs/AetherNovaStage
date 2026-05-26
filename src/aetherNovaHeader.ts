@@ -2854,16 +2854,39 @@ function parseDialogueLine(line: string): {speaker: string; text: string; bold: 
 
 function normalizeDialogueText(value: string): string {
     const clean = formatInlineNarrationInDialogue(replaceInlineEmphasis(stripOuterSingleItalic(value.trim())));
+    const repaired = formatLeadingMisquotedActionBeat(clean);
 
-    if (clean.length === 0) {
+    if (repaired.length === 0) {
         return "";
     }
 
-    if (clean.startsWith("\"")) {
-        return clean;
+    if (repaired !== clean) {
+        return repaired;
     }
 
-    return `"${clean}"`;
+    if (repaired.startsWith("\"")) {
+        return repaired;
+    }
+
+    return `"${repaired}"`;
+}
+
+function formatLeadingMisquotedActionBeat(value: string): string {
+    const match = value.match(/^"\s*'([^'\n]{2,180})'\s*(.*?)"\s*$/);
+
+    if (match == null) {
+        return value;
+    }
+
+    const beat = match[1].trim();
+    const dialogue = match[2].trim();
+
+    if (!looksLikeInlineNarrationBeat(beat)) {
+        return value;
+    }
+
+    const formattedBeat = `*${beat}*`;
+    return dialogue.length === 0 ? formattedBeat : `${formattedBeat} "${dialogue}"`;
 }
 
 function formatInlineNarrationInDialogue(value: string): string {
@@ -2881,7 +2904,9 @@ function looksLikeInlineNarrationBeat(value: string): boolean {
         return false;
     }
 
-    return inlineNarrationStartsLikeBeat(clean) || inlineNarrationHasBeatAction(clean);
+    return inlineNarrationStartsLikeBeat(clean)
+        || inlineNarrationStartsWithActionVerb(clean)
+        || inlineNarrationHasBeatAction(clean);
 }
 
 function inlineNarrationStartsLikeBeat(value: string): boolean {
@@ -2890,7 +2915,11 @@ function inlineNarrationStartsLikeBeat(value: string): boolean {
 }
 
 function inlineNarrationHasBeatAction(value: string): boolean {
-    return /\b(?:lip|lips|mouth|smile|smiles|smiled|grin|grins|grinned|eye|eyes|gaze|tail|tails|ear|ears|hand|hands|finger|fingers|arm|arms|shoulder|shoulders|head|face|cheek|cheeks|nod|nods|nodded|tilt|tilts|tilted|curve|curves|curved|glance|glances|glanced|look|looks|looked|turn|turns|turned|step|steps|stepped|breath|breathes|breathed|sigh|sighs|sighed|voice|posture)\b/i.test(value);
+    return /\b(?:lip|lips|mouth|smile|smiles|smiled|grin|grins|grinned|eye|eyes|gaze|tail|tails|ear|ears|hand|hands|finger|fingers|arm|arms|shoulder|shoulders|head|face|cheek|cheeks|coin|coins|grunt|grunts|grunted|nod|nods|nodded|tilt|tilts|tilted|curve|curves|curved|catch|catches|caught|catching|glance|glances|glanced|look|looks|looked|turn|turns|turned|step|steps|stepped|breath|breathes|breathed|sigh|sighs|sighed|voice|posture)\b/i.test(value);
+}
+
+function inlineNarrationStartsWithActionVerb(value: string): boolean {
+    return /^(?:catching|taking|grabbing|holding|watching|looking|glancing|turning|stepping|walking|nodding|smiling|grinning|sighing|breathing|leaning|standing|sitting|kneeling|raising|lowering|flicking|tossing|throwing|placing)\b/i.test(value);
 }
 
 function isQuotedDialogueText(value: string): boolean {
