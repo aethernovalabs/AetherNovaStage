@@ -251,6 +251,7 @@ Yume: "Dialogue text."
 Inline emphasis kecil di dalam narasi/dialog seperti `*want*` diganti menjadi `'want'` agar tidak bertabrakan dengan wrapper narasi.
 Jika baris dialog mencampur dialog dan action beat dalam single quote, stage mengubah action beat itu menjadi italic tanpa memecah dialog, misalnya `Yume: "Good." 'Her lips curve.' "And..."` menjadi `Yume: "Good." *Her lips curve.* "And..."`.
 Jika action beat keliru ditaruh di dalam quote dialog pembuka, stage mengeluarkannya sebagai italic lalu mempertahankan sisa dialog dalam quote, misalnya `Borin: "'catching the coin.' Safe travels."` menjadi `Borin: *catching the coin.* "Safe travels."`.
+Jika action beat memakai `*...*` di dalam quote dialog pembuka dan dialog asli sudah punya quote sendiri, stage tidak menambah quote kedua, misalnya `Kaelen: "*Leans forward.* "Information.""` menjadi `Kaelen: *Leans forward.* "Information."`.
 Stage tidak mengubah isi kalimat, pilihan kata, atau urutan narasi/dialog.
 
 ## Batas Stage

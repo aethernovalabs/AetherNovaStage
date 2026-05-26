@@ -2886,7 +2886,21 @@ function formatLeadingMisquotedActionBeat(value: string): string {
     }
 
     const formattedBeat = `*${beat}*`;
-    return dialogue.length === 0 ? formattedBeat : `${formattedBeat} "${dialogue}"`;
+    return dialogue.length === 0 ? formattedBeat : `${formattedBeat} ${formatDialogueRemainder(dialogue)}`;
+}
+
+function formatDialogueRemainder(value: string): string {
+    const clean = value.trim();
+
+    if (clean.length === 0) {
+        return "";
+    }
+
+    if (clean.startsWith("\"")) {
+        return clean;
+    }
+
+    return `"${clean}"`;
 }
 
 function formatInlineNarrationInDialogue(value: string): string {
