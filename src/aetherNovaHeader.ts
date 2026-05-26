@@ -428,8 +428,53 @@ const CLOTHING_REMOVAL_CUES = [
     "hanya memakai celana",
 ];
 
+const CLOTHING_ADJUSTMENT_CUES = [
+    "fix",
+    "fixes",
+    "fixed",
+    "fixing",
+    "adjust",
+    "adjusts",
+    "adjusted",
+    "adjusting",
+    "straighten",
+    "straightens",
+    "straightened",
+    "straightening",
+    "smooth",
+    "smooths",
+    "smoothed",
+    "smoothing",
+    "settle",
+    "settles",
+    "settled",
+    "settling",
+    "fasten",
+    "fastens",
+    "fastened",
+    "fastening",
+    "refasten",
+    "refastens",
+    "refastened",
+    "refastening",
+    "tie",
+    "ties",
+    "tied",
+    "tying",
+    "retie",
+    "reties",
+    "retied",
+    "retying",
+    "cover",
+    "covers",
+    "covered",
+    "covering",
+    "back into place",
+    "into place",
+];
+
 const CLOTHING_DAMAGE_WORDS = /\b(burned|burnt|scorched|torn|ripped|shredded|slashed|bloody|bloodied|stained|soaked|wet|muddy|damaged|destroyed|cracked|frayed|singed|loose|loosened|baggy|caught|snagged|stuck|hooked|tangled|slipping|untucked|unbuttoned|unfastened|missing|robek|terbakar|longgar|tersangkut)\b/i;
-const CLOTHING_SLOT_PATTERN = /\b(cloth|clothes|clothing|outfit|attire|garb|uniform|armor|armour|robe|robes|kimono|yukata|haori|hakama|dress|gown|suit|shirt|blouse|tunic|jacket|coat|cloak|mantle|cape|hood|pants|pant|trousers|jeans|shorts|skirt|leggings|boots|shoes|sandals|gloves|mask|veil|hat|cap|helmet|apron|vest|corset|sash|belt|scarf|shawl|wrap|rags|disguise|leather|silk|linen|cotton|wool|chainmail|mail|sleeve|sleeves|collar|hem|cuff|cuffs|waistband|pantleg|pantlegs|naked|nude|unclothed|bare|baju|celana|pakaian|kemeja|lengan baju|kain)\b/i;
+const CLOTHING_SLOT_PATTERN = /\b(cloth|clothes|clothing|garment|garments|layer|layers|outfit|attire|garb|uniform|armor|armour|robe|robes|over-robe|under-robe|overrobe|underrobe|kimono|yukata|haori|hakama|dress|gown|suit|shirt|blouse|tunic|jacket|coat|cloak|mantle|cape|hood|pants|pant|trousers|jeans|shorts|skirt|leggings|boots|shoes|sandals|gloves|mask|veil|hat|cap|helmet|apron|vest|corset|sash|belt|scarf|shawl|wrap|rags|disguise|leather|silk|linen|cotton|wool|chainmail|mail|sleeve|sleeves|collar|hem|cuff|cuffs|waistband|pantleg|pantlegs|naked|nude|unclothed|bare|baju|celana|pakaian|kemeja|lengan baju|kain)\b/i;
 const WALLET_AMOUNT_PATTERN = /\b\d+\s*(?:g|gold|s|silver|c|copper)\b/i;
 const VAGUE_STATUS_PATTERN = /\b(mood|emotion|feeling|feelings|thought|thoughts|status|role|happy|sad|angry|calm|nervous|worried|confused|curious|suspicious|jealous|afraid|scared|determined|focused)\b/i;
 const USER_FORBIDDEN_DETAIL_PATTERN = /\b(thinking|thinks|feeling|feels|expression|expressions|smiling|smiles|frowning|grinning|says|said|speaks|asks|answers|chooses|choosing|choice|decides|attacks|attack|transforms|transforming|consents|consent|refuses|dialogue)\b/i;
@@ -1721,6 +1766,10 @@ function statusChangeIsSupported(
         return true;
     }
 
+    if (kind === "npc" && field === "clothing" && npcClothingAdjustmentIsSupported(candidate, previous, context)) {
+        return true;
+    }
+
     if (kind === "you" && isGenericStatusPart(previous) && contextHasEvidence(context, field)) {
         return true;
     }
@@ -1828,6 +1877,31 @@ function youClothingChangeIsSupported(candidate: string, previous: string, conte
 
     return CLOTHING_DAMAGE_WORDS.test(lowerCandidate)
         && containsAnyCue(lowerContext, CLOTHING_DAMAGE_CUES);
+}
+
+function npcClothingAdjustmentIsSupported(candidate: string, previous: string, context: string): boolean {
+    if (!looksLikeClothingSlot(candidate) || sameText(candidate, previous)) {
+        return false;
+    }
+
+    const lowerContext = context.toLowerCase();
+
+    if (clothingChangeIsNegated(lowerContext) && !containsAnyCue(lowerContext, CLOTHING_DAMAGE_CUES)) {
+        return false;
+    }
+
+    return containsAnyCue(lowerContext, CLOTHING_ADJUSTMENT_CUES)
+        && contextHasClothingReference(context)
+        && candidateHasConcreteGarment(candidate);
+}
+
+function contextHasClothingReference(context: string): boolean {
+    return CLOTHING_SLOT_PATTERN.test(context)
+        || containsAnyCue(context, ["double layer", "under-layer", "outer layer", "inner layer"]);
+}
+
+function candidateHasConcreteGarment(candidate: string): boolean {
+    return /\b(robe|robes|over[-\s]?robe|under[-\s]?robe|overrobe|underrobe|kimono|yukata|haori|hakama|dress|gown|uniform|armor|armour|cloak|mantle|cape|shirt|blouse|tunic|jacket|coat|pants|trousers|skirt|silk|linen|cotton|wool|leather|garment|garments|layer|layers)\b/i.test(candidate);
 }
 
 function clothingChangeIsNegated(context: string): boolean {

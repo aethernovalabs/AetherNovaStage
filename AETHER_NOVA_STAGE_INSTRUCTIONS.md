@@ -201,7 +201,8 @@ Stage mendukung lebih dari satu NPC dengan pemisah koma di level atas.
 Stage juga menerima `NPC: None` saat tidak ada NPC di sekitar `{{user}}`.
 Position dan clothes NPC memakai state lama kecuali ada cue visible move, follow, scene change, clothing change, atau armor removal.
 Position NPC juga boleh memakai scene blocking relatif ke nama character atau `{{user}}`, termasuk left/right/front/behind, beside, facing, dan jarak beberapa steps/paces.
-NPC lama dicocokkan berdasarkan nama, bukan urutan. NPC baru tidak boleh mewarisi pakaian NPC lama; jika clothing slot NPC baru memuat item pakaian jelas seperti kimono/robe/uniform/armor atau kondisi pakaian seperti sleeve torn / clothes caught / cloak burned, stage boleh menerimanya, kalau tidak gunakan fallback aman seperti `Regular clothing` atau inferensi sederhana seperti `Simple clothing`.
+NPC lama dicocokkan berdasarkan nama, bukan urutan. NPC baru tidak boleh mewarisi pakaian NPC lama; jika clothing slot NPC baru memuat item pakaian jelas seperti kimono/robe/under-robe/over-robe/uniform/armor atau kondisi pakaian seperti sleeve torn / clothes caught / cloak burned, stage boleh menerimanya, kalau tidak gunakan fallback aman seperti `Regular clothing` atau inferensi sederhana seperti `Simple clothing`.
+Untuk NPC yang sudah ada, clothing boleh berubah dari state lama saat narasi terbaru jelas menunjukkan pakaian sedang diperbaiki, disesuaikan, di-fastened, atau layer pakaian dirapikan, misalnya dari `white under-robe slipped off one shoulder` menjadi `violet silk over-robe` setelah narasi menyebut fixing clothes, smoothing double layer, atau outer robe being put back in place.
 Detail race-specific tetap dijaga sebagai detail fisik/visible, seperti hands, wings, tail, ears, horns, eyes, claws, weapon, posture, atau anatomy relevan.
 
 ### Thread
@@ -354,6 +355,7 @@ Penyesuaian yang sudah diterapkan:
 10. `Wallet` ditambahkan sebagai line header dan state; perubahan angka wallet ditolak kecuali narasi memuat evidence transaksi/reward/loss.
 11. `walletInitialized` ditambahkan agar wallet awal dari first message/alternate first message bisa diterima tanpa dipaksa menjadi default `0G ; 0S ; 0C`.
 12. Formatter narasi ringan ditambahkan untuk italic narrative paragraphs, dialog speaker lines, dan inline emphasis menjadi single quote.
+13. NPC clothing adjustment ditambahkan agar pakaian lama seperti slipped under-robe tidak dipertahankan saat narasi terbaru merapikan/menambahkan layered garment baru seperti over-robe.
 
 Jika prompt header asli nanti diubah lagi:
 
