@@ -256,6 +256,7 @@ Inline emphasis kecil di dalam narasi/dialog seperti `*want*` diganti menjadi `'
 Jika baris dialog mencampur dialog dan action beat dalam single quote, stage mengubah action beat itu menjadi italic tanpa memecah dialog, misalnya `Yume: "Good." 'Her lips curve.' "And..."` menjadi `Yume: "Good." *Her lips curve.* "And..."`.
 Jika action beat keliru ditaruh di dalam quote dialog pembuka, stage mengeluarkannya sebagai italic lalu mempertahankan sisa dialog dalam quote, misalnya `Borin: "'catching the coin.' Safe travels."` menjadi `Borin: *catching the coin.* "Safe travels."`.
 Jika action beat memakai `*...*` di dalam quote dialog pembuka dan dialog asli sudah punya quote sendiri, stage tidak menambah quote kedua, misalnya `Kaelen: "*Leans forward.* "Information.""` menjadi `Kaelen: *Leans forward.* "Information."`.
+Jika seluruh speaker line keliru dibungkus italic sebagai narasi, stage tetap harus mengenali speaker dan memindahkan wrapper italic ke action beat saja, misalnya `*Debi Marquetta: 'softly, her voice close' "Fifty silver..."*` menjadi `Debi Marquetta: *softly, her voice close* "Fifty silver..."`.
 Jika action beat polos berada di antara dua dialog dalam satu speaker line, stage membungkus action beat itu dengan italic, misalnya `Yume: "Good." She lowers her voice. "Listen."` menjadi `Yume: "Good." *She lowers her voice.* "Listen."`.
 Jika baris dialog tidak punya speaker tetapi narasi tepat sebelumnya atau action beat dialog cukup jelas menunjuk NPC tertentu, stage boleh menambahkan speaker dari header NPC, misalnya narasi menyebut `Yume hums` lalu baris `"The smooth ones," *she says...*` menjadi `Yume: "The smooth ones," *she says...*`.
 Stage tidak mengubah isi kalimat, pilihan kata, atau urutan narasi/dialog.
@@ -375,6 +376,7 @@ Penyesuaian yang sudah diterapkan:
 18. Thread terminal status diperluas agar item seperti `Job Offer Refused (resolved)` atau item dengan status complete/done/finished/refused/declined/rejected otomatis dibersihkan pada pesan berikutnya.
 19. Evidence pakaian `You` dibedakan antara narasi dan dialog: pembahasan membuka pakaian di dalam dialog tidak mengubah clothing slot menjadi `Naked` kecuali narasi/action beat benar-benar menunjukkan pakaian berubah.
 20. Evidence wallet dibedakan antara narasi dan dialog: nominal uang di dalam dialog tidak memicu perubahan wallet, dan jika ada transaksi non-dialog yang jelas stage memilih arah hitungan yang benar daripada angka wallet AI yang keliru.
+21. Formatter dialog diperbaiki agar speaker line yang salah dibungkus `*...*` tetap dibaca sebagai dialog, sementara single-quoted atau italic action beat sebelum quote dialog dipertahankan sebagai action beat.
 
 Jika prompt header asli nanti diubah lagi:
 

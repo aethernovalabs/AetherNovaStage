@@ -3409,7 +3409,7 @@ function parseDialogueLine(line: string): {speaker: string; text: string; bold: 
         const speaker = cleanSpeakerName(plainColon[1]);
         const text = plainColon[2].trim();
 
-        if (isQuotedDialogueText(text) || isSimpleSpeakerName(speaker)) {
+        if (isDialoguePayloadText(text) || isSimpleSpeakerName(speaker)) {
             return {speaker, text, bold: false};
         }
     }
@@ -3425,20 +3425,25 @@ function parseDialogueLine(line: string): {speaker: string; text: string; bold: 
 function normalizeDialogueText(value: string): string {
     const clean = formatPlainActionBeatBetweenDialogue(formatInlineNarrationInDialogue(replaceInlineEmphasis(stripOuterSingleItalic(value.trim()))));
     const repaired = formatLeadingMisquotedActionBeat(clean);
+    const beatBeforeDialogue = formatLeadingActionBeatBeforeDialogue(repaired);
 
-    if (repaired.length === 0) {
+    if (beatBeforeDialogue.length === 0) {
         return "";
     }
 
-    if (repaired !== clean) {
-        return repaired;
+    if (beatBeforeDialogue !== clean) {
+        return beatBeforeDialogue;
     }
 
-    if (repaired.startsWith("\"")) {
-        return repaired;
+    if (isLeadingActionBeatBeforeDialogue(beatBeforeDialogue)) {
+        return beatBeforeDialogue;
     }
 
-    return `"${repaired}"`;
+    if (beatBeforeDialogue.startsWith("\"")) {
+        return beatBeforeDialogue;
+    }
+
+    return `"${beatBeforeDialogue}"`;
 }
 
 function formatLeadingMisquotedActionBeat(value: string): string {
@@ -3471,6 +3476,24 @@ function formatDialogueRemainder(value: string): string {
     }
 
     return `"${clean}"`;
+}
+
+function formatLeadingActionBeatBeforeDialogue(value: string): string {
+    const match = value.match(/^\*([^*\n]{2,180})\*\s+(".*)$/);
+
+    if (match == null) {
+        return value;
+    }
+
+    const beat = match[1].trim();
+    const dialogue = match[2].trim();
+
+    return looksLikeInlineNarrationBeat(beat) ? `*${beat}* ${dialogue}` : value;
+}
+
+function isLeadingActionBeatBeforeDialogue(value: string): boolean {
+    const match = value.match(/^\*([^*\n]{2,180})\*\s+".*$/);
+    return match != null && looksLikeInlineNarrationBeat(match[1]);
 }
 
 function formatInlineNarrationInDialogue(value: string): string {
@@ -3575,6 +3598,14 @@ function inlineNarrationStartsWithActionVerb(value: string): boolean {
 
 function isQuotedDialogueText(value: string): boolean {
     return value.trim().startsWith("\"");
+}
+
+function isDialoguePayloadText(value: string): boolean {
+    const clean = value.trim();
+
+    return isQuotedDialogueText(clean)
+        || /^'[^'\n]{2,180}'\s+"/.test(clean)
+        || /^\*[^*\n]{2,180}\*\s+"/.test(clean);
 }
 
 function isSimpleSpeakerName(value: string): boolean {
