@@ -229,6 +229,8 @@ Format target:
 Stage menormalisasi format menjadi `XG ; XS ; XC`.
 Wallet memakai state lama kecuali narasi terbaru memuat evidence ekonomi yang jelas seperti payment, buy, cost, fee, reward, earn, loot, bounty, gift, refund, lost, stolen, robbed, atau confiscated.
 Jika AI mengubah angka wallet tanpa transaksi/reward/loss yang dijelaskan dalam cerita, stage mengembalikan wallet ke state sebelumnya.
+Jika AI lupa mengubah wallet tetapi konteks terbaru memuat pembayaran/reward yang eksplisit dan nominal uang jelas, stage boleh menghitung perubahan dari state lama, termasuk angka tertulis seperti `fifty silver`.
+Untuk penghitungan lintas pecahan, stage memakai konversi internal `1G = 100S` dan `1S = 100C`.
 Jika belum ada wallet yang pernah tersimpan, wallet valid pertama dari header dipakai sebagai nilai awal, termasuk first message atau alternate first message; stage tidak memaksa angka awal menjadi `0G ; 0S ; 0C`.
 Stage tidak mengizinkan NPC atau narasi membaca wallet sebagai info in-character kecuali uang itu memang diketahui lewat cerita.
 
@@ -360,10 +362,11 @@ Penyesuaian yang sudah diterapkan:
 9. Header yang terpisah blank line tetap dideteksi sebagai satu header agar tidak muncul double header.
 10. `Wallet` ditambahkan sebagai line header dan state; perubahan angka wallet ditolak kecuali narasi memuat evidence transaksi/reward/loss.
 11. `walletInitialized` ditambahkan agar wallet awal dari first message/alternate first message bisa diterima tanpa dipaksa menjadi default `0G ; 0S ; 0C`.
-12. Formatter narasi ringan ditambahkan untuk italic narrative paragraphs, dialog speaker lines, inline emphasis menjadi single quote, action beat single-quoted di dalam dialog menjadi italic, dan action beat yang keliru masuk quote dialog pembuka dikeluarkan menjadi italic.
-13. NPC clothing adjustment ditambahkan agar pakaian lama seperti slipped under-robe tidak dipertahankan saat narasi terbaru merapikan/menambahkan layered garment baru seperti over-robe.
-14. Thread inference dari narasi ditambahkan agar mission/quest/contract/promise/appointment/travel goal/major obstacle yang eksplisit tetap masuk ke line `Thread` saat header kosong, `None`, placeholder, atau stale.
-15. Thread linked sub-goal ditambahkan agar rencana seperti `meet Kaelen to ask about Debi` bisa ditambahkan dari konteks user/narasi tanpa mengganti misi utama.
+12. Wallet inference ditambahkan agar pembayaran/reward eksplisit dengan nominal seperti `fifty silver` bisa dihitung dari state lama saat AI lupa mengubah line `Wallet`.
+13. Formatter narasi ringan ditambahkan untuk italic narrative paragraphs, dialog speaker lines, inline emphasis menjadi single quote, action beat single-quoted di dalam dialog menjadi italic, dan action beat yang keliru masuk quote dialog pembuka dikeluarkan menjadi italic.
+14. NPC clothing adjustment ditambahkan agar pakaian lama seperti slipped under-robe tidak dipertahankan saat narasi terbaru merapikan/menambahkan layered garment baru seperti over-robe.
+15. Thread inference dari narasi ditambahkan agar mission/quest/contract/promise/appointment/travel goal/major obstacle yang eksplisit tetap masuk ke line `Thread` saat header kosong, `None`, placeholder, atau stale.
+16. Thread linked sub-goal ditambahkan agar rencana seperti `meet Kaelen to ask about Debi` bisa ditambahkan dari konteks user/narasi tanpa mengganti misi utama.
 
 Jika prompt header asli nanti diubah lagi:
 

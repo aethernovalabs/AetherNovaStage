@@ -886,6 +886,28 @@ const WALLET_TRANSACTION_CUES = [
     "confiscated",
     "hands over",
     "handed over",
+    "give",
+    "gives",
+    "gave",
+    "put",
+    "puts",
+    "placed",
+    "place",
+    "set down",
+    "sets down",
+    "laid down",
+    "slide",
+    "slides",
+    "slid",
+    "push",
+    "pushes",
+    "pushed",
+    "offer",
+    "offers",
+    "offered",
+    "bayar",
+    "membayar",
+    "dibayar",
 ];
 
 const WALLET_MONEY_CUES = [
@@ -908,6 +930,125 @@ const WALLET_MONEY_CUES = [
     "wage",
     "wages",
 ];
+
+const WALLET_PAYMENT_ACTION_CUES = [
+    "pay",
+    "pays",
+    "paid",
+    "payment",
+    "spend",
+    "spends",
+    "spent",
+    "buy",
+    "buys",
+    "bought",
+    "purchase",
+    "purchases",
+    "purchased",
+    "hands over",
+    "handed over",
+    "give",
+    "gives",
+    "gave",
+    "put",
+    "puts",
+    "placed",
+    "place",
+    "set down",
+    "sets down",
+    "laid down",
+    "slide",
+    "slides",
+    "slid",
+    "push",
+    "pushes",
+    "pushed",
+    "offer",
+    "offers",
+    "offered",
+    "bribe",
+    "bribes",
+    "bribed",
+    "tip",
+    "tips",
+    "tipped",
+    "bayar",
+    "membayar",
+];
+
+const WALLET_INCOME_ACTION_CUES = [
+    "receive",
+    "receives",
+    "received",
+    "reward",
+    "rewards",
+    "rewarded",
+    "earn",
+    "earns",
+    "earned",
+    "gain",
+    "gains",
+    "gained",
+    "loot",
+    "loots",
+    "looted",
+    "found",
+    "finds",
+    "gift",
+    "gifts",
+    "gifted",
+    "prize",
+    "bounty",
+    "wage",
+    "wages",
+    "salary",
+    "compensation",
+    "refund",
+    "give",
+    "gives",
+    "gave",
+    "hand",
+    "hands",
+    "handed",
+    "offer",
+    "offers",
+    "offered",
+    "pay",
+    "pays",
+    "paid",
+];
+
+const NUMBER_WORDS: Record<string, number> = {
+    a: 1,
+    an: 1,
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+    eleven: 11,
+    twelve: 12,
+    thirteen: 13,
+    fourteen: 14,
+    fifteen: 15,
+    sixteen: 16,
+    seventeen: 17,
+    eighteen: 18,
+    nineteen: 19,
+    twenty: 20,
+    thirty: 30,
+    forty: 40,
+    fifty: 50,
+    sixty: 60,
+    seventy: 70,
+    eighty: 80,
+    ninety: 90,
+};
 
 export function createInitialHeaderState(
     characters: Record<string, Character>,
@@ -1766,10 +1907,11 @@ function normalizeWalletLine(
     const previous = normalizeWalletValue(previousWallet) ?? DEFAULT_STATE.wallet;
     const rawCandidate = cleanLabeledValue(rawLine, "Wallet");
     const candidate = normalizeWalletValue(rawCandidate);
+    const inferred = previousInitialized ? inferWalletFromContext(previous, context) : null;
 
     if (candidate == null) {
         return {
-            value: previous,
+            value: inferred ?? previous,
             initialized: previousInitialized,
         };
     }
@@ -1783,13 +1925,20 @@ function normalizeWalletLine(
 
     if (sameText(candidate, previous)) {
         return {
-            value: previous,
+            value: inferred ?? previous,
+            initialized: true,
+        };
+    }
+
+    if (walletChangeIsSupported(candidate, previous, context)) {
+        return {
+            value: candidate,
             initialized: true,
         };
     }
 
     return {
-        value: walletChangeIsSupported(candidate, previous, context) ? candidate : previous,
+        value: inferred ?? previous,
         initialized: true,
     };
 }
@@ -1832,6 +1981,192 @@ function parseWalletAmounts(value: string): WalletAmounts | null {
 
 function formatWallet(wallet: WalletAmounts): string {
     return `${wallet.gold}G ; ${wallet.silver}S ; ${wallet.copper}C`;
+}
+
+function inferWalletFromContext(previousWallet: string, context: string): string | null {
+    const previous = parseWalletAmounts(previousWallet);
+    const delta = inferWalletDeltaFromContext(context);
+
+    if (previous == null || delta == null) {
+        return null;
+    }
+
+    const previousCopper = walletToCopper(previous);
+    const deltaCopper = walletToCopper(delta.amounts);
+
+    if (deltaCopper <= 0) {
+        return null;
+    }
+
+    const nextCopper = delta.direction === "expense"
+        ? Math.max(0, previousCopper - deltaCopper)
+        : previousCopper + deltaCopper;
+    const next = formatWallet(copperToWallet(nextCopper));
+
+    return sameText(next, previousWallet) ? null : next;
+}
+
+function inferWalletDeltaFromContext(context: string): {direction: "expense" | "income"; amounts: WalletAmounts} | null {
+    const amounts = extractMoneyMentionAmounts(context);
+
+    if (amounts == null) {
+        return null;
+    }
+
+    if (walletExpenseTransactionIsSupported(context)) {
+        return {direction: "expense", amounts};
+    }
+
+    if (walletIncomeTransactionIsSupported(context)) {
+        return {direction: "income", amounts};
+    }
+
+    return null;
+}
+
+function extractMoneyMentionAmounts(context: string): WalletAmounts | null {
+    const amounts: WalletAmounts = {gold: 0, silver: 0, copper: 0};
+    const seenAmounts = new Set<string>();
+    let matched = false;
+    const numericPattern = /(\d+)\s*(g|gold|s|silver|c|copper)\b/gi;
+    let numericMatch = numericPattern.exec(context);
+
+    while (numericMatch != null) {
+        matched = addUniqueWalletAmount(amounts, Number(numericMatch[1]), numericMatch[2], seenAmounts) || matched;
+        numericMatch = numericPattern.exec(context);
+    }
+
+    const numberWords = Object.keys(NUMBER_WORDS).concat("hundred", "and").join("|");
+    const wordPattern = new RegExp(`\\b((?:${numberWords})(?:[-\\s]+(?:${numberWords})){0,7})\\s+(gold|silver|copper)\\b`, "gi");
+    let wordMatch = wordPattern.exec(context);
+
+    while (wordMatch != null) {
+        const value = parseEnglishNumberPhrase(wordMatch[1]);
+
+        if (value != null) {
+            matched = addUniqueWalletAmount(amounts, value, wordMatch[2], seenAmounts) || matched;
+        }
+
+        wordMatch = wordPattern.exec(context);
+    }
+
+    return matched ? amounts : null;
+}
+
+function addUniqueWalletAmount(amounts: WalletAmounts, amount: number, unit: string, seenAmounts: Set<string>): boolean {
+    const key = `${Math.max(0, Math.floor(amount))}:${normalizeWalletUnit(unit)}`;
+
+    if (seenAmounts.has(key)) {
+        return false;
+    }
+
+    seenAmounts.add(key);
+    addWalletAmount(amounts, amount, unit);
+    return true;
+}
+
+function addWalletAmount(amounts: WalletAmounts, amount: number, unit: string): void {
+    const safeAmount = Math.max(0, Math.floor(amount));
+    const cleanUnit = normalizeWalletUnit(unit);
+
+    if (cleanUnit === "gold") {
+        amounts.gold += safeAmount;
+    } else if (cleanUnit === "silver") {
+        amounts.silver += safeAmount;
+    } else {
+        amounts.copper += safeAmount;
+    }
+}
+
+function normalizeWalletUnit(unit: string): "gold" | "silver" | "copper" {
+    const clean = unit.toLowerCase();
+
+    if (clean === "g" || clean === "gold") {
+        return "gold";
+    }
+
+    if (clean === "s" || clean === "silver") {
+        return "silver";
+    }
+
+    return "copper";
+}
+
+function parseEnglishNumberPhrase(value: string): number | null {
+    const tokens = value
+        .toLowerCase()
+        .replace(/-/g, " ")
+        .split(/\s+/g)
+        .map((token) => token.trim())
+        .filter((token) => token.length > 0 && token !== "and");
+    let current = 0;
+    let matched = false;
+
+    for (const token of tokens) {
+        if (token === "hundred") {
+            current = Math.max(1, current) * 100;
+            matched = true;
+            continue;
+        }
+
+        const amount = NUMBER_WORDS[token];
+        if (amount == null) {
+            return null;
+        }
+
+        current += amount;
+        matched = true;
+    }
+
+    return matched && current > 0 ? current : null;
+}
+
+function walletExpenseTransactionIsSupported(context: string): boolean {
+    const lowerContext = context.toLowerCase();
+
+    if (walletContextIndicatesIncomeToUser(lowerContext)) {
+        return false;
+    }
+
+    if (/\bback\s+into\s+(?:my|your|the)\s+(?:wallet|purse|pouch|pocket)\b/i.test(context)) {
+        return false;
+    }
+
+    return containsAnyCue(lowerContext, WALLET_PAYMENT_ACTION_CUES)
+        && (
+            /\b(?:i|me|my|you|\{\{user\}\})\b/i.test(context)
+            || /\b(?:to|toward|towards)\s+[A-Z][A-Za-z'._-]+\b/.test(context)
+            || /\b(?:on|onto)\s+the\s+(?:table|counter|desk|wood)\b/i.test(context)
+        );
+}
+
+function walletIncomeTransactionIsSupported(context: string): boolean {
+    const lowerContext = context.toLowerCase();
+
+    return containsAnyCue(lowerContext, WALLET_INCOME_ACTION_CUES)
+        && (
+            walletContextIndicatesIncomeToUser(lowerContext)
+            || /\b(?:i|you|\{\{user\}\})\s+(?:receive|received|earn|earned|gain|gained|loot|looted|found)\b/i.test(context)
+        );
+}
+
+function walletContextIndicatesIncomeToUser(lowerContext: string): boolean {
+    return /\b(?:gives?|hands?|pays?|offers?)\s+(?:you|\{\{user\}\})\b/i.test(lowerContext)
+        || /\b(?:to|toward|towards|into)\s+(?:you|your|\{\{user\}\})\b/i.test(lowerContext)
+        || /\byou\s+(?:receive|received|earn|earned|gain|gained|found)\b/i.test(lowerContext);
+}
+
+function walletToCopper(wallet: WalletAmounts): number {
+    return (wallet.gold * 10000) + (wallet.silver * 100) + wallet.copper;
+}
+
+function copperToWallet(totalCopper: number): WalletAmounts {
+    const safeCopper = Math.max(0, Math.floor(totalCopper));
+    const gold = Math.floor(safeCopper / 10000);
+    const silver = Math.floor((safeCopper % 10000) / 100);
+    const copper = safeCopper % 100;
+
+    return {gold, silver, copper};
 }
 
 function normalizeStatus(
