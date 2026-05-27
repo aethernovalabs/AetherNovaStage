@@ -174,7 +174,7 @@ Stage mencoba menghapus bahasa yang terlalu dramatis dan mempertahankan status f
 Stage menolak `Anomaly` sebagai apparent race kecuali sudah revealed atau confirmed di konteks.
 Stage juga menyaring thoughts, feelings, expression, dialogue, actions, movement, transformation, consent, dan choices dari line `You`.
 Position, clothes/disguise, dan body detail memakai state lama kecuali konteks user atau narasi AI terbaru memberi bukti perubahan.
-Perubahan pakaian didukung oleh evidence berbahasa Inggris seperti change/wear/remove, put on, dressed in, clad in, changes into, atau damage naratif seperti burned/torn/scorched/damaged.
+Perubahan pakaian didukung oleh evidence berbahasa Inggris seperti change/wear/remove, put on, dressed in, clad in, changes into, atau damage naratif seperti burned/torn/scorched/damaged. Untuk line `You`, evidence pakaian harus datang dari narasi/aksi visible; kata seperti `naked`, `remove clothes`, atau `undress` yang hanya muncul di dialog bertanda kutip tidak boleh mengubah clothing slot.
 Slot kedua dalam status selalu diperlakukan sebagai clothing/disguise slot. Nama pakaian unik seperti ceremonial mantle, moon-silk kimono, battle robe, academy uniform, haori, robe, armor, cloak, atau disguise bisa diterima sebagai pakaian, terutama saat state sebelumnya masih `Regular clothing` atau pakaian itu disebut lagi di narasi terbaru.
 Clothing slot boleh berisi kondisi pakaian yang relevan, seperti naked, fully naked, loose shirt, baggy pants, pants only, shirt caught on a fence, left sleeve torn, cloak burned, atau armor cracked. Stage tidak memotong detail clothing hanya karena ada `and`, `with`, atau comma selama masih berada di slot pakaian.
 Perubahan posisi didukung oleh cue seperti walk/stop/arrive/sit/stand/reach/collapse, dan juga bisa diterima saat location sudah terbukti berpindah scene.
@@ -373,6 +373,7 @@ Penyesuaian yang sudah diterapkan:
 16. Thread linked sub-goal ditambahkan agar rencana seperti `meet Kaelen to ask about Debi` bisa ditambahkan dari konteks user/narasi tanpa mengganti misi utama.
 17. Speaker inference ringan ditambahkan agar dialog tanpa `Name:` bisa diberi speaker jika narasi/action beat dekat jelas menunjuk NPC tertentu.
 18. Thread terminal status diperluas agar item seperti `Job Offer Refused (resolved)` atau item dengan status complete/done/finished/refused/declined/rejected otomatis dibersihkan pada pesan berikutnya.
+19. Evidence pakaian `You` dibedakan antara narasi dan dialog: pembahasan membuka pakaian di dalam dialog tidak mengubah clothing slot menjadi `Naked` kecuali narasi/action beat benar-benar menunjukkan pakaian berubah.
 
 Jika prompt header asli nanti diubah lagi:
 

@@ -2246,13 +2246,14 @@ function normalizeStatus(
     const fallbackPosition = normalizePosition(fallbackParts[0] ?? defaultParts[0], defaultParts[0], kind);
     const fallbackClothing = normalizeClothing(fallbackParts[1] ?? defaultParts[1], defaultParts[1]);
     const rawPosition = normalizePosition(rawParts[0] ?? fallbackPosition, fallbackPosition, kind);
-    const inferredClothing = kind === "you" ? inferYouClothingFromContext(context) : null;
+    const clothingContext = kind === "you" ? clothingNarrativeEvidenceContext(context) : context;
+    const inferredClothing = kind === "you" ? inferYouClothingFromContext(clothingContext) : null;
     const rawClothing = normalizeClothing(inferredClothing ?? rawParts[1] ?? fallbackClothing, fallbackClothing);
     const position = statusChangeIsSupported(rawPosition, fallbackPosition, context, "position", kind)
         || (options.sceneChanged === true && rawParts[0] != null && !isGenericStatusPart(rawPosition))
         ? rawPosition
         : fallbackPosition;
-    const clothing = statusChangeIsSupported(rawClothing, fallbackClothing, context, "clothing", kind) ? rawClothing : fallbackClothing;
+    const clothing = statusChangeIsSupported(rawClothing, fallbackClothing, clothingContext, "clothing", kind) ? rawClothing : fallbackClothing;
     const fallbackDetail = normalizeDetail(fallbackParts[2] ?? defaultParts[2], defaultParts[2], kind);
     const rawDetail = normalizeDetail(rawParts[2] ?? fallbackDetail, fallbackDetail, kind);
     let detail = rawDetail;
@@ -2601,6 +2602,10 @@ function statusChangeIsSupported(
     }
 
     if (field === "clothing" && isGenericStatusPart(previous) && looksLikeClothingSlot(candidate)) {
+        if (kind === "you") {
+            return youClothingChangeIsSupported(candidate, previous, context);
+        }
+
         return true;
     }
 
@@ -2808,6 +2813,45 @@ function inferYouClothingFromContext(context: string): string | null {
     }
 
     return null;
+}
+
+function clothingNarrativeEvidenceContext(context: string): string {
+    return stripUnquotedSpeakerSpeech(stripDoubleQuotedText(context));
+}
+
+function stripDoubleQuotedText(value: string): string {
+    let result = "";
+    let inQuote = false;
+
+    for (const char of value) {
+        if (char === "\"" || char === "“" || char === "”") {
+            inQuote = !inQuote;
+            result += " ";
+            continue;
+        }
+
+        if (!inQuote) {
+            result += char;
+        }
+    }
+
+    return result;
+}
+
+function stripUnquotedSpeakerSpeech(value: string): string {
+    return normalizeLineEndings(value)
+        .split("\n")
+        .map((line) => {
+            const match = line.match(/^(\s*(?:\*\*)?[A-Z][A-Za-z0-9'._ -]{0,60}(?::|\*\*:)\s*)(.*)$/);
+
+            if (match == null) {
+                return line;
+            }
+
+            const actionBeats = match[2].match(/\*[^*\n]+\*/g);
+            return actionBeats == null ? match[1] : `${match[1]} ${actionBeats.join(" ")}`;
+        })
+        .join("\n");
 }
 
 function inferNakedClothingState(context: string): string | null {
