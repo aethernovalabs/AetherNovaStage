@@ -228,9 +228,9 @@ Format target:
 ```
 
 Stage menormalisasi format menjadi `XG ; XS ; XC`.
-Wallet memakai state lama kecuali narasi terbaru memuat evidence ekonomi yang jelas seperti payment, buy, cost, fee, reward, earn, loot, bounty, gift, refund, lost, stolen, robbed, atau confiscated.
+Wallet memakai state lama kecuali narasi terbaru memuat evidence ekonomi yang jelas seperti payment, buy, cost, fee, reward, earn, loot, bounty, gift, refund, lost, stolen, robbed, atau confiscated. Evidence wallet harus berupa transaksi/aksi visible di luar dialog; ucapan di dalam tanda kutip seperti `"I paid fifty silver"` hanya dianggap cerita/percakapan dan tidak boleh mengubah wallet.
 Jika AI mengubah angka wallet tanpa transaksi/reward/loss yang dijelaskan dalam cerita, stage mengembalikan wallet ke state sebelumnya.
-Jika AI lupa mengubah wallet tetapi konteks terbaru memuat pembayaran/reward yang eksplisit dan nominal uang jelas, stage boleh menghitung perubahan dari state lama, termasuk angka tertulis seperti `fifty silver`.
+Jika AI lupa mengubah wallet tetapi konteks terbaru memuat pembayaran/reward yang eksplisit dan nominal uang jelas, stage boleh menghitung perubahan dari state lama, termasuk angka tertulis seperti `fifty silver`. Jika header AI mengubah wallet dengan arah yang salah tetapi inferensi transaksi jelas, stage memilih hasil hitungan inferensi dari narasi/aksi non-dialog.
 Diskusi harga, valuasi, appraisal, atau penawaran yang belum selesai tidak mengubah wallet. Contoh seperti `worth a hundred gold to the right buyer`, `price is fifty silver`, `costs fifty silver`, atau `trade information for information` hanya dianggap pembahasan nilai sampai ada aksi pembayaran/penerimaan/loss yang eksplisit.
 Untuk penghitungan lintas pecahan, stage memakai konversi internal `1G = 100S` dan `1S = 100C`.
 Jika belum ada wallet yang pernah tersimpan, wallet valid pertama dari header dipakai sebagai nilai awal, termasuk first message atau alternate first message; stage tidak memaksa angka awal menjadi `0G ; 0S ; 0C`.
@@ -374,6 +374,7 @@ Penyesuaian yang sudah diterapkan:
 17. Speaker inference ringan ditambahkan agar dialog tanpa `Name:` bisa diberi speaker jika narasi/action beat dekat jelas menunjuk NPC tertentu.
 18. Thread terminal status diperluas agar item seperti `Job Offer Refused (resolved)` atau item dengan status complete/done/finished/refused/declined/rejected otomatis dibersihkan pada pesan berikutnya.
 19. Evidence pakaian `You` dibedakan antara narasi dan dialog: pembahasan membuka pakaian di dalam dialog tidak mengubah clothing slot menjadi `Naked` kecuali narasi/action beat benar-benar menunjukkan pakaian berubah.
+20. Evidence wallet dibedakan antara narasi dan dialog: nominal uang di dalam dialog tidak memicu perubahan wallet, dan jika ada transaksi non-dialog yang jelas stage memilih arah hitungan yang benar daripada angka wallet AI yang keliru.
 
 Jika prompt header asli nanti diubah lagi:
 

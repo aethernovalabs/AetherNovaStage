@@ -1938,7 +1938,8 @@ function normalizeWalletLine(
     const previous = normalizeWalletValue(previousWallet) ?? DEFAULT_STATE.wallet;
     const rawCandidate = cleanLabeledValue(rawLine, "Wallet");
     const candidate = normalizeWalletValue(rawCandidate);
-    const inferred = previousInitialized ? inferWalletFromContext(previous, context) : null;
+    const walletContext = walletTransactionEvidenceContext(context);
+    const inferred = previousInitialized ? inferWalletFromContext(previous, walletContext) : null;
 
     if (candidate == null) {
         return {
@@ -1961,9 +1962,9 @@ function normalizeWalletLine(
         };
     }
 
-    if (walletChangeIsSupported(candidate, previous, context)) {
+    if (walletChangeIsSupported(candidate, previous, walletContext)) {
         return {
-            value: candidate,
+            value: inferred != null && !sameText(candidate, inferred) ? inferred : candidate,
             initialized: true,
         };
     }
@@ -2035,6 +2036,10 @@ function inferWalletFromContext(previousWallet: string, context: string): string
     const next = formatWallet(copperToWallet(nextCopper));
 
     return sameText(next, previousWallet) ? null : next;
+}
+
+function walletTransactionEvidenceContext(context: string): string {
+    return nonDialogueEvidenceContext(context);
 }
 
 function inferWalletDeltaFromContext(context: string): {direction: "expense" | "income"; amounts: WalletAmounts} | null {
@@ -2212,7 +2217,11 @@ function walletContextIsPriceDiscussionOnly(context: string): boolean {
 }
 
 function walletContextIndicatesIncomeToUser(lowerContext: string): boolean {
-    return /\b(?:gives?|hands?|pays?)\s+(?:you|\{\{user\}\})\b/i.test(lowerContext)
+    if (/\b(?:i|we)\s+(?:give|gives|gave|hand|hands|handed|pay|pays|paid)\s+(?:you|\{\{user\}\})\b/i.test(lowerContext)) {
+        return false;
+    }
+
+    return /\b(?:gives?|gave|hands?|handed|pays?)\s+(?:you|\{\{user\}\})\b/i.test(lowerContext)
         || /\b(?:to|toward|towards|into)\s+(?:you|your|\{\{user\}\})\b/i.test(lowerContext)
         || /\byou\s+(?:receive|received|earn|earned|gain|gained|found)\b/i.test(lowerContext);
 }
@@ -2816,6 +2825,10 @@ function inferYouClothingFromContext(context: string): string | null {
 }
 
 function clothingNarrativeEvidenceContext(context: string): string {
+    return nonDialogueEvidenceContext(context);
+}
+
+function nonDialogueEvidenceContext(context: string): string {
     return stripUnquotedSpeakerSpeech(stripDoubleQuotedText(context));
 }
 
