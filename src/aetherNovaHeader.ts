@@ -522,6 +522,9 @@ const WALLET_AMOUNT_PATTERN = /\b\d+\s*(?:g|gold|s|silver|c|copper)\b/i;
 const VAGUE_STATUS_PATTERN = /\b(mood|emotion|feeling|feelings|thought|thoughts|status|role|happy|sad|angry|calm|nervous|worried|confused|curious|suspicious|jealous|afraid|scared|determined|focused)\b/i;
 const USER_FORBIDDEN_DETAIL_PATTERN = /\b(thinking|thinks|feeling|feels|expression|expressions|smiling|smiles|frowning|grinning|says|said|speaks|asks|answers|chooses|choosing|choice|decides|attacks|attack|transforms|transforming|consents|consent|refuses|dialogue)\b/i;
 const MINOR_THREAD_PATTERN = /\b(normal topic|normal topics|casual question|casual questions|temporary mood|small suspicion|minor jealousy|minor tension|small talk)\b/i;
+const TERMINAL_THREAD_STATUS = "(?:resolved|complete|completed|done|finished|concluded|closed|settled|refused|declined|rejected|failed|abandoned|expired|irrelevant|cancelled|canceled)";
+const TERMINAL_THREAD_STATUS_TAG_PATTERN = new RegExp(`\\([^)]*\\b${TERMINAL_THREAD_STATUS}\\b[^)]*\\)`, "i");
+const TERMINAL_THREAD_END_PATTERN = new RegExp(`\\b(?:resolved|complete|completed|done|finished|concluded|settled|refused|declined|rejected|failed|abandoned|expired|irrelevant|cancelled|canceled)\\b\\s*$`, "i");
 const TRANSIENT_YOU_DETAIL_PATTERN = /\b(holding|gripping|grasping|clutching|touching|stroking|caressing|petting|rubbing|tilted|tilting|cocked|angled|resting|leaning|pressing|bracing|supporting|pushing|pulling|tugging|drawing|lifting|lowering|cleaning|wiping|washing|brushing|drying|patting|releasing|released|release|placing|placed|setting|set down|sliding|slid|hand on|hands on|arm around|arms around|head on|against|upon|on top of)\b/i;
 
 const DETAIL_BODY_PART_CUES = [
@@ -1487,37 +1490,43 @@ function normalizeNewNpcStatus(rawStatus: string, race: string, context: string)
 function normalizeThreadLine(rawLine: string, previousThread: string, narrative: string): string {
     const rawCandidate = cleanLabeledValue(rawLine, "Thread");
     const inferredThread = inferThreadFromNarrative(narrative, previousThread);
+    const previousActiveThread = activeThreadOrNone(previousThread);
 
     if (isNoThreadValue(rawCandidate)) {
         return inferredThread ?? "None";
     }
 
     if (isPlaceholder(rawCandidate)) {
-        return inferredThread ?? previousThread;
+        return inferredThread ?? previousActiveThread;
     }
 
     const candidate = normalizeThreadValue(rawCandidate);
 
     if (candidate.length === 0) {
-        return inferredThread ?? previousThread;
+        return inferredThread ?? previousActiveThread;
     }
 
     if (
-        previousThread !== DEFAULT_STATE.thread
-        && previousThread !== "None"
-        && !sameText(candidate, previousThread)
-        && !threadChangeIsSupported(candidate, previousThread, narrative)
+        previousActiveThread !== DEFAULT_STATE.thread
+        && previousActiveThread !== "None"
+        && !sameText(candidate, previousActiveThread)
+        && !threadChangeIsSupported(candidate, previousActiveThread, narrative)
     ) {
-        return inferredThread != null && threadChangeIsSupported(inferredThread, previousThread, narrative)
-            ? mergeThreadInference(previousThread, inferredThread)
-            : previousThread;
+        return inferredThread != null && threadChangeIsSupported(inferredThread, previousActiveThread, narrative)
+            ? mergeThreadInference(previousActiveThread, inferredThread)
+            : previousActiveThread;
     }
 
-    if (inferredThread != null && threadShouldUseNarrativeInference(candidate, previousThread, inferredThread)) {
+    if (inferredThread != null && threadShouldUseNarrativeInference(candidate, previousActiveThread, inferredThread)) {
         return mergeThreadInference(candidate, inferredThread);
     }
 
     return candidate;
+}
+
+function activeThreadOrNone(value: string): string {
+    const active = normalizeThreadValue(value);
+    return active.length > 0 ? active : "None";
 }
 
 function inferThreadFromNarrative(narrative: string, previousThread: string): string | null {
@@ -2569,7 +2578,10 @@ function normalizeThreadValue(rawValue: string): string {
 }
 
 function isTerminalThreadItem(value: string): boolean {
-    return /\b(completed|complete|failed|abandoned|expired|irrelevant)\b/i.test(value)
+    const clean = cleanFragment(value);
+
+    return TERMINAL_THREAD_STATUS_TAG_PATTERN.test(clean)
+        || TERMINAL_THREAD_END_PATTERN.test(clean)
         || MINOR_THREAD_PATTERN.test(value);
 }
 
@@ -3675,6 +3687,9 @@ function isPlaceholder(value: string): boolean {
         || lower === "n/a"
         || lower === "unknown"
         || lower === "null"
+        || lower === "current scene"
+        || lower === "current topic"
+        || lower === "current event"
         || lower.includes("current mission / pending event")
         || lower.includes("position; clothing; relevant status")
         || lower.includes("body position; one clothing type");

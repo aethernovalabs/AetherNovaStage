@@ -215,7 +215,7 @@ Perubahan thread lebih mungkin diterima jika ada overlap kata penting atau naras
 Jika header `Thread` kosong, `None`, placeholder, atau masih mengulang thread lama, stage boleh membaca narasi terbaru untuk menangkap thread penting yang eksplisit seperti mission, quest, objective, task, appointment, promise, hunt/quest, deadline, order, contract, travel goal, major obstacle, atau major unresolved conflict.
 Deteksi dari narasi harus konservatif: stage hanya mengambil frasa yang benar-benar tertulis di narasi, memberi status sederhana seperti `(Ongoing)` atau `(Pending)`, dan tidak membuat tujuan baru secara kreatif.
 Stage juga boleh membuat sub-goal yang terhubung dengan thread lama jika konteks terbaru menyebut rencana jelas untuk bertemu/berbicara/bertanya kepada NPC tertentu tentang target yang sudah ada di thread lama, misalnya `meet Kaelen first to ask her about Debi`. Dalam kasus seperti ini, misi utama boleh ditandai `(Pending)` dan sub-goal baru ditandai `(Ongoing)` jika user sudah mulai bergerak atau menyuruh NPC memimpin jalan.
-Stage menghapus item thread yang completed, failed, abandoned, expired, irrelevant, atau minor seperti normal topic, casual question, temporary mood, small suspicion, minor jealousy, dan small talk.
+Stage menghapus item thread yang resolved, complete/completed, done, finished, concluded, refused, declined, rejected, failed, abandoned, expired, irrelevant, canceled/cancelled, atau minor/placeholder seperti current scene, current topic, normal topic, casual question, temporary mood, small suspicion, minor jealousy, dan small talk.
 
 ### Wallet
 
@@ -331,9 +331,9 @@ Rules:
 [Header THREAD LINE Rules]
 - Track only important RP direction: mission, appointment, promise, hunt/quest, deadline, order, contract, travel goal, major obstacle, or major unresolved conflict.
 - Thread may show a mission paused by the current obstacle.
-- Do not track normal topics, casual questions, temporary mood, small suspicion, minor jealousy, or every tension.
+- Do not track current scene/current topic placeholders, normal topics, casual questions, temporary mood, small suspicion, minor jealousy, or every tension.
 - Use " ; " between items.
-- Remove completed, failed, abandoned, expired, or irrelevant items.
+- Remove resolved, completed/complete, done, finished, refused, declined, rejected, failed, abandoned, expired, cancelled/canceled, or irrelevant items.
 - Optional status tags: (on pause), (Pending), (Ongoing), (Secret), (Known: NPC Name), (Known: Group).
 
 [Header WALLET Rule]
@@ -372,6 +372,7 @@ Penyesuaian yang sudah diterapkan:
 15. Thread inference dari narasi ditambahkan agar mission/quest/contract/promise/appointment/travel goal/major obstacle yang eksplisit tetap masuk ke line `Thread` saat header kosong, `None`, placeholder, atau stale.
 16. Thread linked sub-goal ditambahkan agar rencana seperti `meet Kaelen to ask about Debi` bisa ditambahkan dari konteks user/narasi tanpa mengganti misi utama.
 17. Speaker inference ringan ditambahkan agar dialog tanpa `Name:` bisa diberi speaker jika narasi/action beat dekat jelas menunjuk NPC tertentu.
+18. Thread terminal status diperluas agar item seperti `Job Offer Refused (resolved)` atau item dengan status complete/done/finished/refused/declined/rejected otomatis dibersihkan pada pesan berikutnya.
 
 Jika prompt header asli nanti diubah lagi:
 
