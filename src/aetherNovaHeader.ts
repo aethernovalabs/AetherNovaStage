@@ -518,6 +518,7 @@ const CLOTHING_ADJUSTMENT_CUES = [
 
 const CLOTHING_DAMAGE_WORDS = /\b(burned|burnt|scorched|torn|ripped|shredded|slashed|bloody|bloodied|stained|soaked|wet|muddy|damaged|destroyed|cracked|frayed|singed|loose|loosened|baggy|caught|snagged|stuck|hooked|tangled|slipping|untucked|unbuttoned|unfastened|missing|robek|terbakar|longgar|tersangkut)\b/i;
 const CLOTHING_SLOT_PATTERN = /\b(cloth|clothes|clothing|garment|garments|layer|layers|outfit|attire|garb|uniform|armor|armour|robe|robes|over-robe|under-robe|overrobe|underrobe|kimono|yukata|haori|hakama|dress|gown|suit|shirt|blouse|tunic|jacket|coat|cloak|mantle|cape|hood|pants|pant|trousers|jeans|shorts|skirt|leggings|boots|shoes|sandals|gloves|mask|veil|hat|cap|helmet|apron|vest|corset|sash|belt|scarf|shawl|wrap|rags|disguise|leather|silk|linen|cotton|wool|chainmail|mail|sleeve|sleeves|collar|hem|cuff|cuffs|waistband|pantleg|pantlegs|naked|nude|unclothed|bare|baju|celana|pakaian|kemeja|lengan baju|kain)\b/i;
+const BODY_RACIAL_DETAIL_PATTERN = /\b(eye|eyes|gaze|tail|tails|ear|ears|wing|wings|horn|horns|halo|fang|fangs|claw|claws|scale|scales|hand|hands|palm|palms|finger|fingers|arm|arms|elbow|elbows|head|face|cheek|cheeks|forehead|chin|mouth|nose|hair|shoulder|shoulders|back|body|torso|waist|hip|hips|knee|knees|posture|voice|weapon|sword|blade|staff)\b/i;
 const WALLET_AMOUNT_PATTERN = /\b\d+\s*(?:g|gold|s|silver|c|copper)\b/i;
 const VAGUE_STATUS_PATTERN = /\b(mood|emotion|feeling|feelings|thought|thoughts|status|role|happy|sad|angry|calm|nervous|worried|confused|curious|suspicious|jealous|afraid|scared|determined|focused)\b/i;
 const USER_FORBIDDEN_DETAIL_PATTERN = /\b(thinking|thinks|feeling|feels|expression|expressions|smiling|smiles|frowning|grinning|says|said|speaks|asks|answers|chooses|choosing|choice|decides|attacks|attack|transforms|transforming|consents|consent|refuses|dialogue)\b/i;
@@ -539,6 +540,9 @@ const DETAIL_BODY_PART_CUES = [
     "elbow",
     "elbows",
     "head",
+    "eye",
+    "eyes",
+    "gaze",
     "face",
     "cheek",
     "cheeks",
@@ -553,6 +557,23 @@ const DETAIL_BODY_PART_CUES = [
     "body",
     "torso",
     "waist",
+    "hip",
+    "hips",
+    "knee",
+    "knees",
+    "tail",
+    "tails",
+    "ear",
+    "ears",
+    "wing",
+    "wings",
+    "horn",
+    "horns",
+    "halo",
+    "fang",
+    "fangs",
+    "claw",
+    "claws",
 ];
 
 const DETAIL_CONTACT_ACTION_CUES = [
@@ -2289,13 +2310,77 @@ function statusParts(status: string, kind: "you" | "npc"): string[] {
     }
 
     const parts = clean.includes(";") || kind === "npc" ? splitStatusByFormat(clean) : [clean];
-    const normalized = parts.map(cleanFragment).filter((part) => !isPlaceholder(part));
+    const normalized = parts
+        .flatMap(splitMixedStatusPart)
+        .map(cleanFragment)
+        .filter((part) => !isPlaceholder(part));
 
-    if (kind === "npc" && normalized.length > 3) {
-        return [normalized[0], normalized[1], normalized.slice(2).join(", ")].filter(Boolean);
+    return orderStatusParts(normalized);
+}
+
+function orderStatusParts(parts: string[]): string[] {
+    if (parts.length === 0) {
+        return [];
     }
 
-    return normalized.slice(0, 3);
+    const clothingIndex = parts.findIndex(isClothingStatusPart);
+    const clothing = clothingIndex >= 0 ? parts[clothingIndex] : "";
+    const nonClothing = parts.filter((_part, index) => index !== clothingIndex);
+    const explicitPositionIndex = nonClothing.findIndex((part) => statusPartLooksLikePosition(part) && !statusPartLooksLikeDetailOnly(part));
+    const fallbackPositionIndex = explicitPositionIndex >= 0
+        ? explicitPositionIndex
+        : nonClothing.findIndex((part) => !statusPartLooksLikeDetail(part));
+    const positionIndex = fallbackPositionIndex >= 0 ? fallbackPositionIndex : -1;
+    const position = positionIndex >= 0 ? nonClothing[positionIndex] : "";
+    const detail = nonClothing
+        .filter((_part, index) => index !== positionIndex)
+        .join(", ");
+
+    return [position, clothing, detail];
+}
+
+function splitMixedStatusPart(part: string): string[] {
+    const clean = cleanFragment(part);
+
+    if (clean.length === 0) {
+        return [];
+    }
+
+    const commaParts = splitTopLevel(clean, ",").map(cleanFragment).filter(Boolean);
+    if (commaParts.length > 1 && commaParts.some(statusPartLooksLikePosition) && commaParts.some(statusPartLooksLikeDetail)) {
+        return commaParts;
+    }
+
+    const withDetail = clean.match(/^(.*?\b(?:standing|seated|sitting|walking|kneeling|crouching|lying|beside|before|behind|near|facing|left|right|front|table|door|counter)\b.*?)\s+with\s+((?:his|her|their|your|both|one)?\s*(?:eye|eyes|gaze|tail|tails|ear|ears|wing|wings|horn|horns|hand|hands|arm|arms|posture|body)\b.*)$/i);
+    if (withDetail != null) {
+        return [withDetail[1], withDetail[2]].map(cleanFragment).filter(Boolean);
+    }
+
+    return [clean];
+}
+
+function isClothingStatusPart(value: string): boolean {
+    return looksLikeClothingSlot(value);
+}
+
+function statusPartLooksLikePosition(value: string): boolean {
+    const clean = cleanFragment(value);
+    const lower = clean.toLowerCase();
+
+    return positionMeansWalking(lower)
+        || positionMeansStanding(lower)
+        || positionMeansSeated(lower)
+        || positionMeansProne(lower)
+        || containsAnyCue(lower, POSITION_SPATIAL_CUES)
+        || containsAnyCue(lower, POSITION_CHANGE_CUES);
+}
+
+function statusPartLooksLikeDetail(value: string): boolean {
+    return BODY_RACIAL_DETAIL_PATTERN.test(value);
+}
+
+function statusPartLooksLikeDetailOnly(value: string): boolean {
+    return statusPartLooksLikeDetail(value) && !statusPartLooksLikePosition(value);
 }
 
 function splitStatusByFormat(status: string): string[] {

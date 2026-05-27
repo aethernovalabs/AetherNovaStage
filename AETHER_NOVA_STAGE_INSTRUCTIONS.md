@@ -176,9 +176,11 @@ Stage juga menyaring thoughts, feelings, expression, dialogue, actions, movement
 Position, clothes/disguise, dan body detail memakai state lama kecuali konteks user atau narasi AI terbaru memberi bukti perubahan.
 Perubahan pakaian didukung oleh evidence berbahasa Inggris seperti change/wear/remove, put on, dressed in, clad in, changes into, atau damage naratif seperti burned/torn/scorched/damaged. Untuk line `You`, evidence pakaian harus datang dari narasi/aksi visible; kata seperti `naked`, `remove clothes`, atau `undress` yang hanya muncul di dialog bertanda kutip tidak boleh mengubah clothing slot.
 Slot kedua dalam status selalu diperlakukan sebagai clothing/disguise slot. Nama pakaian unik seperti ceremonial mantle, moon-silk kimono, battle robe, academy uniform, haori, robe, armor, cloak, atau disguise bisa diterima sebagai pakaian, terutama saat state sebelumnya masih `Regular clothing` atau pakaian itu disebut lagi di narasi terbaru.
+Jika AI menulis urutan status salah, stage mendeteksi isi slot lalu mengembalikannya ke urutan `Position; Clothes/disguise; body/racial detail`. Contoh `standing beside Yume; eyes lowered; kimono` menjadi `standing beside Yume; kimono; eyes lowered`. Jika tidak ada slot yang mengacu pada pakaian/naked, stage mempertahankan pakaian dari state sebelumnya.
 Clothing slot boleh berisi kondisi pakaian yang relevan, seperti naked, fully naked, loose shirt, baggy pants, pants only, shirt caught on a fence, left sleeve torn, cloak burned, atau armor cracked. Stage tidak memotong detail clothing hanya karena ada `and`, `with`, atau comma selama masih berada di slot pakaian.
 Perubahan posisi didukung oleh cue seperti walk/stop/arrive/sit/stand/reach/collapse, dan juga bisa diterima saat location sudah terbukti berpindah scene.
 Position slot boleh mencantumkan scene blocking dengan nama NPC atau `{{user}}`, arah, dan jarak, seperti `Standing left of Yume`, `Sitting to the right of {{user}}`, `Standing six steps before {{user}}`, atau `Standing beside Yume near the door`.
+Detail seperti eyes/gaze/tail/ears/wings/horns/hands/posture tidak boleh tinggal di slot position jika bisa dipisahkan; stage memindahkannya ke body/racial detail.
 Kata generik seperti `scene` tidak boleh masuk position; `Standing in scene` dinormalisasi menjadi `Standing`, dan posisi lama seperti `Lying on futon` tetap dipertahankan jika narasi baru hanya menyebut detail kecil seperti closing eyes.
 Body detail yang bersifat kontak sementara, seperti hand resting on a tail, holding, touching, leaning, atau pressing against something, tidak dipertahankan saat posisi atau scene berubah kecuali narasi terbaru masih memberi evidence kontak itu.
 Body detail juga boleh mencatat interaksi tangan yang terlihat dan sementara, seperti `hand cleaning Yume's face`, `wiping Yume's cheek`, atau `brushing hair aside`, selama narasi terbaru memang menyebut aksi visible itu.
@@ -377,6 +379,7 @@ Penyesuaian yang sudah diterapkan:
 19. Evidence pakaian `You` dibedakan antara narasi dan dialog: pembahasan membuka pakaian di dalam dialog tidak mengubah clothing slot menjadi `Naked` kecuali narasi/action beat benar-benar menunjukkan pakaian berubah.
 20. Evidence wallet dibedakan antara narasi dan dialog: nominal uang di dalam dialog tidak memicu perubahan wallet, dan jika ada transaksi non-dialog yang jelas stage memilih arah hitungan yang benar daripada angka wallet AI yang keliru.
 21. Formatter dialog diperbaiki agar speaker line yang salah dibungkus `*...*` tetap dibaca sebagai dialog, sementara single-quoted atau italic action beat sebelum quote dialog dipertahankan sebagai action beat.
+22. Status slot classifier ditambahkan agar pakaian/naked dideteksi dari isi slot, urutan status salah seperti `position; body/racial; clothing` dikoreksi, dan detail eyes/gaze/tail/ears/wings/horns dipindahkan dari position ke body/racial detail.
 
 Jika prompt header asli nanti diubah lagi:
 
