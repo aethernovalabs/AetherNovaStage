@@ -48,6 +48,11 @@ interface NormalizedWallet {
     initialized: boolean;
 }
 
+interface NarrativeFormatState {
+    npcNames: string[];
+    recentSpeaker: string | null;
+}
+
 interface NormalizeStatusOptions {
     sceneChanged?: boolean;
 }
@@ -3096,7 +3101,7 @@ function inferRace(character: Character): string {
 }
 
 function formatResponse(state: AetherNovaMessageState, narrative: string): string {
-    const cleanNarrative = normalizeNarrativeFormat(narrative);
+    const cleanNarrative = normalizeNarrativeFormat(narrative, state);
     const header = formatHeader(state);
 
     if (cleanNarrative.length === 0) {
@@ -3106,29 +3111,34 @@ function formatResponse(state: AetherNovaMessageState, narrative: string): strin
     return `${header}\n\n${cleanNarrative}`;
 }
 
-function normalizeNarrativeFormat(narrative: string): string {
+function normalizeNarrativeFormat(narrative: string, state: AetherNovaMessageState): string {
     const clean = normalizeLineEndings(narrative).trim();
 
     if (clean.length === 0) {
         return "";
     }
 
+    const formatState: NarrativeFormatState = {
+        npcNames: npcSpeakerNamesFromState(state.npc),
+        recentSpeaker: null,
+    };
+
     return clean
         .split(/\n{2,}/)
-        .map((block) => normalizeNarrativeBlock(block))
+        .map((block) => normalizeNarrativeBlock(block, formatState))
         .filter((block) => block.length > 0)
         .join("\n\n");
 }
 
-function normalizeNarrativeBlock(block: string): string {
+function normalizeNarrativeBlock(block: string, state: NarrativeFormatState): string {
     return block
         .split("\n")
-        .map((line) => normalizeNarrativeLine(line))
+        .map((line) => normalizeNarrativeLine(line, state))
         .filter((line) => line.length > 0)
         .join("\n");
 }
 
-function normalizeNarrativeLine(line: string): string {
+function normalizeNarrativeLine(line: string, state: NarrativeFormatState): string {
     const clean = line.trim();
 
     if (clean.length === 0) {
@@ -3137,10 +3147,17 @@ function normalizeNarrativeLine(line: string): string {
 
     const dialogue = normalizeDialogueLine(clean);
     if (dialogue != null) {
+        state.recentSpeaker = speakerFromExplicitDialogueLine(clean) ?? state.recentSpeaker;
         return dialogue;
     }
 
+    const inferredDialogue = normalizeBareDialogueLine(clean, state);
+    if (inferredDialogue != null) {
+        return inferredDialogue;
+    }
+
     const content = replaceInlineEmphasis(stripOuterSingleItalic(clean));
+    state.recentSpeaker = inferRecentSpeakerFromNarrative(content, state) ?? state.recentSpeaker;
     return content.length === 0 ? "" : `*${content}*`;
 }
 
@@ -3156,6 +3173,61 @@ function normalizeDialogueLine(line: string): string | null {
     const text = normalizeDialogueText(parsed.text);
 
     return text.length === 0 ? speaker : `${speaker} ${text}`;
+}
+
+function normalizeBareDialogueLine(line: string, state: NarrativeFormatState): string | null {
+    const clean = stripOuterSingleItalic(line.trim());
+
+    if (!clean.startsWith("\"")) {
+        return null;
+    }
+
+    const speaker = inferBareDialogueSpeaker(clean, state);
+
+    if (speaker == null) {
+        return null;
+    }
+
+    state.recentSpeaker = speaker;
+    return `${speaker}: ${normalizeDialogueText(clean)}`;
+}
+
+function inferBareDialogueSpeaker(line: string, state: NarrativeFormatState): string | null {
+    const namedSpeaker = speakerFromDialogueAttribution(line, state);
+
+    if (namedSpeaker != null) {
+        return namedSpeaker;
+    }
+
+    if (dialogueHasPronounAttribution(line) && state.recentSpeaker != null) {
+        return state.recentSpeaker;
+    }
+
+    if (state.recentSpeaker != null && state.npcNames.includes(state.recentSpeaker)) {
+        return state.recentSpeaker;
+    }
+
+    return state.npcNames.length === 1 ? state.npcNames[0] : null;
+}
+
+function speakerFromDialogueAttribution(line: string, state: NarrativeFormatState): string | null {
+    const pattern = /\b([A-Z][A-Za-z'._-]{1,60})\s+(?:says|said|asks|asked|answers|answered|replies|replied|murmurs|murmured|whispers|whispered|mutters|muttered|calls|called|continues|continued)\b/;
+    const match = line.match(pattern);
+
+    if (match == null) {
+        return null;
+    }
+
+    return speakerNameFromMention(match[1], state);
+}
+
+function dialogueHasPronounAttribution(line: string): boolean {
+    return /\b(?:he|she|they)\s+(?:says|said|asks|asked|answers|answered|replies|replied|murmurs|murmured|whispers|whispered|mutters|muttered|calls|called|continues|continued)\b/i.test(line);
+}
+
+function speakerFromExplicitDialogueLine(line: string): string | null {
+    const parsed = parseDialogueLine(stripOuterSingleItalic(line.trim()));
+    return parsed == null ? null : parsed.speaker;
 }
 
 function parseDialogueLine(line: string): {speaker: string; text: string; bold: boolean} | null {
@@ -3243,6 +3315,66 @@ function formatInlineNarrationInDialogue(value: string): string {
         const clean = inner.trim();
         return looksLikeInlineNarrationBeat(clean) ? `${prefix}*${clean}*` : match;
     });
+}
+
+function npcSpeakerNamesFromState(npcLine: string): string[] {
+    if (isNoNpcValue(npcLine)) {
+        return [];
+    }
+
+    const names: string[] = [];
+    for (const entry of splitTopLevel(npcLine, ",")) {
+        const parsed = parseIdentityStatus(entry);
+        const identity = splitIdentity(parsed.identity, "", "");
+        const fullName = cleanSpeakerName(identity.left);
+
+        if (fullName.length === 0 || /^unknown npc$/i.test(fullName)) {
+            continue;
+        }
+
+        addUniqueSpeakerName(names, fullName);
+
+        const firstName = fullName.split(/\s+/)[0];
+        if (firstName != null && firstName.length > 0) {
+            addUniqueSpeakerName(names, firstName);
+        }
+    }
+
+    return names;
+}
+
+function addUniqueSpeakerName(names: string[], name: string): void {
+    if (!names.some((entry) => sameText(entry, name))) {
+        names.push(name);
+    }
+}
+
+function inferRecentSpeakerFromNarrative(narrative: string, state: NarrativeFormatState): string | null {
+    let bestSpeaker: string | null = null;
+    let bestIndex = -1;
+
+    for (const name of state.npcNames) {
+        const index = lastSpeakerNameIndex(narrative, name);
+
+        if (index > bestIndex) {
+            bestIndex = index;
+            bestSpeaker = name;
+        }
+    }
+
+    return bestSpeaker;
+}
+
+function lastSpeakerNameIndex(value: string, name: string): number {
+    const matches = [...value.matchAll(new RegExp(`\\b${escapeRegExp(name)}\\b`, "gi"))];
+    const last = matches[matches.length - 1];
+    return last?.index ?? -1;
+}
+
+function speakerNameFromMention(value: string, state: NarrativeFormatState): string | null {
+    const clean = cleanSpeakerName(value);
+
+    return state.npcNames.find((name) => sameText(name, clean)) ?? null;
 }
 
 function looksLikeInlineNarrationBeat(value: string): boolean {
