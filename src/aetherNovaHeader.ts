@@ -991,9 +991,6 @@ const WALLET_PAYMENT_ACTION_CUES = [
     "push",
     "pushes",
     "pushed",
-    "offer",
-    "offers",
-    "offered",
     "bribe",
     "bribes",
     "bribed",
@@ -1038,9 +1035,6 @@ const WALLET_INCOME_ACTION_CUES = [
     "hand",
     "hands",
     "handed",
-    "offer",
-    "offers",
-    "offered",
     "pay",
     "pays",
     "paid",
@@ -2035,6 +2029,10 @@ function inferWalletFromContext(previousWallet: string, context: string): string
 }
 
 function inferWalletDeltaFromContext(context: string): {direction: "expense" | "income"; amounts: WalletAmounts} | null {
+    if (walletContextIsPriceDiscussionOnly(context)) {
+        return null;
+    }
+
     const amounts = extractMoneyMentionAmounts(context);
 
     if (amounts == null) {
@@ -2178,8 +2176,34 @@ function walletIncomeTransactionIsSupported(context: string): boolean {
         );
 }
 
+function walletLossTransactionIsSupported(context: string): boolean {
+    const lowerContext = context.toLowerCase();
+
+    return containsAnyCue(lowerContext, ["loses", "lost", "stolen", "robbed", "confiscated"])
+        && (
+            /\b(?:i|me|my|you|your|\{\{user\}\})\b/i.test(context)
+            || containsAnyCue(lowerContext, ["wallet", "purse", "pouch", "money", "coin", "coins", "gold", "silver", "copper"])
+        );
+}
+
+function walletContextIsPriceDiscussionOnly(context: string): boolean {
+    const lowerContext = context.toLowerCase();
+    const hasValuationCue = /\b(?:worth|valued at|value|asking price|market price|price tag|to the right buyer|right buyer|buyer|buyers|seller|sellers)\b/i.test(context)
+        || /\b(?:cost|costs|costing|price|fee)\b/i.test(context)
+        || /\btrade\s+you\s+information\s+for\s+information\b/i.test(context);
+
+    if (!hasValuationCue) {
+        return false;
+    }
+
+    return !walletExpenseTransactionIsSupported(context)
+        && !walletIncomeTransactionIsSupported(context)
+        && !walletLossTransactionIsSupported(context)
+        && !containsAnyCue(lowerContext, ["received payment", "payment received", "has been paid", "was paid"]);
+}
+
 function walletContextIndicatesIncomeToUser(lowerContext: string): boolean {
-    return /\b(?:gives?|hands?|pays?|offers?)\s+(?:you|\{\{user\}\})\b/i.test(lowerContext)
+    return /\b(?:gives?|hands?|pays?)\s+(?:you|\{\{user\}\})\b/i.test(lowerContext)
         || /\b(?:to|toward|towards|into)\s+(?:you|your|\{\{user\}\})\b/i.test(lowerContext)
         || /\byou\s+(?:receive|received|earn|earned|gain|gained|found)\b/i.test(lowerContext);
 }
@@ -3550,11 +3574,20 @@ function walletChangeIsSupported(candidate: string, previousWallet: string, cont
         return true;
     }
 
+    if (walletContextIsPriceDiscussionOnly(context)) {
+        return false;
+    }
+
     const lowerContext = context.toLowerCase();
-    const hasTransactionCue = containsAnyCue(lowerContext, WALLET_TRANSACTION_CUES);
     const hasMoneyCue = containsAnyCue(lowerContext, WALLET_MONEY_CUES) || WALLET_AMOUNT_PATTERN.test(context);
 
-    return hasTransactionCue && hasMoneyCue;
+    return hasMoneyCue
+        && (
+            walletExpenseTransactionIsSupported(context)
+            || walletIncomeTransactionIsSupported(context)
+            || walletLossTransactionIsSupported(context)
+            || containsAnyCue(lowerContext, ["received payment", "payment received", "has been paid", "was paid"])
+        );
 }
 
 function meaningfulTokens(value: string): Set<string> {

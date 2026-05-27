@@ -231,6 +231,7 @@ Stage menormalisasi format menjadi `XG ; XS ; XC`.
 Wallet memakai state lama kecuali narasi terbaru memuat evidence ekonomi yang jelas seperti payment, buy, cost, fee, reward, earn, loot, bounty, gift, refund, lost, stolen, robbed, atau confiscated.
 Jika AI mengubah angka wallet tanpa transaksi/reward/loss yang dijelaskan dalam cerita, stage mengembalikan wallet ke state sebelumnya.
 Jika AI lupa mengubah wallet tetapi konteks terbaru memuat pembayaran/reward yang eksplisit dan nominal uang jelas, stage boleh menghitung perubahan dari state lama, termasuk angka tertulis seperti `fifty silver`.
+Diskusi harga, valuasi, appraisal, atau penawaran yang belum selesai tidak mengubah wallet. Contoh seperti `worth a hundred gold to the right buyer`, `price is fifty silver`, `costs fifty silver`, atau `trade information for information` hanya dianggap pembahasan nilai sampai ada aksi pembayaran/penerimaan/loss yang eksplisit.
 Untuk penghitungan lintas pecahan, stage memakai konversi internal `1G = 100S` dan `1S = 100C`.
 Jika belum ada wallet yang pernah tersimpan, wallet valid pertama dari header dipakai sebagai nilai awal, termasuk first message atau alternate first message; stage tidak memaksa angka awal menjadi `0G ; 0S ; 0C`.
 Stage tidak mengizinkan NPC atau narasi membaca wallet sebagai info in-character kecuali uang itu memang diketahui lewat cerita.
