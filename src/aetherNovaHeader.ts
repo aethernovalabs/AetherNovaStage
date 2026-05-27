@@ -3260,7 +3260,7 @@ function parseDialogueLine(line: string): {speaker: string; text: string; bold: 
 }
 
 function normalizeDialogueText(value: string): string {
-    const clean = formatInlineNarrationInDialogue(replaceInlineEmphasis(stripOuterSingleItalic(value.trim())));
+    const clean = formatPlainActionBeatBetweenDialogue(formatInlineNarrationInDialogue(replaceInlineEmphasis(stripOuterSingleItalic(value.trim()))));
     const repaired = formatLeadingMisquotedActionBeat(clean);
 
     if (repaired.length === 0) {
@@ -3314,6 +3314,13 @@ function formatInlineNarrationInDialogue(value: string): string {
     return value.replace(/(^|[\s([{])'([^'\n]{2,180})'(?=$|[\s).,!?:;\]}])/g, (match, prefix: string, inner: string) => {
         const clean = inner.trim();
         return looksLikeInlineNarrationBeat(clean) ? `${prefix}*${clean}*` : match;
+    });
+}
+
+function formatPlainActionBeatBetweenDialogue(value: string): string {
+    return value.replace(/("\s+)([^"\n*]{2,220}?)(\s+")/g, (match, before: string, beat: string, after: string) => {
+        const clean = beat.trim().replace(/\s+/g, " ");
+        return looksLikeInlineNarrationBeat(clean) ? `${before}*${clean}*${after}` : match;
     });
 }
 

@@ -254,6 +254,7 @@ Inline emphasis kecil di dalam narasi/dialog seperti `*want*` diganti menjadi `'
 Jika baris dialog mencampur dialog dan action beat dalam single quote, stage mengubah action beat itu menjadi italic tanpa memecah dialog, misalnya `Yume: "Good." 'Her lips curve.' "And..."` menjadi `Yume: "Good." *Her lips curve.* "And..."`.
 Jika action beat keliru ditaruh di dalam quote dialog pembuka, stage mengeluarkannya sebagai italic lalu mempertahankan sisa dialog dalam quote, misalnya `Borin: "'catching the coin.' Safe travels."` menjadi `Borin: *catching the coin.* "Safe travels."`.
 Jika action beat memakai `*...*` di dalam quote dialog pembuka dan dialog asli sudah punya quote sendiri, stage tidak menambah quote kedua, misalnya `Kaelen: "*Leans forward.* "Information.""` menjadi `Kaelen: *Leans forward.* "Information."`.
+Jika action beat polos berada di antara dua dialog dalam satu speaker line, stage membungkus action beat itu dengan italic, misalnya `Yume: "Good." She lowers her voice. "Listen."` menjadi `Yume: "Good." *She lowers her voice.* "Listen."`.
 Jika baris dialog tidak punya speaker tetapi narasi tepat sebelumnya atau action beat dialog cukup jelas menunjuk NPC tertentu, stage boleh menambahkan speaker dari header NPC, misalnya narasi menyebut `Yume hums` lalu baris `"The smooth ones," *she says...*` menjadi `Yume: "The smooth ones," *she says...*`.
 Stage tidak mengubah isi kalimat, pilihan kata, atau urutan narasi/dialog.
 
