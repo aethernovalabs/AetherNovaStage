@@ -314,6 +314,8 @@ Penyesuaian yang sudah diterapkan:
 3. Command npcMemory ditambah: `add fact`, `relation`, `show`.
 4. Debug UI diperbarui menampilkan field baru (Race, Physical Extra, Behavior, OnlyKnows).
 
+5. `inferNpcOnlyKnows` diperluas: stage sekarang mengekstrak fakta dari narasi saat `{{user}}` bersama NPC — bukan hanya saat `{{user}}` secara eksplisit "told" NPC. Pola baru: `{{user}} and NPC [aktivitas]`, `{{user}} gave/showed NPC [sesuatu]`, `{{user}} told/asked NPC about [topik]`, `{{user}} helped/saved/protected NPC`, `{{user}} traveled/went with NPC`.
+
 Jika prompt header asli nanti diubah lagi:
 
 1. Baca file Guide.Consepts.stage.md dan Guide.State.md untuk refensi
@@ -322,3 +324,4 @@ Jika prompt header asli nanti diubah lagi:
 Catatan verifikasi terakhir:
 
 - `npm run build` berhasil.
+- `inferNpcOnlyKnows` memakai `nearNpcContext` untuk deteksi kehadiran NPC di narasi sebelum ekstraksi.

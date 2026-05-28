@@ -1907,30 +1907,68 @@ function inferNpcBehavior(context: string): string {
 function inferNpcOnlyKnows(headerEntry: NpcHeaderMemoryEntry, context: string): string[] {
     const firstName = headerEntry.firstName || headerEntry.name;
     const facts: string[] = [];
-    const lower = context.toLowerCase();
+    const npcNear = nearNpcContext(headerEntry.name, context);
 
-    if (/\b(?:my name is|call me|i am called|i'm called)\b/i.test(context)) {
+    // Only extract contextual facts if the NPC is actually mentioned
+    if (npcNear.length > 0) {
+        // {{user}} and NPC did something together
+        const together = npcNear.match(new RegExp(`\\{\\{user\\}\\}\\s+and\\s+${npcNameRegexSource(firstName)}\\s+(.+?)(?:\\.|!|\\?|$)`, "i"));
+        if (together != null) {
+            facts.push(`{{user}} and ${firstName} ${cleanFactText(together[1])}`);
+        }
+
+        // NPC and {{user}} did something together (reversed order)
+        const togetherRev = npcNear.match(new RegExp(`${npcNameRegexSource(firstName)}\\s+and\\s+\\{\\{user\\}\\}\\s+(.+?)(?:\\.|!|\\?|$)`, "i"));
+        if (togetherRev != null) {
+            facts.push(`{{user}} and ${firstName} ${cleanFactText(togetherRev[1])}`);
+        }
+
+        // {{user}} gave/showed/offered/handed NPC something
+        const gave = npcNear.match(new RegExp(`\\{\\{user\\}\\}\\s+(?:gave|showed|offered|handed|passed|returns?|returned)\\s+${npcNameRegexSource(firstName)}\\s+(.+?)(?:\\.|!|\\?|$)`, "i"));
+        if (gave != null) {
+            facts.push(`{{user}} gave ${firstName}: ${cleanFactText(gave[1])}`);
+        }
+
+        // {{user}} told/asked/informed/warned NPC about something
+        const toldAbout = npcNear.match(new RegExp(`\\{\\{user\\}\\}\\s+(?:told|asked|informed|warned)\\s+${npcNameRegexSource(firstName)}\\s+(?:about|of|that)\\s+(.+?)(?:\\.|!|\\?|$)`, "i"));
+        if (toldAbout != null) {
+            facts.push(`{{user}} told ${firstName}: ${cleanFactText(toldAbout[1])}`);
+        }
+    }
+
+    // {{user}} told NPC their name
+    if (/\b(?:my name is|call me|i am called|i'm called|my name's)\b/i.test(context)) {
         facts.push(`{{user}} told ${firstName} their name`);
     }
 
-    if (/\b(?:lost|lose|lost my|lost his|lost her|lost their)\s+(?:memory|memories)\b/i.test(context) || /\b(?:amnesia|cannot remember|can't remember|kehilangan ingatan)\b/i.test(context)) {
+    // {{user}} mentioned memory loss/amnesia near NPC
+    if (npcMentionedInText(headerEntry.name, context) && (/\b(?:lost|lose|lost my|lost his|lost her|lost their)\s+(?:memory|memories)\b/i.test(context) || /\b(?:amnesia|cannot remember|can't remember|kehilangan ingatan)\b/i.test(context))) {
         facts.push(`{{user}} told ${firstName} about memory loss`);
     }
 
+    // {{user}} threatened or warned NPC
     if (userActionTargetsNpc(headerEntry.name, context, "(?:threaten|threatened|threatening|warn|warned|warning|mengancam)")) {
         facts.push(`{{user}} threatened or warned ${firstName}`);
     }
 
+    // {{user}} helped/saved/protected NPC
+    if (npcNear.length > 0 && userActionTargetsNpc(headerEntry.name, npcNear, "(?:helped|saved|protected|rescued|aided|assisted|healed)")) {
+        facts.push(`{{user}} helped ${firstName}`);
+    }
+
+    // {{user}} traveled/went with NPC
+    const traveled = npcNear.match(new RegExp(`\\{\\{user\\}\\}\\s+(?:went|traveled|travelled|walked|headed|moved|followed)\\s+(?:with|to|into|toward|after)\\s+${npcNameRegexSource(firstName)}`, "i"));
+    if (traveled != null) {
+        facts.push(cleanFactText(traveled[0]));
+    }
+
+    // General "I/you/{{user}} told NPC that ..." pattern across full context
     for (const sentence of npcMemorySentences(context)) {
         const toldPattern = new RegExp(`\\b(?:i|you|\\{\\{user\\}\\})\\s+(?:told|tell|revealed|reveal|informed|inform)\\s+(?:${npcNameRegexSource(headerEntry.name)}|${npcNameRegexSource(firstName)}|him|her|them|you)\\b\\s*(?:that\\s+)?(.{4,120})`, "i");
         const told = toldPattern.exec(sentence);
         if (told != null) {
             facts.push(`{{user}} told ${firstName}: ${cleanFactText(told[1])}`);
         }
-    }
-
-    if (lower.includes("{{user}} told") && npcMentionedInText(headerEntry.name, context)) {
-        facts.push(cleanFactText(context));
     }
 
     return mergeUniqueList(facts.map(cleanFactText).filter(Boolean), 4);
