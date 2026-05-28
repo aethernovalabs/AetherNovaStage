@@ -4285,6 +4285,11 @@ function normalizeNarrativeLine(line: string, state: NarrativeFormatState): stri
         return inferredDialogue;
     }
 
+    const actionDialogue = normalizeActionBeatDialogueLine(clean, state);
+    if (actionDialogue != null) {
+        return actionDialogue;
+    }
+
     const content = replaceInlineEmphasis(stripOuterSingleItalic(clean));
     state.recentSpeaker = inferRecentSpeakerFromNarrative(content, state) ?? state.recentSpeaker;
     return content.length === 0 ? "" : `*${content}*`;
@@ -4319,6 +4324,39 @@ function normalizeBareDialogueLine(line: string, state: NarrativeFormatState): s
 
     state.recentSpeaker = speaker;
     return `${speaker}: ${normalizeDialogueText(clean)}`;
+}
+
+function normalizeActionBeatDialogueLine(line: string, state: NarrativeFormatState): string | null {
+    const clean = stripOuterSingleItalic(line.trim());
+
+    const firstQuote = clean.indexOf('"');
+    if (firstQuote <= 0) return null;
+
+    const before = clean.slice(0, firstQuote).trim();
+    const after = clean.slice(firstQuote).trim();
+
+    if (before.length === 0) return null;
+
+    if (before.startsWith("*") && before.endsWith("*")) {
+        const inner = before.slice(1, -1).trim();
+        if (!looksLikeInlineNarrationBeat(inner)) return null;
+        const speaker = inferBareDialogueSpeaker(after, state);
+        if (speaker != null) {
+            state.recentSpeaker = speaker;
+            return `${speaker}: *${inner}* ${normalizeDialogueText(after)}`;
+        }
+        return `*${inner}* ${normalizeDialogueText(after)}`;
+    }
+
+    if (!looksLikeInlineNarrationBeat(before)) return null;
+    if (before.startsWith("*") || before.startsWith("'") || before.startsWith('"')) return null;
+
+    const speaker = inferBareDialogueSpeaker(after, state);
+    if (speaker != null) {
+        state.recentSpeaker = speaker;
+        return `${speaker}: *${before}* ${normalizeDialogueText(after)}`;
+    }
+    return `*${before}* ${normalizeDialogueText(after)}`;
 }
 
 function inferBareDialogueSpeaker(line: string, state: NarrativeFormatState): string | null {
@@ -4615,11 +4653,7 @@ function stripOuterSingleItalic(value: string): string {
 function replaceInlineEmphasis(value: string): string {
     return value.replace(/(^|[^*])\*([^*\n]{1,80})\*(?!\*)/g, (_match, prefix: string, inner: string) => {
         const clean = inner.trim();
-        const words = clean.split(/\s+/).filter(Boolean);
-        if (words.length >= 1 && words.length <= 3) {
-            return `${prefix}'${clean}'`;
-        }
-        return _match;
+        return clean.length > 0 ? `${prefix}'${clean}'` : _match;
     });
 }
 
