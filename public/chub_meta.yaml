@@ -79,8 +79,6 @@ state_schema:
         type:
           - string
           - 'null'
-      pendingNpcObservations:
-        type: object
   chat:
     type: object
     properties: {}

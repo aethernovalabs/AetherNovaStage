@@ -255,7 +255,7 @@ Injection ke prompt bersifat selektif:
 
 Debug UI sementara:
 
-Saat `position: ADJACENT` dan config `debugUi` aktif, stage menampilkan panel debug yang hanya terlihat oleh user. Panel ini memperlihatkan header state terakhir, jumlah dan isi `npcMemory`, command guide, pending memory command, **pending NPC observations dengan progress bar**, activity log dari `load`, `setState`, `beforePrompt`, dan `afterResponse`, `stageDirections` terakhir, `systemMessage` debug terakhir, serta pesan user terakhir yang sedang diproses. Data panel tidak dikirim ke LLM kecuali bagian `stageDirections` yang memang dikirim oleh `beforePrompt`. Versi debug UI saat ini: `V1.4`.
+Saat `position: ADJACENT` dan config `debugUi` aktif, stage menampilkan panel debug yang hanya terlihat oleh user. Panel ini memperlihatkan header state terakhir, jumlah dan isi `npcMemory`, command guide, pending memory command, activity log dari `load`, `setState`, `beforePrompt`, dan `afterResponse`, `stageDirections` terakhir, `systemMessage` debug terakhir, serta pesan user terakhir yang sedang diproses. Data panel tidak dikirim ke LLM kecuali bagian `stageDirections` yang memang dikirim oleh `beforePrompt`. Versi debug UI saat ini: `V1.3`.
 
 Command memory manual:
 
@@ -315,8 +315,6 @@ Penyesuaian yang sudah diterapkan:
 4. Debug UI diperbarui menampilkan field baru (Race, Physical Extra, Behavior, OnlyKnows).
 
 5. `inferNpcOnlyKnows` diperluas: stage sekarang mengekstrak fakta dari narasi saat `{{user}}` bersama NPC — bukan hanya saat `{{user}}` secara eksplisit "told" NPC. Pola baru: `{{user}} and NPC [aktivitas]`, `{{user}} gave/showed NPC [sesuatu]`, `{{user}} told/asked NPC about [topik]`, `{{user}} helped/saved/protected NPC`, `{{user}} traveled/went with NPC`.
-6. **NPC Observation System (stage-side extraction)**: Stage ekstrak kalimat dari narasi + pesan user yang menyebut NPC dan `{{user}}`/I/you DAN mengandung kata kerja signifikan (gave, showed, helped, revealed, saved, found, traveled, fought, promised, dll — ~100 verb patterns). Akumulasi di `pendingNpcObservations`, flush ke OnlyKnows setelah 5 observasi terkumpul per NPC. Threshold flush: 5. Max pending: 20 per NPC.
-7. **Debug UI V1.4**: Menampilkan `pendingNpcObservations` dengan progress bar per NPC, total pending di header metric, dan delta observasi baru (`+N new`) di `afterResponse`.
 
 Jika prompt header asli nanti diubah lagi:
 
@@ -326,6 +324,4 @@ Jika prompt header asli nanti diubah lagi:
 Catatan verifikasi terakhir:
 
 - `npm run build` berhasil.
-- Debug UI V1.4 — menampilkan `pendingNpcObservations` dengan progress bar per NPC, deteksi `[npc_obs FOUND in raw]` di afterResponse, dan `[NPC context active]` di beforePrompt.
-- `buildNpcMemoryDirections` sekarang inject instruksi observasi di baris pertama NPC Memory Context — selalu aktif saat ada NPC.
 - `inferNpcOnlyKnows` memakai `nearNpcContext` untuk deteksi kehadiran NPC di narasi sebelum ekstraksi.
