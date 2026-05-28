@@ -1191,7 +1191,9 @@ export function normalizeAetherNovaResponse(
     previousState: AetherNovaMessageState,
     context: string = "",
 ): NormalizedResponse {
-    const extracted = extractHeader(content);
+    const markerDebugQuery = debugNpcMarkerQuery(content);
+    const contentWithoutDebugMarkers = stripNpcDebugMarkers(content);
+    const extracted = extractHeader(contentWithoutDebugMarkers);
     const correctionContext = `${context}\n${extracted.narrative}`;
     const timeLocation = normalizeLocationTimeLine(extracted.locationLine, previousState, correctionContext);
     const sceneChanged = !sameText(timeLocation.location, previousState.location);
@@ -1214,7 +1216,7 @@ export function normalizeAetherNovaResponse(
         pendingNpcDebugQuery: null,
     };
     state.npcMemory = updateNpcMemory(previousState.npcMemory, state.npc, `${state.location}\n${correctionContext}`);
-    const debugQuery = previousState.pendingNpcDebugQuery ?? debugNpcQuery(context);
+    const debugQuery = previousState.pendingNpcDebugQuery ?? debugNpcQuery(context) ?? markerDebugQuery;
     const debugFooter = buildNpcDebugFooter(debugQuery, state.npcMemory);
 
     return {
@@ -1450,7 +1452,7 @@ function buildNpcDebugDirections(query: string | null, memory: NpcMemoryStore): 
     return [
         "NPC Debug Request (temporary; do not narrate this debug block in-character):",
         formatNpcMemoryForPrompt(entry, true),
-        "After the response, stage will append this NPC memory as a footer.",
+        `At the very end of your response, add this exact marker on its own line so the stage can replace it with a debug footer: ${formatNpcDebugMarker(query)}`,
     ].join("\n");
 }
 
@@ -1483,6 +1485,21 @@ function appendDebugFooter(content: string, footer: string): string {
 function debugNpcQuery(userMessage: string): string | null {
     const match = userMessage.match(/[\[【]\s*debug\s*:\s*npc\s+([^\]】]+)[\]】]/i);
     return match == null ? null : cleanFragment(match[1]);
+}
+
+function formatNpcDebugMarker(query: string): string {
+    return `[[AETHER_NOVA_DEBUG_NPC:${cleanFragment(query)}]]`;
+}
+
+function debugNpcMarkerQuery(content: string): string | null {
+    const match = content.match(/\[\[\s*AETHER_NOVA_DEBUG_NPC\s*:\s*([^\]]+?)\s*\]\]/i);
+    return match == null ? null : cleanFragment(match[1]);
+}
+
+function stripNpcDebugMarkers(content: string): string {
+    return normalizeLineEndings(content)
+        .replace(/^\s*\[\[\s*AETHER_NOVA_DEBUG_NPC\s*:\s*[^\]]+?\s*\]\]\s*$/gim, "")
+        .trimEnd();
 }
 
 function normalizePendingNpcDebugQuery(value: unknown): string | null {
