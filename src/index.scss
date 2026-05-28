@@ -271,6 +271,26 @@ html, body, #root {
   color: #f5f2ea;
   font-size: 0.86rem;
   font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.aether-debug-details summary::marker {
+  color: #9ea69b;
+}
+
+.aether-debug-summary-badge {
+  color: #9ea69b;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  margin-left: auto;
+}
+
+.aether-debug-details .aether-debug-events {
+  padding: 8px 10px 10px;
 }
 
 .aether-debug-details pre {

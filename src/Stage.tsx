@@ -261,11 +261,8 @@ function AetherNovaDebugPanel({getSnapshot}: {getSnapshot: () => DebugSnapshot})
                 )}
             </section>
 
-            <section className="aether-debug-section">
-                <div className="aether-debug-section-title">
-                    <h2>Stage Activity</h2>
-                    <span>{snapshot.debugEvents.length}</span>
-                </div>
+            <details className="aether-debug-details" open>
+                <summary>Stage Activity <span className="aether-debug-summary-badge">{snapshot.debugEvents.length}</span></summary>
                 <ol className="aether-debug-events">
                     {snapshot.debugEvents.map((event) => (
                         <li key={event.id}>
@@ -275,7 +272,7 @@ function AetherNovaDebugPanel({getSnapshot}: {getSnapshot: () => DebugSnapshot})
                         </li>
                     ))}
                 </ol>
-            </section>
+            </details>
 
             <details className="aether-debug-details">
                 <summary>Stage Directions</summary>
