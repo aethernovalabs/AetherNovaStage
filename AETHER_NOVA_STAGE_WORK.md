@@ -315,6 +315,7 @@ Penyesuaian yang sudah diterapkan:
 4. Debug UI diperbarui menampilkan field baru (Race, Physical Extra, Behavior, OnlyKnows).
 
 5. `inferNpcOnlyKnows` diperluas: stage sekarang mengekstrak fakta dari narasi saat `{{user}}` bersama NPC — bukan hanya saat `{{user}}` secara eksplisit "told" NPC. Pola baru: `{{user}} and NPC [aktivitas]`, `{{user}} gave/showed NPC [sesuatu]`, `{{user}} told/asked NPC about [topik]`, `{{user}} helped/saved/protected NPC`, `{{user}} traveled/went with NPC`.
+6. **NPC Observation System (LLM-assisted)**: Stage inject instruksi ke LLM untuk output `[npc_obs: NPC_Name | fact]` saat NPC belajar sesuatu penting tentang `{{user}}`. Stage ekstrak marker dari response, strip dari narasi, akumulasi di `pendingNpcObservations`, dan flush ke OnlyKnows setelah 5 observasi terkumpul per NPC. Field `pendingNpcObservations: Record<string, string[]>` di state. Treshold flush: 5. Max pending: 20 per NPC.
 
 Jika prompt header asli nanti diubah lagi:
 

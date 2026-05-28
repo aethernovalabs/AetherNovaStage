@@ -14,6 +14,7 @@ export interface AetherNovaMessageState {
     npcMemory: NpcMemoryStore;
     pendingNpcDebugQuery: string | null;
     pendingNpcMemoryCommand: string | null;
+    pendingNpcObservations: Record<string, string[]>;
 }
 
 export interface NpcMemoryEntry {
@@ -97,6 +98,7 @@ const DEFAULT_STATE: AetherNovaMessageState = {
     npcMemory: {},
     pendingNpcDebugQuery: null,
     pendingNpcMemoryCommand: null,
+    pendingNpcObservations: {},
 };
 
 const RACE_KEYWORDS = [
@@ -1157,6 +1159,7 @@ export function coerceHeaderState(
         npcMemory,
         pendingNpcDebugQuery: normalizePendingNpcDebugQuery(raw.pendingNpcDebugQuery),
         pendingNpcMemoryCommand: normalizePendingNpcMemoryCommand(raw.pendingNpcMemoryCommand),
+        pendingNpcObservations: raw.pendingNpcObservations ?? {},
     };
 }
 
@@ -1198,6 +1201,11 @@ export function buildStageDirections(state: AetherNovaMessageState, userMessage:
         directions.push(debugContext);
     }
 
+    const obsCount = Object.values(effectiveState.pendingNpcObservations).reduce((sum, facts) => sum + facts.length, 0);
+    if (obsCount > 0) {
+        directions.push(`NPC observation buffer active (${obsCount} pending). When a present NPC learns something significant about {{user}}, append: [npc_obs: NPC_Name | brief fact]. Use sparingly for truly important moments.`);
+    }
+
     return directions.join("\n");
 }
 
@@ -1207,7 +1215,8 @@ export function normalizeAetherNovaResponse(
     context: string = "",
 ): NormalizedResponse {
     const extracted = extractHeader(content);
-    const correctionContext = `${context}\n${extracted.narrative}`;
+    const { observations: freshObservations, cleaned: cleanedNarrative } = extractNpcObservations(extracted.narrative);
+    const correctionContext = `${context}\n${cleanedNarrative}`;
     const timeLocation = normalizeLocationTimeLine(extracted.locationLine, previousState, correctionContext);
     const sceneChanged = !sameText(timeLocation.location, previousState.location);
     const wallet = normalizeWalletLine(
@@ -1228,13 +1237,18 @@ export function normalizeAetherNovaResponse(
         npcMemory: previousState.npcMemory,
         pendingNpcDebugQuery: null,
         pendingNpcMemoryCommand: previousState.pendingNpcMemoryCommand,
+        pendingNpcObservations: previousState.pendingNpcObservations,
     };
     state.npcMemory = updateNpcMemory(previousState.npcMemory, state.npc, `${state.location}\n${correctionContext}`);
+    const accumulated = accumulateNpcObservations(previousState.pendingNpcObservations ?? {}, freshObservations);
+    const flushed = flushNpcObservations(state.npcMemory, accumulated);
+    state.npcMemory = flushed.npcMemory;
+    state.pendingNpcObservations = flushed.pendingObservations;
     const debugQuery = previousState.pendingNpcDebugQuery ?? debugNpcQuery(context);
     const debugMessage = buildNpcDebugFooter(debugQuery, state.npcMemory);
 
     return {
-        content: formatResponse(state, extracted.narrative),
+        content: formatResponse(state, cleanedNarrative),
         state,
         systemMessage: debugMessage.length > 0 ? debugMessage : null,
     };
@@ -2076,6 +2090,72 @@ function mergeUniqueList(values: string[], maxItems: number): string[] {
     }
 
     return result;
+}
+
+const NPC_OBSERVATION_PATTERN = /\[npc_obs:\s*([^\]|]+?)\s*\|\s*([^\]]+?)\s*\]/gi;
+const NPC_OBSERVATION_FLUSH_THRESHOLD = 5;
+const NPC_OBSERVATION_MAX_PENDING = 20;
+
+function extractNpcObservations(text: string): { observations: Record<string, string[]>; cleaned: string } {
+    const observations: Record<string, string[]> = {};
+    const cleaned = text.replace(NPC_OBSERVATION_PATTERN, (_match: string, name: string, fact: string) => {
+        const key = npcMemoryKey(name.trim());
+        const clean = cleanFactText(fact.trim());
+        if (clean.length > 0) {
+            if (!observations[key]) observations[key] = [];
+            observations[key].push(clean);
+        }
+        return "";
+    });
+    return {
+        observations,
+        cleaned: cleaned.replace(/\n{3,}/g, "\n\n").trim(),
+    };
+}
+
+function accumulateNpcObservations(
+    existing: Record<string, string[]>,
+    incoming: Record<string, string[]>,
+): Record<string, string[]> {
+    const result: Record<string, string[]> = {};
+    const allKeys = new Set([...Object.keys(existing), ...Object.keys(incoming)]);
+    for (const key of allKeys) {
+        const combined = [...(existing[key] ?? []), ...(incoming[key] ?? [])];
+        result[key] = mergeUniqueList(combined, NPC_OBSERVATION_MAX_PENDING);
+    }
+    return result;
+}
+
+function flushNpcObservations(
+    npcMemory: NpcMemoryStore,
+    pending: Record<string, string[]>,
+): { npcMemory: NpcMemoryStore; pendingObservations: Record<string, string[]> } {
+    const updated = { ...npcMemory };
+    const remaining: Record<string, string[]> = {};
+
+    for (const [obsKey, facts] of Object.entries(pending)) {
+        if (facts.length >= NPC_OBSERVATION_FLUSH_THRESHOLD) {
+            const storeKey = resolveNpcMemoryKeyFromObservations(obsKey, updated);
+            if (storeKey != null && updated[storeKey] != null) {
+                updated[storeKey] = {
+                    ...updated[storeKey],
+                    onlyKnows: mergeKnownFacts(updated[storeKey].onlyKnows, facts),
+                };
+                continue;
+            }
+        }
+        remaining[obsKey] = facts;
+    }
+
+    return { npcMemory: updated, pendingObservations: remaining };
+}
+
+function resolveNpcMemoryKeyFromObservations(obsKey: string, memory: NpcMemoryStore): string | null {
+    if (memory[obsKey] != null) return obsKey;
+    const match = Object.entries(memory).find(([storeKey, entry]) =>
+        storeKey === obsKey || npcMemoryKey(firstNameOf(entry.name)) === obsKey
+    );
+    return match?.[0] ?? null;
 }
 
 function titleCase(value: string): string {
