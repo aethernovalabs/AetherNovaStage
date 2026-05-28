@@ -3195,8 +3195,15 @@ function statusParts(status: string, kind: "you" | "npc"): string[] {
         .flatMap(splitMixedStatusPart)
         .map(cleanFragment)
         .filter((part) => !isPlaceholder(part));
+    const unique: string[] = [];
 
-    return orderStatusParts(normalized);
+    for (const part of normalized) {
+        if (!unique.some((u) => sameText(u, part))) {
+            unique.push(part);
+        }
+    }
+
+    return orderStatusParts(unique);
 }
 
 function orderStatusParts(parts: string[]): string[] {
@@ -3207,17 +3214,27 @@ function orderStatusParts(parts: string[]): string[] {
     const clothingIndex = parts.findIndex(isClothingStatusPart);
     const clothing = clothingIndex >= 0 ? parts[clothingIndex] : "";
     const nonClothing = parts.filter((_part, index) => index !== clothingIndex);
-    const explicitPositionIndex = nonClothing.findIndex((part) => statusPartLooksLikePosition(part) && !statusPartLooksLikeDetailOnly(part));
-    const fallbackPositionIndex = explicitPositionIndex >= 0
-        ? explicitPositionIndex
-        : nonClothing.findIndex((part) => !statusPartLooksLikeDetail(part));
-    const positionIndex = fallbackPositionIndex >= 0 ? fallbackPositionIndex : -1;
-    const position = positionIndex >= 0 ? nonClothing[positionIndex] : "";
-    const detail = nonClothing
-        .filter((_part, index) => index !== positionIndex)
-        .join(", ");
+    const positionCandidates = nonClothing
+        .map((part, index) => ({part, index}))
+        .filter(({part}) => statusPartLooksLikePosition(part) && !statusPartLooksLikeDetailOnly(part));
 
-    return [clothing, position, detail];
+    if (positionCandidates.length > 0) {
+        positionCandidates.sort((a, b) => b.part.split(/\s+/).length - a.part.split(/\s+/).length);
+    }
+
+    const bestPosition = positionCandidates.length > 0 ? positionCandidates[0] : null;
+    const position = bestPosition != null ? bestPosition.part : "";
+    const remaining = nonClothing.filter((_p, i) => bestPosition == null || i !== bestPosition.index);
+    const detailParts = remaining.filter((p) => !statusPartLooksLikePosition(p));
+    const uniqueDetail: string[] = [];
+
+    for (const p of detailParts) {
+        if (!uniqueDetail.some((u) => sameText(u, p))) {
+            uniqueDetail.push(p);
+        }
+    }
+
+    return [clothing, position, uniqueDetail.join(", ")];
 }
 
 function splitMixedStatusPart(part: string): string[] {
@@ -3265,7 +3282,7 @@ function statusPartLooksLikeDetailOnly(value: string): boolean {
 }
 
 function splitStatusByFormat(status: string): string[] {
-    return status.includes(";") ? status.split(";") : splitTopLevel(status, ",");
+    return status.split(";").map((s) => s.trim());
 }
 
 function parseIdentityStatus(rawValue: string): IdentityStatus {
