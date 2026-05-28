@@ -3219,13 +3219,18 @@ function orderStatusParts(parts: string[]): string[] {
         .filter(({part}) => statusPartLooksLikePosition(part) && !statusPartLooksLikeDetailOnly(part));
 
     if (positionCandidates.length > 0) {
-        positionCandidates.sort((a, b) => b.part.split(/\s+/).length - a.part.split(/\s+/).length);
+        positionCandidates.sort((a, b) => {
+            const scoreA = positionSignalScore(a.part);
+            const scoreB = positionSignalScore(b.part);
+            if (scoreA !== scoreB) return scoreB - scoreA;
+            return b.part.split(/\s+/).length - a.part.split(/\s+/).length;
+        });
     }
 
     const bestPosition = positionCandidates.length > 0 ? positionCandidates[0] : null;
     const position = bestPosition != null ? bestPosition.part : "";
     const remaining = nonClothing.filter((_p, i) => bestPosition == null || i !== bestPosition.index);
-    const detailParts = remaining.filter((p) => !statusPartLooksLikePosition(p));
+    const detailParts = remaining.filter((p) => !isPurePositionPart(p));
     const uniqueDetail: string[] = [];
 
     for (const p of detailParts) {
@@ -3235,6 +3240,28 @@ function orderStatusParts(parts: string[]): string[] {
     }
 
     return [clothing, position, uniqueDetail.join(", ")];
+}
+
+function positionSignalScore(value: string): number {
+    const lower = value.toLowerCase();
+
+    if (positionMeansWalking(lower) || positionMeansStanding(lower) || positionMeansSeated(lower) || positionMeansProne(lower)) {
+        return 3;
+    }
+
+    if (containsAnyCue(lower, POSITION_SPATIAL_CUES)) {
+        return 2;
+    }
+
+    if (containsAnyCue(lower, POSITION_CHANGE_CUES)) {
+        return 1;
+    }
+
+    return 0;
+}
+
+function isPurePositionPart(value: string): boolean {
+    return statusPartLooksLikePosition(value) && !statusPartLooksLikeDetail(value);
 }
 
 function splitMixedStatusPart(part: string): string[] {
