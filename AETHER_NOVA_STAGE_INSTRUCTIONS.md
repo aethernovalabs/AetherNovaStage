@@ -265,7 +265,7 @@ Injection ke prompt bersifat selektif:
 
 Debug sementara:
 
-Jika user mengetik `[debug: npc nama]`, stage menambahkan footer debug pada output berisi data NPC yang tersimpan, misalnya `[debug: npc halvair]`.
+Jika user mengetik `[debug: npc nama]`, stage menambahkan footer debug pada output berisi data NPC yang tersimpan, misalnya `[debug: npc halvair]`. Debug harus cocok dengan first name atau nama lengkap, boleh memakai spasi ekstra seperti `[debug: npc debi ]`, dan ditempel langsung di akhir output tanpa markdown divider agar tidak hilang di UI.
 
 ### Narrative Format
 
@@ -409,7 +409,7 @@ Penyesuaian yang sudah diterapkan:
 20. Evidence wallet dibedakan antara narasi dan dialog: nominal uang di dalam dialog tidak memicu perubahan wallet, dan jika ada transaksi non-dialog yang jelas stage memilih arah hitungan yang benar daripada angka wallet AI yang keliru.
 21. Formatter dialog diperbaiki agar speaker line yang salah dibungkus `*...*` tetap dibaca sebagai dialog, sementara single-quoted atau italic action beat sebelum quote dialog dipertahankan sebagai action beat.
 22. Status slot classifier ditambahkan agar pakaian/naked dideteksi dari isi slot, urutan status salah seperti `position; body/racial; clothing` dikoreksi, dan detail eyes/gaze/tail/ears/wings/horns dipindahkan dari position ke body/racial detail.
-23. `npcMemory` ditambahkan agar stage menyimpan Name, Role/Title, Racial, Relationship, dan KnownFacts per NPC, lalu menginject data lengkap hanya untuk NPC di header aktif dan identitas saja untuk NPC yang sekadar disebut user.
+23. `npcMemory` ditambahkan agar stage menyimpan Name, Role/Title, Racial, Relationship, dan KnownFacts per NPC, lalu menginject data lengkap hanya untuk NPC di header aktif dan identitas saja untuk NPC yang sekadar disebut user. Debug NPC dibuat lebih tahan banting dengan first-name matching, spasi ekstra, seed dari header aktif, dan footer tanpa markdown divider.
 
 Jika prompt header asli nanti diubah lagi:
 

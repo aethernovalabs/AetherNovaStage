@@ -1127,32 +1127,38 @@ export function coerceHeaderState(
     const rawTime = typeof raw.time === "string" ? raw.time : "";
     const clock = normalizeClock(raw.clock ?? rawTime, fallback.clock);
     const walletState = coerceWalletState(raw, fallback);
+    const npc = normalizeNpcLine(raw.npc ?? "", fallback.npc);
+    const npcMemory = updateNpcMemory(coerceNpcMemory(raw.npcMemory, fallback.npcMemory), npc, fallback.location);
 
     return {
         location: normalizeLocation(raw.location ?? "", fallback.location),
         timeOfDay: timeOfDayForClock(clock),
         clock,
         you: normalizeYouLine(raw.you ?? "", fallback.you),
-        npc: normalizeNpcLine(raw.npc ?? "", fallback.npc),
+        npc,
         thread: normalizeThreadLine(raw.thread ?? "", fallback.thread, ""),
         wallet: walletState.value,
         walletInitialized: walletState.initialized,
-        npcMemory: coerceNpcMemory(raw.npcMemory, fallback.npcMemory),
+        npcMemory,
     };
 }
 
 export function buildStageDirections(state: AetherNovaMessageState, userMessage: string = ""): string {
+    const effectiveState: AetherNovaMessageState = {
+        ...state,
+        npcMemory: updateNpcMemory(state.npcMemory, state.npc, state.location),
+    };
     const directions = [
         "Maintain Aether Nova header format. Start with exactly five bold header lines followed by *** before narration.",
-        `Location: ${state.location}`,
-        `Time: ${state.timeOfDay} | ${state.clock}`,
-        `You: ${state.you}`,
-        `NPC: ${state.npc}`,
-        `Thread: ${state.thread}`,
-        `Wallet: ${state.wallet}`,
+        `Location: ${effectiveState.location}`,
+        `Time: ${effectiveState.timeOfDay} | ${effectiveState.clock}`,
+        `You: ${effectiveState.you}`,
+        `NPC: ${effectiveState.npc}`,
+        `Thread: ${effectiveState.thread}`,
+        `Wallet: ${effectiveState.wallet}`,
         "Status format: Position; Clothes/disguise; optional body/racial detail. Keep position/clothes from last state unless the scene clearly changes. Use Thread items separated by \" ; \". Wallet changes only with clear in-story transaction/reward/loss evidence.",
     ];
-    const npcMemoryContext = buildNpcMemoryDirections(state, userMessage);
+    const npcMemoryContext = buildNpcMemoryDirections(effectiveState, userMessage);
 
     if (npcMemoryContext.length > 0) {
         directions.push(npcMemoryContext);
@@ -1433,11 +1439,11 @@ function buildNpcDebugFooter(userMessage: string, memory: NpcMemoryStore): strin
 }
 
 function appendDebugFooter(content: string, footer: string): string {
-    return footer.length === 0 ? content : `${content}\n\n---\n${footer}`;
+    return footer.length === 0 ? content : `${content}\n\n${footer}`;
 }
 
 function debugNpcQuery(userMessage: string): string | null {
-    const match = userMessage.match(/\[debug:\s*npc\s+([^\]]+)\]/i);
+    const match = userMessage.match(/[\[【]\s*debug\s*:\s*npc\s+([^\]】]+)[\]】]/i);
     return match == null ? null : cleanFragment(match[1]);
 }
 
