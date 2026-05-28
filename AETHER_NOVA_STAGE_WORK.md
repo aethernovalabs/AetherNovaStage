@@ -4,7 +4,7 @@ Dokumen ini adalah catatan kerja untuk stage Aether Nova yang sudah diterapkan d
 Gunakan dokumen ini sebagai pengingat saat mengubah stage berikutnya.
 
 Stage ini bukan system prompt untuk Codex dan bukan system prompt character AI.
-Stage ini adalah guard teknis Chub Stage yang memperbaiki header output setelah AI membalas, serta memberi reminder singkat sebelum prompt berikutnya.
+Stage ini adalah System teknis Chub Stage untuk pelengkap Chararter Aether Nova
 
 ## Status Implementasi
 
@@ -22,22 +22,7 @@ Stage berjalan dengan:
 position: ADJACENT
 ```
 
-Artinya stage menampilkan panel debug di samping chat selama pengujian. Setelah debug selesai, kembalikan ke `position: NONE` agar stage kembali berjalan tanpa UI.
-
-## Tujuan Stage
-
-Tujuan stage adalah menjaga output AI tetap memakai header Aether Nova secara konsisten.
-
-Stage bekerja sebagai:
-
-- Header corrector
-- Output format validator
-- You/NPC status normalizer
-- Thread guard
-- Light state tracker
-
-Stage hanya mengoreksi bagian header dan menyimpan state terakhir.
-Narasi utama setelah header harus tetap dipertahankan sebisa mungkin.
+Artinya stage menampilkan panel debug di samping chat selama pengujian. Setelah stage sampai tahap final, kembalikan ke `position: NONE` agar stage kembali berjalan tanpa UI
 
 ## Format Header Saat Ini
 
@@ -247,26 +232,26 @@ Data yang disimpan:
 ```md
 Name: Full NPC Name
 Role/Title: role/title penting
-Racial: race + detail racial penting
+Race: race NPC
+Physical Extra: fitur fisik tambahan (contoh: nine tails, animal ears)
 Relationship with {{user}}: relasi/sikap terbaru
-KnownFacts: fakta yang diketahui NPC itu
+Behavior toward {{user}}: sifat/kebiasaan NPC terhadap user
+OnlyKnows: fakta yang hanya diketahui NPC itu
 ```
 
 Name sebaiknya memakai nama lengkap minimal dua kata jika sudah pernah diketahui, misalnya `Halvair Montreval`. Jika header berikutnya hanya memakai first name seperti `Halvair`, stage mencocokkan ke memory lama dan tetap memakai nama lengkap yang tersimpan.
-Role/title dan racial dipakai untuk mencegah AI melupakan identitas penting NPC saat data lengkap tidak selalu muncul di header.
+Role/Title dan Race dipakai untuk mencegah AI melupakan identitas penting NPC saat data lengkap tidak selalu muncul di header.
+Physical Extra mencatat fitur fisik tambahan dari race tertentu, seperti `nine tails`, `dragon wings`, `horns`, atau `none` jika tidak ada.
 Relationship boleh berubah mengikuti perkembangan cerita, misalnya dari suspicious/formal menjadi friendly/trusted atau hostile.
-KnownFacts berisi fakta yang diketahui NPC itu, seperti `{{user}} told Halvair their name`, `{{user}} told Yume about memory loss`, atau `{{user}} threatened Halvair`.
+Behavior mencatat kebiasaan/sikap NPC terhadap user, seperti arrogant, suspicious, protective, possessive, playful, formal, cold, loyal, fearful, respectful, atau loving.
+OnlyKnows berisi fakta yang hanya diketahui NPC itu, seperti `{{user}} told Halvair their name`, `{{user}} told Yume about memory loss`, atau `{{user}} threatened Halvair`. Setiap NPC memiliki knowledge firewall terpisah — OnlyKnows NPC A tidak otomatis diketahui NPC B.
 Pengambilan role/title harus dekat dengan nama NPC itu atau berasal dari command manual. Jangan mengambil role/title dari topik obrolan yang membahas NPC lain. Contoh: saat Debi hadir tetapi narasi membahas King Solmeryn, Debi tidak boleh menjadi `King of Solmeryn`.
 
 Injection ke prompt bersifat selektif:
 
-- Jika NPC tertulis di header aktif, stage menginject Name, Role/Title, Racial, Relationship, dan KnownFacts NPC itu.
-- Jika NPC hanya disebut oleh user dalam pesan, stage hanya menginject Name, Role/Title, Racial, dan Relationship. KnownFacts tidak ikut diinject sampai NPC itu masuk header/scene.
+- Jika NPC tertulis di header aktif, stage menginject full memory: Name, Role/Title, Race, Physical Extra, Relationship, Behavior, dan OnlyKnows.
+- Jika NPC hanya disebut oleh user dalam pesan, stage hanya menginject identitas dasar: Name, Role/Title, Race, dan Physical Extra. Relationship, Behavior, dan OnlyKnows tidak ikut diinject sampai NPC itu masuk header/scene (knowledge firewall).
 - Jika NPC tidak ada di header dan tidak disebut user, data tetap disimpan tetapi tidak diinject.
-
-Debug sementara:
-
-Jika user mengetik `[debug: npc nama]`, stage menyimpan debug request ke state dan fallback localStorage sebelum prompt dikirim, menginject blok debug sementara ke LLM, lalu setelah LLM merespons stage mengirim data NPC melalui `systemMessage`. Debug tidak boleh dimasukkan ke `modifiedMessage` agar tidak merusak header, narasi, atau `Thread`. Debug harus cocok dengan first name atau nama lengkap dan boleh memakai spasi ekstra seperti `[debug: npc debi ]`.
 
 Debug UI sementara:
 
@@ -274,15 +259,21 @@ Saat `position: ADJACENT` dan config `debugUi` aktif, stage menampilkan panel de
 
 Command memory manual:
 
-Command ditulis langsung dalam teks tanpa delimiter khusus dan dihapus dari pesan sebelum dikirim ke LLM. Command juga diterapkan ulang setelah `afterResponse`, agar `delete`, `clearfacts`, atau `set` tidak langsung tertimpa lagi saat NPC masih muncul di header response berikutnya.
+Command ditulis langsung dalam teks tanpa delimiter khusus dan dihapus dari pesan sebelum dikirim ke LLM. Command juga diterapkan ulang setelah `afterResponse`, agar `delete`, `clearfacts`, `set`, `add fact`, `relation`, atau `show` tidak langsung tertimpa lagi saat NPC masih muncul di header response berikutnya.
 
 ```text
 npc memory delete: Debi
 npc memory clearfacts: Debi
-npc memory set: Debi | role=Market broker | racial=Human | relationship=guarded | fact={{user}} paid Kaelen to find Debi
+npc memory add fact: Debi | fact={{user}} paid Kaelen to find Debi
+npc memory relation: Debi | relationship=friendly
+npc memory show: Debi
+npc memory set: Debi | role=Market broker | race=Human | physical=none | relationship=guarded | behavior=guarded | onlyKnows={{user}} paid Kaelen to find Debi
 ```
 
-`set` boleh memakai field `name`, `role`, `racial`, `relationship`, `fact`, atau `knownFacts`. Field `fact` menambah fakta ke KnownFacts lama; `knownFacts` mengganti daftar KnownFacts dengan isi baru yang dipisahkan `;`.
+`set` boleh memakai field `name`, `role`, `race`, `physical`, `relationship`, `behavior`, `fact`, atau `onlyKnows`. Field `fact` menambah fakta ke OnlyKnows lama; `onlyKnows` mengganti daftar OnlyKnows dengan isi baru yang dipisahkan `;`.
+`add fact` menambah satu atau lebih fakta ke OnlyKnows NPC yang sudah ada.
+`relation` hanya mengubah relationship NPC tanpa mengubah field lain.
+`show` menampilkan data NPC memory sebagai system message.
 
 Command dikenali di mana pun dalam teks pesan {{user}} dan akan dihapus dari pesan sebelum dikirim ke LLM. Batas akhir command adalah tanda baca kalimat (`.`, `!`, `?`), baris baru, atau akhir string.
 
@@ -311,138 +302,23 @@ Jika action beat polos berada di antara dua dialog dalam satu speaker line, stag
 Jika baris dialog tidak punya speaker tetapi narasi tepat sebelumnya atau action beat dialog cukup jelas menunjuk NPC tertentu, stage boleh menambahkan speaker dari header NPC, misalnya narasi menyebut `Yume hums` lalu baris `"The smooth ones," *she says...*` menjadi `Yume: "The smooth ones," *she says...*`.
 Stage tidak mengubah isi kalimat, pilihan kata, atau urutan narasi/dialog.
 
-## Batas Stage
-
-Stage ini tidak boleh:
-
-- Membuat UI.
-- Menulis ulang seluruh response.
-- Mengubah gaya narasi utama.
-- Mengubah dialog character.
-- Membuat lokasi baru secara kreatif.
-- Mengubah thread secara kreatif.
-- Menambahkan NPC baru tanpa dasar.
-- Menambahkan dependency besar tanpa kebutuhan jelas.
-
-Stage ini adalah format guard, bukan creative writer.
-
-## Ruang System Prompt Header Asli
-
-Bagian ini disiapkan untuk prompt asli milik character AI yang mengatur header.
-Prompt di bawah nanti adalah contoh/reference untuk stage, bukan instruksi untuk Codex.
-
-Tempel system prompt header asli di sini:
-
-```text
-[HEADER FORMAT]
-{{char}} MUST begin every narrative reply with this exact header:
-
-**Main Location - Sub Location - Detailed Area | Time of Day | HH:MM**
-**You: Gender - Apparent Race (Clothes/disguise; Position; body detail)**
-**NPC: Full Name - Race (Clothes; Position; body/racial detail), Full Name - Race (Clothes; Position; body/racial detail)**
-**Thread: Main mission/status ; Major obstacle/status**
-**Wallet: XG ; XS ; XC**
-***
-
-Rules:
-- All 4 header lines MUST use ** at the start and end.
-- Use exactly *** before narration.
-- NPCs cannot read, know, or react to You/NPC/Thread data unless learned in-story.
-- Status format is fixed: Clothes; Position; Opsional body/racial detail.
-- Do not replace position or clothes with mood, emotion, role, or vague status.
-- Only add Body/Racial details when needed, such as fighting, intimacy or sudden movements.
-
-[Header LOCATION & TIME Rules]
-- Location uses 3 tiers separated by " - ": main region/kingdom - place/district - exact area.
-- Change location only by clear cause: {{user}} moves, NPC leads, travel, combat shift, time skip, or scene transition.
-- Time of Day must match HH:MM: Morning 05:00-11:59, Afternoon 12:00-16:59, Evening 17:00-20:59, Night 21:00-04:59.
-- Normal talk advances 5-15 minutes. Quick reactions may keep the same minute. Travel, waiting, sleep, rituals, missions, or recovery may skip hours.
-
-[Header YOU LINE Rules]
-- Format: Gender - Apparent Race (Clothes/disguise; Position; body detail)
-- Clothes/disguise and position must always stay in Status.
-- Keep last known position and clothes unless {{user}} changes them or the scene clearly moves.
-- Apparent Race is visible form, not true identity.
-- Never write "Anomaly" unless revealed or confirmed in-story.
-- Body detail should stay simple: arms crossed, hood up, left hand on hip, hand on chin, holding cup.
-- Do not add thoughts, feelings, expression, mood, actions, movement, transformation, dialogue, or choices.
-
-[Header NPC LINE Rules]
-- Include all NPCs currently around {{user}}.
-- Format: Full Name - Race (Clothes; Position; body/racial detail)
-- Race uses dash. Status uses parentheses.
-- Separate multiple NPCs with commas only.
-- {{user}} is not an NPC.
-- Minor unnamed NPCs may be grouped by role.
-- Clothes and position must always stay in Status.
-- Keep last known position and clothes unless the NPC visibly moves, leaves, follows, changes clothes, removes armor, or the scene changes.
-- Position must show scene blocking: Standing before {{user}}, Seated beside throne, Standing by door, Behind {{user}}, At table head.
-- Body/racial detail may include hands, wings, tail, ears, horns, eyes, claws, weapon, posture, or relevant visible anatomy.
-
-[Header THREAD LINE Rules]
-- Track only important RP direction: mission, appointment, promise, hunt/quest, deadline, order, contract, travel goal, major obstacle, or major unresolved conflict.
-- Thread may show a mission paused by the current obstacle.
-- Do not track current scene/current topic placeholders, normal topics, casual questions, temporary mood, small suspicion, minor jealousy, or every tension.
-- Use " ; " between items.
-- Remove resolved, completed/complete, done, finished, refused, declined, rejected, failed, abandoned, expired, cancelled/canceled, or irrelevant items.
-- Optional status tags: (on pause), (Pending), (Ongoing), (Secret), (Known: NPC Name), (Known: Group).
-
-[Header WALLET Rule]
-- Format example: "Wallet: 12G ; 35S ; 8C"
-- G=Gold; S=Silver; C=Copper
-- Wallet is the money that {{user}} owns.
-- Wallet changes only through clear in-story transactions
-```
 
 ## Catatan Penyesuaian Stage
 
-Baca file Guide.Consepts.stage.md dan Guide.State.md untuk refensi
-
-Stage sudah disesuaikan dengan prompt header asli di atas.
+Stage sudah disesuaikan dengan rencana di Aether_Nova_Stage_Plan.md.
 
 Penyesuaian yang sudah diterapkan:
 
-1. Divider output memakai `***`, bukan `___`.
-2. `beforePrompt` mengingat pesan user terakhir sebagai konteks perubahan location/thread.
-3. Location change dijaga agar tidak berubah jauh tanpa cue perpindahan.
-4. `You` menjaga apparent race, menolak `Anomaly` jika belum revealed/confirmed, menjaga clothes/position/body detail dari state lama tanpa evidence, dan menyaring thoughts/actions/dialogue.
-5. `NPC: None` diterima saat tidak ada NPC.
-6. `Thread` dinormalisasi dengan pemisah ` ; ` dan item minor/selesai dibersihkan.
-7. Header yang muncul setelah teks pembuka tetap dideteksi, lalu dipindahkan menjadi satu header normal di paling atas.
-8. Multi-NPC dicocokkan berdasarkan nama agar NPC baru tidak mewarisi pakaian/status NPC lama hanya karena urutan header.
-9. Header yang terpisah blank line tetap dideteksi sebagai satu header agar tidak muncul double header.
-10. `Wallet` ditambahkan sebagai line header dan state; perubahan angka wallet ditolak kecuali narasi memuat evidence transaksi/reward/loss.
-11. `walletInitialized` ditambahkan agar wallet awal dari first message/alternate first message bisa diterima tanpa dipaksa menjadi default `0G ; 0S ; 0C`.
-12. Wallet inference ditambahkan agar pembayaran/reward eksplisit dengan nominal seperti `fifty silver` bisa dihitung dari state lama saat AI lupa mengubah line `Wallet`.
-13. Formatter narasi ringan ditambahkan untuk italic narrative paragraphs, dialog speaker lines, inline emphasis menjadi single quote, action beat single-quoted di dalam dialog menjadi italic, dan action beat yang keliru masuk quote dialog pembuka dikeluarkan menjadi italic.
-14. NPC clothing adjustment ditambahkan agar pakaian lama seperti slipped under-robe tidak dipertahankan saat narasi terbaru merapikan/menambahkan layered garment baru seperti over-robe.
-15. Thread inference dari narasi ditambahkan agar mission/quest/contract/promise/appointment/travel goal/major obstacle yang eksplisit tetap masuk ke line `Thread` saat header kosong, `None`, placeholder, atau stale.
-16. Thread linked sub-goal ditambahkan agar rencana seperti `meet Kaelen to ask about Debi` bisa ditambahkan dari konteks user/narasi tanpa mengganti misi utama.
-17. Speaker inference ringan ditambahkan agar dialog tanpa `Name:` bisa diberi speaker jika narasi/action beat dekat jelas menunjuk NPC tertentu.
-18. Thread terminal status diperluas agar item seperti `Job Offer Refused (resolved)` atau item dengan status complete/done/finished/refused/declined/rejected otomatis dibersihkan pada pesan berikutnya.
-19. Evidence pakaian `You` dibedakan antara narasi dan dialog: pembahasan membuka pakaian di dalam dialog tidak mengubah clothing slot menjadi `Naked` kecuali narasi/action beat benar-benar menunjukkan pakaian berubah.
-20. Evidence wallet dibedakan antara narasi dan dialog: nominal uang di dalam dialog tidak memicu perubahan wallet, dan jika ada transaksi non-dialog yang jelas stage memilih arah hitungan yang benar daripada angka wallet AI yang keliru.
-21. Formatter dialog diperbaiki agar speaker line yang salah dibungkus `*...*` tetap dibaca sebagai dialog, sementara single-quoted atau italic action beat sebelum quote dialog dipertahankan sebagai action beat.
-22. Status slot classifier ditambahkan agar pakaian/naked dideteksi dari isi slot, urutan status salah seperti `position; body/racial; clothing` dikoreksi menjadi `clothing; position; body/racial`, dan detail eyes/gaze/tail/ears/wings/horns dipindahkan dari position ke body/racial detail.
-23. `npcMemory` ditambahkan agar stage menyimpan Name, Role/Title, Racial, Relationship, dan KnownFacts per NPC, lalu menginject data lengkap hanya untuk NPC di header aktif dan identitas saja untuk NPC yang sekadar disebut user. Debug NPC memakai pending state dan localStorage, tetapi hasil debug dikirim sebagai `systemMessage`, bukan disisipkan ke isi response, agar tidak mengganggu `Thread`.
-24. Debug UI sementara ditambahkan agar state header, `npcMemory`, lifecycle activity, `stageDirections`, dan `systemMessage` debug bisa diperiksa tanpa menempelkan debug ke narasi.
-25. Role/title NPC memory diperketat agar hanya mengambil title yang dekat dengan nama NPC terkait, serta command manual `[npc memory set/delete/clearfacts: ...]` ditambahkan untuk koreksi data saat testing.
-26. Debug UI dinaikkan ke `V1.1`, command guide ditampilkan dekat `NPC Memory`, dan command memory diterapkan ulang setelah response agar hasil manual tidak langsung dibuat ulang oleh auto-memory dari header.
-27. Debug UI dinaikkan ke `V1.2`; `pendingNpcMemoryCommand` disimpan ke messageState agar command tetap tersedia untuk `afterResponse` walaupun stage lifecycle memakai instance/state berbeda. Panel juga menampilkan `Pending Memory Command`.
-28. Format command NPC memory diubah dari `[...]` menjadi tanpa delimiter. Stage mendeteksi `npc memory <action>: <target>` langsung di teks, tanpa perlu delimiter khusus. Contoh: `npc memory delete: Debi`, `npc memory set: Debi | role=...`. Batas command adalah tanda baca kalimat (`.`, `!`, `?`), baris baru, atau akhir string. Jika teks setelah target tidak mengandung `|`, command dianggap selesai pada kata target.
-29. Bug fix: urutan alternatif di regex `actionMatch` diperbaiki — `clearfacts|clear\s+facts` dipindahkan sebelum `clear` agar `npc memory clearfacts: Debi` tidak salah parsing sebagai action `delete` target `facts: Debi`.
-30. Bug fix: `modifiedMessage` di `beforePrompt` tidak lagi mengembalikan string kosong (`""`) saat user hanya mengirim command tanpa teks lain, karena string kosong berpotensi membuat Chub mengabaikan state update. Fallback menjadi `" "` (spasi) agar state tetap tersimpan dan command tidak dikirim ke LLM.
-31. Debug UI dinaikkan ke `V1.3`.
+1. npcMemory field structure diubah agar sesuai plan: `Racial` → `Race`, `KnownFacts` → `OnlyKnows`, ditambah field `PhysicalExtra` dan `Behavior`.
+2. Injection untuk mentioned-only NPC dibatasi ke identitas dasar saja (Name, Role/Title, Race, PhysicalExtra) — Relationship, Behavior, dan OnlyKnows tidak ikut diinject sampai NPC masuk header/scene.
+3. Command npcMemory ditambah: `add fact`, `relation`, `show`.
+4. Debug UI diperbarui menampilkan field baru (Race, Physical Extra, Behavior, OnlyKnows).
 
 Jika prompt header asli nanti diubah lagi:
 
-1. Jangan hapus blok prompt asli di dokumen ini.
-2. Bandingkan rules prompt asli dengan behavior `src/aetherNovaHeader.ts`.
-3. Ubah parser dan normalizer agar searah dengan prompt asli.
-4. Pertahankan prinsip utama: koreksi header saja, jangan rewrite narasi.
-5. Build ulang dengan `npm run build`.
+1. Baca file Guide.Consepts.stage.md dan Guide.State.md untuk refensi
+2. Build ulang dengan `npm run build`.
 
 Catatan verifikasi terakhir:
 
 - `npm run build` berhasil.
-- `npm run lint` belum bisa dipakai karena dependency template `@typescript-eslint/eslint-plugin` belum terpasang.

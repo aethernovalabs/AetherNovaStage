@@ -19,9 +19,11 @@ export interface AetherNovaMessageState {
 export interface NpcMemoryEntry {
     name: string;
     roleTitle: string;
-    racial: string;
+    race: string;
     relationship: string;
-    knownFacts: string[];
+    behavior: string;
+    physicalExtra: string;
+    onlyKnows: string[];
 }
 
 export type NpcMemoryStore = Record<string, NpcMemoryEntry>;
@@ -81,7 +83,7 @@ interface NormalizeStatusOptions {
 const CLOCK_PATTERN = /\b([01]?\d|2[0-3]):([0-5]\d)\b/;
 const TIME_OF_DAYS: TimeOfDay[] = ["Morning", "Afternoon", "Evening", "Night"];
 const HEADER_DIVIDER = "***";
-const NPC_MEMORY_COMMAND_PATTERN = /npc[\s_-]*memory\s+((?:delete|remove|clearfacts|clear|set|update)\s*:?\s*(?:[^|.\n]+(?:\s*\|\s*[^|.\n]+)*))/gi;
+const NPC_MEMORY_COMMAND_PATTERN = /npc[\s_-]*memory\s+((?:delete|remove|clearfacts|clear|set|update|add\s+fact|addfact|relation|show)\s*:?\s*(?:[^|.\n]+(?:\s*\|\s*[^|.\n]+)*))/gi;
 
 const DEFAULT_STATE: AetherNovaMessageState = {
     location: "Unknown Region - Current Place - Active Area",
@@ -1294,23 +1296,27 @@ function normalizeNpcMemoryEntry(value: unknown): NpcMemoryEntry | null {
         return null;
     }
 
-    const raw = value as Partial<NpcMemoryEntry>;
+    const raw = value as Partial<NpcMemoryEntry> & {racial?: string; knownFacts?: string[]};
     const name = typeof raw.name === "string" ? cleanNpcMemoryName(raw.name) : "";
 
     if (name.length === 0) {
         return null;
     }
 
-    const knownFacts = Array.isArray(raw.knownFacts)
-        ? raw.knownFacts.filter((fact): fact is string => typeof fact === "string").map(cleanFactText).filter(Boolean).slice(0, 8)
-        : [];
+    const onlyKnows = Array.isArray(raw.onlyKnows)
+        ? raw.onlyKnows.filter((fact): fact is string => typeof fact === "string").map(cleanFactText).filter(Boolean).slice(0, 8)
+        : Array.isArray(raw.knownFacts)
+            ? raw.knownFacts.filter((fact): fact is string => typeof fact === "string").map(cleanFactText).filter(Boolean).slice(0, 8)
+            : [];
 
     return {
         name,
         roleTitle: cleanMemoryField(raw.roleTitle, "Unknown role/title"),
-        racial: cleanMemoryField(raw.racial, "Unknown racial"),
+        race: cleanMemoryField(raw.race || raw.racial, "Unknown"),
         relationship: cleanMemoryField(raw.relationship, "Unknown"),
-        knownFacts,
+        behavior: cleanMemoryField(raw.behavior, "Unknown"),
+        physicalExtra: cleanMemoryField(raw.physicalExtra, "none"),
+        onlyKnows,
     };
 }
 
@@ -1330,14 +1336,14 @@ function buildNpcMemoryDirections(state: AetherNovaMessageState, userMessage: st
     ];
 
     if (presentEntries.length > 0) {
-        lines.push("Present NPCs, include their KnownFacts as in-story memory:");
+        lines.push("Present NPCs, include their full memory (Relationship, Behavior, OnlyKnows) as in-story knowledge:");
         for (const entry of presentEntries.slice(0, 4)) {
             lines.push(`- ${formatNpcMemoryForPrompt(entry, true)}`);
         }
     }
 
     if (mentionedEntries.length > 0) {
-        lines.push("Mentioned-only NPCs, inject identity only; do not inject their private KnownFacts unless they enter the scene/header:");
+        lines.push("Mentioned-only NPCs, inject identity only (Name, Role/Title, Race, Physical Extra); do not inject Relationship, Behavior, or OnlyKnows unless they enter the scene/header:");
         for (const entry of mentionedEntries.slice(0, 4)) {
             lines.push(`- ${formatNpcMemoryForPrompt(entry, false)}`);
         }
@@ -1356,9 +1362,11 @@ function updateNpcMemory(previousMemory: NpcMemoryStore, npcLine: string, contex
         const name = completeNpcMemoryName(headerEntry.name, previous, next);
         const key = npcMemoryKey(name);
         const roleTitle = inferNpcRoleTitle(headerEntry, previous, context);
-        const racial = inferNpcRacial(headerEntry, previous, context);
+        const race = cleanMemoryField(headerEntry.race || previous?.race, "Unknown");
+        const physicalExtra = inferNpcPhysicalExtra(headerEntry, previous, context);
         const relationship = inferNpcRelationship(headerEntry, previous, context);
-        const knownFacts = mergeKnownFacts(previous?.knownFacts ?? [], inferNpcKnownFacts(headerEntry, context));
+        const behavior = inferNpcBehavior(context) || previous?.behavior || "Unknown";
+        const onlyKnows = mergeKnownFacts(previous?.onlyKnows ?? [], inferNpcOnlyKnows(headerEntry, context));
 
         if (existingKey != null && existingKey !== key) {
             delete next[existingKey];
@@ -1367,9 +1375,11 @@ function updateNpcMemory(previousMemory: NpcMemoryStore, npcLine: string, contex
         next[key] = {
             name,
             roleTitle,
-            racial,
+            race,
             relationship,
-            knownFacts,
+            behavior,
+            physicalExtra,
+            onlyKnows,
         };
     }
 
@@ -1435,16 +1445,18 @@ function npcMemoryEntryMentioned(entry: NpcMemoryEntry, text: string): boolean {
     return names.some((name) => new RegExp(`\\b${npcNameRegexSource(name)}\\b`, "i").test(clean));
 }
 
-function formatNpcMemoryForPrompt(entry: NpcMemoryEntry, includeKnownFacts: boolean): string {
+function formatNpcMemoryForPrompt(entry: NpcMemoryEntry, includeFull: boolean): string {
     const parts = [
         `Name: ${entry.name}`,
         `Role/Title: ${entry.roleTitle}`,
-        `Racial: ${entry.racial}`,
-        `Relationship with {{user}}: ${entry.relationship}`,
+        `Race: ${entry.race}`,
+        `Physical Extra: ${entry.physicalExtra}`,
     ];
 
-    if (includeKnownFacts) {
-        parts.push(`KnownFacts: ${entry.knownFacts.length > 0 ? entry.knownFacts.join(" ; ") : "None recorded"}`);
+    if (includeFull) {
+        parts.push(`Relationship with {{user}}: ${entry.relationship}`);
+        parts.push(`Behavior toward {{user}}: ${entry.behavior}`);
+        parts.push(`OnlyKnows: ${entry.onlyKnows.length > 0 ? entry.onlyKnows.join(" ; ") : "None recorded"}`);
     }
 
     return parts.join(" | ");
@@ -1485,9 +1497,11 @@ function buildNpcDebugFooter(query: string | null, memory: NpcMemoryStore): stri
         `[debug: npc ${query}]`,
         `Name: ${entry.name}`,
         `Role/Title: ${entry.roleTitle}`,
-        `Racial: ${entry.racial}`,
+        `Race: ${entry.race}`,
+        `Physical Extra: ${entry.physicalExtra}`,
         `Relationship with {{user}}: ${entry.relationship}`,
-        `KnownFacts: ${entry.knownFacts.length > 0 ? entry.knownFacts.join(" ; ") : "None recorded"}`,
+        `Behavior toward {{user}}: ${entry.behavior}`,
+        `OnlyKnows: ${entry.onlyKnows.length > 0 ? entry.onlyKnows.join(" ; ") : "None recorded"}`,
     ].join("\n");
 }
 
@@ -1533,7 +1547,7 @@ export function applyNpcMemoryCommands(
 
 interface NpcMemoryCommand {
     raw: string;
-    action: "delete" | "set" | "clearfacts";
+    action: "delete" | "set" | "clearfacts" | "addfact" | "relation" | "show";
     target: string;
     updates: Partial<NpcMemoryCommandUpdates>;
 }
@@ -1541,9 +1555,11 @@ interface NpcMemoryCommand {
 interface NpcMemoryCommandUpdates {
     name: string;
     roleTitle: string;
-    racial: string;
+    race: string;
     relationship: string;
-    knownFacts: string[];
+    behavior: string;
+    physicalExtra: string;
+    onlyKnows: string[];
     addFacts: string[];
 }
 
@@ -1556,21 +1572,32 @@ function parseNpcMemoryCommands(userMessage: string): NpcMemoryCommand[] {
 function parseNpcMemoryCommandBody(rawBody: string): NpcMemoryCommand | null {
     const segments = splitTopLevel(rawBody, "|").map(cleanFragment).filter(Boolean);
     const head = segments.shift() ?? "";
-    const actionMatch = /^(delete|remove|clearfacts|clear\s+facts|clear|set|update)\s*:?\s*(.+)$/i.exec(head);
+    const actionMatch = /^(delete|remove|clearfacts|clear\s+facts|clear|set|update|add\s+fact|addfact|relation|show)\s*:?\s*(.*)$/i.exec(head);
 
     if (actionMatch == null) {
         return null;
     }
 
     const actionWord = actionMatch[1].toLowerCase().replace(/\s+/g, "");
-    const action: NpcMemoryCommand["action"] = actionWord === "delete" || actionWord === "remove" || actionWord === "clear"
-        ? "delete"
-        : actionWord === "clearfacts"
-            ? "clearfacts"
-            : "set";
+    let action: NpcMemoryCommand["action"];
+
+    if (actionWord === "delete" || actionWord === "remove" || actionWord === "clear") {
+        action = "delete";
+    } else if (actionWord === "clearfacts") {
+        action = "clearfacts";
+    } else if (actionWord === "addfact") {
+        action = "addfact";
+    } else if (actionWord === "relation") {
+        action = "relation";
+    } else if (actionWord === "show") {
+        action = "show";
+    } else {
+        action = "set";
+    }
+
     const target = cleanNpcMemoryName(actionMatch[2]);
 
-    if (target.length === 0) {
+    if (target.length === 0 && action !== "show") {
         return null;
     }
 
@@ -1603,11 +1630,15 @@ function parseNpcMemoryCommandUpdates(segments: string[]): Partial<NpcMemoryComm
         } else if (key === "role" || key === "title" || key === "roletitle") {
             updates.roleTitle = cleanMemoryField(value, "Unknown role/title");
         } else if (key === "race" || key === "racial") {
-            updates.racial = cleanMemoryField(value, "Unknown racial");
+            updates.race = cleanMemoryField(value, "Unknown");
         } else if (key === "relationship" || key === "relation") {
             updates.relationship = cleanMemoryField(value, "Unknown");
-        } else if (key === "knownfacts" || key === "facts") {
-            updates.knownFacts = splitNpcMemoryFacts(value);
+        } else if (key === "behavior" || key === "behaviour") {
+            updates.behavior = cleanMemoryField(value, "Unknown");
+        } else if (key === "physical" || key === "physicalextra") {
+            updates.physicalExtra = cleanMemoryField(value, "none");
+        } else if (key === "onlyknows" || key === "knownfacts" || key === "facts") {
+            updates.onlyKnows = splitNpcMemoryFacts(value);
         } else if (key === "fact" || key === "knownfact" || key === "addfact") {
             addFacts.push(...splitNpcMemoryFacts(value));
         }
@@ -1641,9 +1672,53 @@ function applyNpcMemoryCommand(memory: NpcMemoryStore, command: NpcMemoryCommand
 
         next[key] = {
             ...next[key],
-            knownFacts: [],
+            onlyKnows: [],
         };
-        return {memory: next, message: `NPC memory command: cleared KnownFacts for ${next[key].name}.`};
+        return {memory: next, message: `NPC memory command: cleared OnlyKnows for ${next[key].name}.`};
+    }
+
+    if (command.action === "addfact") {
+        if (key == null) {
+            return {memory: next, message: `NPC memory command: no stored memory found for ${command.target}.`};
+        }
+
+        next[key] = {
+            ...next[key],
+            onlyKnows: mergeKnownFacts(next[key].onlyKnows, command.updates.addFacts ?? []),
+        };
+        return {memory: next, message: `NPC memory command: added fact(s) to ${next[key].name}.`};
+    }
+
+    if (command.action === "relation") {
+        if (key == null) {
+            return {memory: next, message: `NPC memory command: no stored memory found for ${command.target}.`};
+        }
+
+        next[key] = {
+            ...next[key],
+            relationship: cleanMemoryField(command.updates.relationship, "Unknown"),
+        };
+        return {memory: next, message: `NPC memory command: updated relationship for ${next[key].name}.`};
+    }
+
+    if (command.action === "show") {
+        const exists = key == null ? null : next[key];
+        if (exists == null) {
+            return {memory: next, message: `[system: npcMemory]\nNo stored NPC memory found for ${command.target}.`};
+        }
+        return {
+            memory: next,
+            message: [
+                `[system: npcMemory]`,
+                `Name: ${exists.name}`,
+                `Role/Title: ${exists.roleTitle}`,
+                `Race: ${exists.race}`,
+                `Physical Extra: ${exists.physicalExtra}`,
+                `Relationship with {{user}}: ${exists.relationship}`,
+                `Behavior toward {{user}}: ${exists.behavior}`,
+                `OnlyKnows: ${exists.onlyKnows.length > 0 ? exists.onlyKnows.join(" ; ") : "None recorded"}`,
+            ].join("\n"),
+        };
     }
 
     const previous = key == null ? null : next[key];
@@ -1652,11 +1727,13 @@ function applyNpcMemoryCommand(memory: NpcMemoryStore, command: NpcMemoryCommand
     const entry: NpcMemoryEntry = {
         name,
         roleTitle: cleanMemoryField(command.updates.roleTitle ?? previous?.roleTitle, "Unknown role/title"),
-        racial: cleanMemoryField(command.updates.racial ?? previous?.racial, "Unknown racial"),
+        race: cleanMemoryField(command.updates.race ?? previous?.race, "Unknown"),
         relationship: cleanMemoryField(command.updates.relationship ?? previous?.relationship, "Unknown"),
-        knownFacts: command.updates.knownFacts != null
-            ? mergeKnownFacts([], command.updates.knownFacts)
-            : mergeKnownFacts(previous?.knownFacts ?? [], command.updates.addFacts ?? []),
+        behavior: cleanMemoryField(command.updates.behavior ?? previous?.behavior, "Unknown"),
+        physicalExtra: cleanMemoryField(command.updates.physicalExtra ?? previous?.physicalExtra, "none"),
+        onlyKnows: command.updates.onlyKnows != null
+            ? mergeKnownFacts([], command.updates.onlyKnows)
+            : mergeKnownFacts(previous?.onlyKnows ?? [], command.updates.addFacts ?? []),
     };
 
     if (key != null && key !== nextKey) {
@@ -1745,23 +1822,22 @@ function normalizeRoleTitle(value: string): string {
         .replace(/\bBroker\b/g, "broker");
 }
 
-function inferNpcRacial(headerEntry: NpcHeaderMemoryEntry, previous: NpcMemoryEntry | null, context: string): string {
-    const base = cleanMemoryField(headerEntry.race || previous?.racial, "Unknown racial");
+function inferNpcPhysicalExtra(headerEntry: NpcHeaderMemoryEntry, previous: NpcMemoryEntry | null, context: string): string {
     const searchable = `${headerEntry.status}\n${nearNpcContext(headerEntry.name, context)}`;
     const details: string[] = [];
 
     if (/\b(?:nine[-\s]?tails?|nine[-\s]?tailed|ekor sembilan)\b/i.test(searchable)) {
         details.push("nine tails");
-    } else if (/\btails?\b/i.test(searchable) && /\bkitsune\b/i.test(base)) {
+    } else if (/\btails?\b/i.test(searchable) && /\bkitsune\b/i.test(headerEntry.race)) {
         details.push("tails visible");
     }
 
-    if (/\bears?\b/i.test(searchable) && /\bkitsune|catkin\b/i.test(base)) {
+    if (/\bears?\b/i.test(searchable) && /\bkitsune|catkin\b/i.test(headerEntry.race)) {
         details.push("animal ears");
     }
 
-    const merged = mergeUniqueList(base.split(/\s*;\s*/g).concat(details).map(cleanFragment).filter(Boolean), 4);
-    return merged.length > 0 ? merged.join("; ") : "Unknown racial";
+    const merged = mergeUniqueList(details, 4);
+    return merged.length > 0 ? merged.join("; ") : previous?.physicalExtra || "none";
 }
 
 function inferNpcRelationship(headerEntry: NpcHeaderMemoryEntry, previous: NpcMemoryEntry | null, context: string): string {
@@ -1790,7 +1866,45 @@ function inferNpcRelationship(headerEntry: NpcHeaderMemoryEntry, previous: NpcMe
     return labels.length > 0 ? mergeUniqueList(labels, 3).join(" / ") : cleanMemoryField(previous?.relationship, "Unknown");
 }
 
-function inferNpcKnownFacts(headerEntry: NpcHeaderMemoryEntry, context: string): string[] {
+function inferNpcBehavior(context: string): string {
+    const searchable = context.toLowerCase();
+    const labels: string[] = [];
+
+    if (/\b(arrogant|aloof|condescending|cold|proud)\b/.test(searchable)) {
+        labels.push("arrogant");
+    }
+    if (/\b(suspicious|wary|guarded|distrust|cautious)\b/.test(searchable)) {
+        labels.push("suspicious");
+    }
+    if (/\b(protective|guarding|defending|defensive)\b/.test(searchable)) {
+        labels.push("protective");
+    }
+    if (/\b(possessive|jealous|clinging)\b/.test(searchable)) {
+        labels.push("possessive");
+    }
+    if (/\b(playful|teasing|mischievous|cheerful)\b/.test(searchable)) {
+        labels.push("playful");
+    }
+    if (/\b(formal|polite|court|protocol|respectful)\b/.test(searchable)) {
+        labels.push("formal");
+    }
+    if (/\b(cold|distant|aloof|unfriendly)\b/.test(searchable)) {
+        labels.push("cold");
+    }
+    if (/\b(loyal|devoted|faithful|steadfast)\b/.test(searchable)) {
+        labels.push("loyal");
+    }
+    if (/\b(fearful|afraid|scared|nervous|anxious)\b/.test(searchable)) {
+        labels.push("fearful");
+    }
+    if (/\b(loving|affectionate|caring|gentle|warm)\b/.test(searchable)) {
+        labels.push("loving");
+    }
+
+    return labels.length > 0 ? mergeUniqueList(labels, 3).join(" / ") : "";
+}
+
+function inferNpcOnlyKnows(headerEntry: NpcHeaderMemoryEntry, context: string): string[] {
     const firstName = headerEntry.firstName || headerEntry.name;
     const facts: string[] = [];
     const lower = context.toLowerCase();

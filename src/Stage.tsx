@@ -233,7 +233,10 @@ function AetherNovaDebugPanel({getSnapshot}: {getSnapshot: () => DebugSnapshot})
                 <div className="aether-debug-command-guide" aria-label="NPC memory command examples">
                     <code>npc memory delete: Debi</code>
                     <code>npc memory clearfacts: Debi</code>
-                    <code>npc memory set: Debi | role=Market broker | racial=Human | relationship=guarded | fact={'{{user}}'} paid Kaelen to find Debi</code>
+                    <code>npc memory add fact: Debi | fact={'{{user}}'} paid Kaelen to find Debi</code>
+                    <code>npc memory relation: Debi | relationship=friendly</code>
+                    <code>npc memory show: Debi</code>
+                    <code>npc memory set: Debi | role=Market broker | race=Human | physical=none | relationship=guarded | behavior=guarded | onlyKnows={'{{user}}'} paid Kaelen to find Debi</code>
                 </div>
                 {npcMemoryEntries.length === 0 ? (
                     <p className="aether-debug-empty">No NPC memory stored yet.</p>
@@ -244,15 +247,17 @@ function AetherNovaDebugPanel({getSnapshot}: {getSnapshot: () => DebugSnapshot})
                                 <h3>{entry.name}</h3>
                                 <dl>
                                     <DebugDetail label="Role" value={entry.roleTitle} />
-                                    <DebugDetail label="Racial" value={entry.racial} />
+                                    <DebugDetail label="Race" value={entry.race} />
+                                    <DebugDetail label="Physical Extra" value={entry.physicalExtra} />
                                     <DebugDetail label="Relationship" value={entry.relationship} />
+                                    <DebugDetail label="Behavior" value={entry.behavior} />
                                 </dl>
-                                <p className="aether-debug-facts-label">KnownFacts</p>
-                                {entry.knownFacts.length === 0 ? (
+                                <p className="aether-debug-facts-label">OnlyKnows</p>
+                                {entry.onlyKnows.length === 0 ? (
                                     <p className="aether-debug-empty compact">None</p>
                                 ) : (
                                     <ul>
-                                        {entry.knownFacts.map((fact) => <li key={fact}>{fact}</li>)}
+                                        {entry.onlyKnows.map((fact) => <li key={fact}>{fact}</li>)}
                                     </ul>
                                 )}
                             </article>
