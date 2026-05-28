@@ -75,6 +75,10 @@ state_schema:
         type:
           - string
           - 'null'
+      pendingNpcMemoryCommand:
+        type:
+          - string
+          - 'null'
   chat:
     type: object
     properties: {}

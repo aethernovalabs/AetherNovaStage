@@ -13,6 +13,7 @@ export interface AetherNovaMessageState {
     walletInitialized: boolean;
     npcMemory: NpcMemoryStore;
     pendingNpcDebugQuery: string | null;
+    pendingNpcMemoryCommand: string | null;
 }
 
 export interface NpcMemoryEntry {
@@ -93,6 +94,7 @@ const DEFAULT_STATE: AetherNovaMessageState = {
     walletInitialized: false,
     npcMemory: {},
     pendingNpcDebugQuery: null,
+    pendingNpcMemoryCommand: null,
 };
 
 const RACE_KEYWORDS = [
@@ -1152,6 +1154,7 @@ export function coerceHeaderState(
         walletInitialized: walletState.initialized,
         npcMemory,
         pendingNpcDebugQuery: normalizePendingNpcDebugQuery(raw.pendingNpcDebugQuery),
+        pendingNpcMemoryCommand: normalizePendingNpcMemoryCommand(raw.pendingNpcMemoryCommand),
     };
 }
 
@@ -1163,6 +1166,7 @@ export function prepareAetherNovaStateForPrompt(
         ...state,
         npcMemory: updateNpcMemory(state.npcMemory, state.npc, state.location),
         pendingNpcDebugQuery: debugNpcQuery(userMessage),
+        pendingNpcMemoryCommand: state.pendingNpcMemoryCommand,
     };
 }
 
@@ -1221,6 +1225,7 @@ export function normalizeAetherNovaResponse(
         walletInitialized: wallet.initialized,
         npcMemory: previousState.npcMemory,
         pendingNpcDebugQuery: null,
+        pendingNpcMemoryCommand: previousState.pendingNpcMemoryCommand,
     };
     state.npcMemory = updateNpcMemory(previousState.npcMemory, state.npc, `${state.location}\n${correctionContext}`);
     const debugQuery = previousState.pendingNpcDebugQuery ?? debugNpcQuery(context);
@@ -1683,6 +1688,10 @@ function stripNpcMemoryCommands(userMessage: string): string {
 
 function normalizePendingNpcDebugQuery(value: unknown): string | null {
     return typeof value === "string" && cleanFragment(value).length > 0 ? cleanFragment(value) : null;
+}
+
+function normalizePendingNpcMemoryCommand(value: unknown): string | null {
+    return typeof value === "string" && parseNpcMemoryCommands(value).length > 0 ? value : null;
 }
 
 function splitNpcTitleFromName(value: string): {name: string; title: string} {

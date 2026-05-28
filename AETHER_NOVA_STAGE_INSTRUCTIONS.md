@@ -270,7 +270,7 @@ Jika user mengetik `[debug: npc nama]`, stage menyimpan debug request ke state d
 
 Debug UI sementara:
 
-Saat `position: ADJACENT` dan config `debugUi` aktif, stage menampilkan panel debug yang hanya terlihat oleh user. Panel ini memperlihatkan header state terakhir, jumlah dan isi `npcMemory`, command guide, activity log dari `load`, `setState`, `beforePrompt`, dan `afterResponse`, `stageDirections` terakhir, `systemMessage` debug terakhir, serta pesan user terakhir yang sedang diproses. Data panel tidak dikirim ke LLM kecuali bagian `stageDirections` yang memang dikirim oleh `beforePrompt`. Versi debug UI saat ini: `V1.1`.
+Saat `position: ADJACENT` dan config `debugUi` aktif, stage menampilkan panel debug yang hanya terlihat oleh user. Panel ini memperlihatkan header state terakhir, jumlah dan isi `npcMemory`, command guide, pending memory command, activity log dari `load`, `setState`, `beforePrompt`, dan `afterResponse`, `stageDirections` terakhir, `systemMessage` debug terakhir, serta pesan user terakhir yang sedang diproses. Data panel tidak dikirim ke LLM kecuali bagian `stageDirections` yang memang dikirim oleh `beforePrompt`. Versi debug UI saat ini: `V1.2`.
 
 Command memory manual:
 
@@ -426,6 +426,7 @@ Penyesuaian yang sudah diterapkan:
 24. Debug UI sementara ditambahkan agar state header, `npcMemory`, lifecycle activity, `stageDirections`, dan `systemMessage` debug bisa diperiksa tanpa menempelkan debug ke narasi.
 25. Role/title NPC memory diperketat agar hanya mengambil title yang dekat dengan nama NPC terkait, serta command manual `[npc memory set/delete/clearfacts: ...]` ditambahkan untuk koreksi data saat testing.
 26. Debug UI dinaikkan ke `V1.1`, command guide ditampilkan dekat `NPC Memory`, dan command memory diterapkan ulang setelah response agar hasil manual tidak langsung dibuat ulang oleh auto-memory dari header.
+27. Debug UI dinaikkan ke `V1.2`; `pendingNpcMemoryCommand` disimpan ke messageState agar command tetap tersedia untuk `afterResponse` walaupun stage lifecycle memakai instance/state berbeda. Panel juga menampilkan `Pending Memory Command`.
 
 Jika prompt header asli nanti diubah lagi:
 

@@ -18,7 +18,7 @@ type ConfigType = {
 type InitStateType = Record<string, never>;
 type ChatStateType = Record<string, never>;
 const DEBUG_STORAGE_KEY = "aether-nova-stage.pendingNpcDebugQuery";
-const DEBUG_UI_VERSION = "V1.1";
+const DEBUG_UI_VERSION = "V1.2";
 
 interface DebugEvent {
     id: number;
@@ -91,6 +91,10 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         this.state = commandResult.state;
         this.latestUserMessage = commandResult.cleanedMessage;
         this.latestNpcMemoryCommandMessage = commandResult.applied ? originalUserMessage : "";
+        this.state = {
+            ...this.state,
+            pendingNpcMemoryCommand: commandResult.applied ? originalUserMessage : null,
+        };
         if (commandResult.systemMessage != null) {
             this.lastSystemMessage = commandResult.systemMessage;
         }
@@ -122,14 +126,18 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         }
 
         const normalized = normalizeAetherNovaResponse(botMessage.content, this.state, this.latestUserMessage);
-        const afterResponseCommand = this.latestNpcMemoryCommandMessage.length > 0
-            ? applyNpcMemoryCommands(normalized.state, this.latestNpcMemoryCommandMessage)
+        const pendingMemoryCommand = this.state.pendingNpcMemoryCommand ?? this.latestNpcMemoryCommandMessage;
+        const afterResponseCommand = pendingMemoryCommand.length > 0
+            ? applyNpcMemoryCommands(normalized.state, pendingMemoryCommand)
             : null;
-        const finalState = afterResponseCommand?.state ?? normalized.state;
+        const finalState = {
+            ...(afterResponseCommand?.state ?? normalized.state),
+            pendingNpcMemoryCommand: null,
+        };
         const changedFields = changedStateFields(previousState, finalState);
         this.state = finalState;
         this.lastModifiedMessageChanged = normalized.content !== botMessage.content;
-        this.lastSystemMessage = normalized.systemMessage ?? "";
+        this.lastSystemMessage = joinSystemMessages(normalized.systemMessage, afterResponseCommand?.systemMessage);
         this.pushDebugEvent(
             "afterResponse",
             `response ${this.lastModifiedMessageChanged ? "modified" : "unchanged"}; changed: ${changedFields.length > 0 ? changedFields.join(", ") : "none"}; NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}; memory command reapply ${afterResponseCommand?.applied === true ? "yes" : "no"}; system debug ${this.lastSystemMessage.length > 0 ? "sent" : "none"}`,
@@ -142,7 +150,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             stageDirections: null,
             messageState: this.state,
             modifiedMessage: normalized.content,
-            systemMessage: normalized.systemMessage,
+            systemMessage: this.lastSystemMessage.length > 0 ? this.lastSystemMessage : null,
             error: null,
             chatState: null,
         };
@@ -212,6 +220,7 @@ function AetherNovaDebugPanel({getSnapshot}: {getSnapshot: () => DebugSnapshot})
                 <DebugMetric label="Thread" value={snapshot.state.thread} />
                 <DebugMetric label="Wallet" value={snapshot.state.wallet} />
                 <DebugMetric label="Pending NPC Debug" value={snapshot.state.pendingNpcDebugQuery ?? "None"} />
+                <DebugMetric label="Pending Memory Command" value={snapshot.state.pendingNpcMemoryCommand ?? "None"} />
             </section>
 
             <section className="aether-debug-section">
@@ -317,6 +326,7 @@ function changedStateFields(previous: AetherNovaMessageState, next: AetherNovaMe
         "wallet",
         "walletInitialized",
         "pendingNpcDebugQuery",
+        "pendingNpcMemoryCommand",
     ];
     const changed = fields.filter((field) => previous[field] !== next[field]).map(String);
 
@@ -325,6 +335,10 @@ function changedStateFields(previous: AetherNovaMessageState, next: AetherNovaMe
     }
 
     return changed;
+}
+
+function joinSystemMessages(...messages: Array<string | null | undefined>): string {
+    return messages.map((message) => message ?? "").filter((message) => message.length > 0).join("\n");
 }
 
 function writePendingDebugQuery(query: string): void {
