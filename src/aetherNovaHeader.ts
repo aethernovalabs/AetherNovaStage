@@ -3717,6 +3717,10 @@ function youClothingChangeIsSupported(candidate: string, previous: string, conte
         return false;
     }
 
+    if (!isGenericStatusPart(previous) && isDefaultClothingValue(candidate)) {
+        return contextMentionsCandidate(candidate, lowerContext);
+    }
+
     if (hasRemovalCue) {
         return true;
     }
@@ -3732,16 +3736,8 @@ function youClothingChangeIsSupported(candidate: string, previous: string, conte
         return true;
     }
 
-    if (hasChangeCue && !isGenericStatusPart(previous) && isDefaultClothingValue(candidate)) {
-        return containsAnyCue(lowerContext, defaultClothingVariants(candidate));
-    }
-
     if (hasChangeCue) {
         return true;
-    }
-
-    if (!isGenericStatusPart(previous) && isDefaultClothingValue(candidate)) {
-        return false;
     }
 
     return CLOTHING_DAMAGE_WORDS.test(lowerCandidate)
@@ -4196,16 +4192,19 @@ function isDefaultClothingValue(value: string): boolean {
         || clean === "simple clothes";
 }
 
-function defaultClothingVariants(value: string): string[] {
-    const clean = cleanFragment(value).toLowerCase();
-    const base = clean
-        .replace(/\b(clothing|clothes|outfit)\b/, "");
-    const trimmed = base.replace(/\s+/g, " ").trim();
-    return [
-        `${trimmed} clothing`,
-        `${trimmed} clothes`,
-        `${trimmed} outfit`,
+function contextMentionsCandidate(candidate: string, lowerContext: string): boolean {
+    const clean = cleanFragment(candidate).toLowerCase();
+    const directMatches = [
+        clean,
+        clean.replace(/\bclothing\b/g, "clothes"),
+        clean.replace(/\bclothes\b/g, "clothing"),
+        clean.replace(/\boutfit\b/g, "clothing"),
     ];
+    if (directMatches.some((m) => lowerContext.includes(m))) {
+        return true;
+    }
+    const words = clothingWords(candidate);
+    return words.length > 0 && words.some((w) => containsAnyCue(lowerContext, [w]));
 }
 
 function npcIdentityKey(value: string): string {
