@@ -18,7 +18,8 @@ type ConfigType = {
 type InitStateType = Record<string, never>;
 type ChatStateType = Record<string, never>;
 const DEBUG_STORAGE_KEY = "aether-nova-stage.pendingNpcDebugQuery";
-const DEBUG_UI_VERSION = "V1.3";
+const DEBUG_UI_VERSION = "V1.4";
+const NPC_OBSERVATION_FLUSH_THRESHOLD = 5;
 
 interface DebugEvent {
     id: number;
@@ -59,7 +60,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         this.lastSystemMessage = "";
         this.lastModifiedMessageChanged = false;
         this.latestNpcMemoryCommandMessage = "";
-        this.pushDebugEvent("init", `state ready; ${countNpcMemory(this.state)} NPC memory entries`);
+        this.pushDebugEvent("init", `state ready; ${countNpcMemory(this.state)} NPC memory entries; NPC observation system active (flush at ${NPC_OBSERVATION_FLUSH_THRESHOLD})`);
     }
 
     async load(): Promise<Partial<LoadResponse<InitStateType, ChatStateType, MessageStateType>>> {
@@ -99,9 +100,10 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             this.lastSystemMessage = commandResult.systemMessage;
         }
         this.lastStageDirections = buildStageDirections(this.state, this.latestUserMessage);
+        const obsCount = Object.values(this.state.pendingNpcObservations ?? {}).reduce((s, f) => s + f.length, 0);
         this.pushDebugEvent(
             "beforePrompt",
-            `directions injected (${this.lastStageDirections.length} chars); debug request: ${debugQuery ?? "none"}; memory command: ${commandResult.applied ? "applied" : "none"}`,
+            `directions injected (${this.lastStageDirections.length} chars); debug request: ${debugQuery ?? "none"}; memory command: ${commandResult.applied ? "applied" : "none"}; observations pending: ${obsCount}`,
         );
 
         return {
@@ -140,9 +142,10 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         this.state = finalState;
         this.lastModifiedMessageChanged = normalized.content !== botMessage.content;
         this.lastSystemMessage = joinSystemMessages(normalized.systemMessage, afterResponseCommand?.systemMessage);
+        const obsCount = Object.values(finalState.pendingNpcObservations ?? {}).reduce((s, f) => s + f.length, 0);
         this.pushDebugEvent(
             "afterResponse",
-            `response ${this.lastModifiedMessageChanged ? "modified" : "unchanged"}; changed: ${changedFields.length > 0 ? changedFields.join(", ") : "none"}; NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}; memory command reapply ${afterResponseCommand?.applied === true ? "yes" : "no"}; system debug ${this.lastSystemMessage.length > 0 ? "sent" : "none"}`,
+            `response ${this.lastModifiedMessageChanged ? "modified" : "unchanged"}; changed: ${changedFields.length > 0 ? changedFields.join(", ") : "none"}; NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}; observations pending: ${obsCount}; memory command reapply ${afterResponseCommand?.applied === true ? "yes" : "no"}; system debug ${this.lastSystemMessage.length > 0 ? "sent" : "none"}`,
         );
         this.latestUserMessage = "";
         this.latestNpcMemoryCommandMessage = "";
@@ -194,6 +197,9 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 function AetherNovaDebugPanel({getSnapshot}: {getSnapshot: () => DebugSnapshot}): ReactElement {
     const [snapshot, setSnapshot] = useState<DebugSnapshot>(() => getSnapshot());
     const npcMemoryEntries = Object.values(snapshot.state.npcMemory ?? {});
+    const pendingObservations = snapshot.state.pendingNpcObservations ?? {};
+    const obsEntries = Object.entries(pendingObservations);
+    const totalObs = obsEntries.reduce((sum, [, facts]) => sum + facts.length, 0);
 
     useEffect(() => {
         const intervalId = window.setInterval(() => {
@@ -223,6 +229,7 @@ function AetherNovaDebugPanel({getSnapshot}: {getSnapshot: () => DebugSnapshot})
                 <DebugMetric label="Wallet" value={snapshot.state.wallet} />
                 <DebugMetric label="Pending NPC Debug" value={snapshot.state.pendingNpcDebugQuery ?? "None"} />
                 <DebugMetric label="Pending Memory Command" value={snapshot.state.pendingNpcMemoryCommand ?? "None"} />
+                <DebugMetric label="Pending Observations" value={`${totalObs} total (${obsEntries.length} NPCs)`} />
             </section>
 
             <section className="aether-debug-section">
@@ -258,6 +265,35 @@ function AetherNovaDebugPanel({getSnapshot}: {getSnapshot: () => DebugSnapshot})
                                 ) : (
                                     <ul>
                                         {entry.onlyKnows.map((fact) => <li key={fact}>{fact}</li>)}
+                                    </ul>
+                                )}
+                            </article>
+                        ))}
+                    </div>
+                )}
+            </section>
+
+            <section className="aether-debug-section">
+                <div className="aether-debug-section-title">
+                    <h2>NPC Observations</h2>
+                    <span>{totalObs}</span>
+                </div>
+                {obsEntries.length === 0 ? (
+                    <p className="aether-debug-empty">No pending observations.</p>
+                ) : (
+                    <div className="aether-debug-memory-list">
+                        {obsEntries.map(([npcKey, facts]) => (
+                            <article className="aether-debug-memory-card" key={npcKey}>
+                                <h3>{npcKey}</h3>
+                                <p className="aether-debug-facts-label">
+                                    {facts.length}/{NPC_OBSERVATION_FLUSH_THRESHOLD} — {facts.length >= NPC_OBSERVATION_FLUSH_THRESHOLD ? "Ready to flush" : `${NPC_OBSERVATION_FLUSH_THRESHOLD - facts.length} more needed`}
+                                </p>
+                                <progress value={facts.length} max={NPC_OBSERVATION_FLUSH_THRESHOLD} />
+                                {facts.length === 0 ? (
+                                    <p className="aether-debug-empty compact">None</p>
+                                ) : (
+                                    <ul>
+                                        {facts.map((fact) => <li key={fact}>{fact}</li>)}
                                     </ul>
                                 )}
                             </article>
@@ -331,6 +367,7 @@ function changedStateFields(previous: AetherNovaMessageState, next: AetherNovaMe
         "walletInitialized",
         "pendingNpcDebugQuery",
         "pendingNpcMemoryCommand",
+        "pendingNpcObservations",
     ];
     const changed = fields.filter((field) => previous[field] !== next[field]).map(String);
 

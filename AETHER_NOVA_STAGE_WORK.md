@@ -255,7 +255,7 @@ Injection ke prompt bersifat selektif:
 
 Debug UI sementara:
 
-Saat `position: ADJACENT` dan config `debugUi` aktif, stage menampilkan panel debug yang hanya terlihat oleh user. Panel ini memperlihatkan header state terakhir, jumlah dan isi `npcMemory`, command guide, pending memory command, activity log dari `load`, `setState`, `beforePrompt`, dan `afterResponse`, `stageDirections` terakhir, `systemMessage` debug terakhir, serta pesan user terakhir yang sedang diproses. Data panel tidak dikirim ke LLM kecuali bagian `stageDirections` yang memang dikirim oleh `beforePrompt`. Versi debug UI saat ini: `V1.3`.
+Saat `position: ADJACENT` dan config `debugUi` aktif, stage menampilkan panel debug yang hanya terlihat oleh user. Panel ini memperlihatkan header state terakhir, jumlah dan isi `npcMemory`, command guide, pending memory command, **pending NPC observations dengan progress bar**, activity log dari `load`, `setState`, `beforePrompt`, dan `afterResponse`, `stageDirections` terakhir, `systemMessage` debug terakhir, serta pesan user terakhir yang sedang diproses. Data panel tidak dikirim ke LLM kecuali bagian `stageDirections` yang memang dikirim oleh `beforePrompt`. Versi debug UI saat ini: `V1.4`.
 
 Command memory manual:
 
@@ -325,4 +325,5 @@ Jika prompt header asli nanti diubah lagi:
 Catatan verifikasi terakhir:
 
 - `npm run build` berhasil.
+- Debug UI V1.4 — menampilkan `pendingNpcObservations` dengan progress bar per NPC.
 - `inferNpcOnlyKnows` memakai `nearNpcContext` untuk deteksi kehadiran NPC di narasi sebelum ekstraksi.
