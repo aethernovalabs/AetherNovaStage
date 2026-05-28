@@ -2092,6 +2092,12 @@ function mergeUniqueList(values: string[], maxItems: number): string[] {
 const NPC_OBSERVATION_FLUSH_THRESHOLD = 5;
 const NPC_OBSERVATION_MAX_PENDING = 20;
 
+const SIGNIFICANT_OBSERVATION_PATTERN = /\b(?:gave|gives|giving|show|showed|showing|offered|offering|handed|handing|returned|returning|helped|helping|saves?|saved|saving|protected|protecting|rescued|rescuing|found|finding|discovered|discovering|revealed|revealing|confessed|confessing|admitted|admitting|explained|explaining|taught|teaching|informed|informing|warned|warning|threatened|threatening|paid|paying|traded|trading|sold|selling|bought|buying|promised|promising|agreed|agreeing|refused|refusing|forgave|forgiving|apologized|apologizing|thanked|thanking|betrayed|betraying|traveled|travelled|traveling|travelling|followed|following|led|leading|brought|bringing|took|taking|sent|sending|fought|fighting|defeated|defeating|attacked|attacking|healed|healing|accompanied|accompanying|escorted|escorting|guided|guiding|swore|swearing|vowed|vowing|comforted|comforting|reassured|reassuring|praised|praising|criticized|criticizing|blamed|blaming|trusted|trusting|doubted|doubting)\b/i;
+
+function isSignificantObservation(sentence: string): boolean {
+    return SIGNIFICANT_OBSERVATION_PATTERN.test(sentence);
+}
+
 function extractNpcObservations(
     npcLine: string,
     narrative: string,
@@ -2108,6 +2114,7 @@ function extractNpcObservations(
         for (const sentence of npcMemorySentences(combined)) {
             if (!npcMentionedInText(entry.name, sentence)) continue;
             if (!/\b(?:i|you|\{\{user\}\}|we|my|me|our)\b/i.test(sentence)) continue;
+            if (!isSignificantObservation(sentence)) continue;
             const clean = cleanFactText(sentence);
             if (clean.length < 30) continue;
             if (!observations[key]) observations[key] = [];
