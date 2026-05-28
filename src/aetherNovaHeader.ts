@@ -1556,7 +1556,7 @@ function parseNpcMemoryCommands(userMessage: string): NpcMemoryCommand[] {
 function parseNpcMemoryCommandBody(rawBody: string): NpcMemoryCommand | null {
     const segments = splitTopLevel(rawBody, "|").map(cleanFragment).filter(Boolean);
     const head = segments.shift() ?? "";
-    const actionMatch = /^(delete|remove|clear|set|update|clearfacts|clear\s+facts)\s*:?\s*(.+)$/i.exec(head);
+    const actionMatch = /^(delete|remove|clearfacts|clear\s+facts|clear|set|update)\s*:?\s*(.+)$/i.exec(head);
 
     if (actionMatch == null) {
         return null;

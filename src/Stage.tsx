@@ -18,7 +18,7 @@ type ConfigType = {
 type InitStateType = Record<string, never>;
 type ChatStateType = Record<string, never>;
 const DEBUG_STORAGE_KEY = "aether-nova-stage.pendingNpcDebugQuery";
-const DEBUG_UI_VERSION = "V1.2";
+const DEBUG_UI_VERSION = "V1.3";
 
 interface DebugEvent {
     id: number;
@@ -107,7 +107,9 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         return {
             stageDirections: this.lastStageDirections,
             messageState: this.state,
-            modifiedMessage: commandResult.cleanedMessage !== originalUserMessage ? commandResult.cleanedMessage : null,
+            modifiedMessage: commandResult.cleanedMessage !== originalUserMessage
+                ? (commandResult.cleanedMessage.length > 0 ? commandResult.cleanedMessage : " ")
+                : null,
             systemMessage: commandResult.systemMessage,
             error: null,
             chatState: null,

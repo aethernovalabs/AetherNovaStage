@@ -270,7 +270,7 @@ Jika user mengetik `[debug: npc nama]`, stage menyimpan debug request ke state d
 
 Debug UI sementara:
 
-Saat `position: ADJACENT` dan config `debugUi` aktif, stage menampilkan panel debug yang hanya terlihat oleh user. Panel ini memperlihatkan header state terakhir, jumlah dan isi `npcMemory`, command guide, pending memory command, activity log dari `load`, `setState`, `beforePrompt`, dan `afterResponse`, `stageDirections` terakhir, `systemMessage` debug terakhir, serta pesan user terakhir yang sedang diproses. Data panel tidak dikirim ke LLM kecuali bagian `stageDirections` yang memang dikirim oleh `beforePrompt`. Versi debug UI saat ini: `V1.2`.
+Saat `position: ADJACENT` dan config `debugUi` aktif, stage menampilkan panel debug yang hanya terlihat oleh user. Panel ini memperlihatkan header state terakhir, jumlah dan isi `npcMemory`, command guide, pending memory command, activity log dari `load`, `setState`, `beforePrompt`, dan `afterResponse`, `stageDirections` terakhir, `systemMessage` debug terakhir, serta pesan user terakhir yang sedang diproses. Data panel tidak dikirim ke LLM kecuali bagian `stageDirections` yang memang dikirim oleh `beforePrompt`. Versi debug UI saat ini: `V1.3`.
 
 Command memory manual:
 
@@ -427,7 +427,10 @@ Penyesuaian yang sudah diterapkan:
 25. Role/title NPC memory diperketat agar hanya mengambil title yang dekat dengan nama NPC terkait, serta command manual `[npc memory set/delete/clearfacts: ...]` ditambahkan untuk koreksi data saat testing.
 26. Debug UI dinaikkan ke `V1.1`, command guide ditampilkan dekat `NPC Memory`, dan command memory diterapkan ulang setelah response agar hasil manual tidak langsung dibuat ulang oleh auto-memory dari header.
 27. Debug UI dinaikkan ke `V1.2`; `pendingNpcMemoryCommand` disimpan ke messageState agar command tetap tersedia untuk `afterResponse` walaupun stage lifecycle memakai instance/state berbeda. Panel juga menampilkan `Pending Memory Command`.
-28. Format command NPC memory diubah dari `[...]` menjadi `~...~` (tilde). Regex pattern di `aetherNovaHeader.ts` diubah dari `[\[【]...[\】】]` menjadi `~...~`. Command guide di debug UI dan dokumentasi juga diperbarui. Contoh: `~npc memory delete: Debi~`, `~npc memory set: Debi | role=...~`.
+28. Format command NPC memory diubah dari `[...]` menjadi `~...~` (tilde). Regex pattern `NPC_MEMORY_COMMAND_PATTERN` di `aetherNovaHeader.ts` diubah dari `[\[【]...[\】】]` menjadi `~...~`. Command guide di debug UI dan dokumentasi juga diperbarui. Contoh: `~npc memory delete: Debi~`, `~npc memory set: Debi | role=...~`.
+29. Bug fix: urutan alternatif di regex `actionMatch` diperbaiki — `clearfacts|clear\s+facts` dipindahkan sebelum `clear` agar `~npc memory clearfacts: Debi~` tidak salah parsing sebagai action `delete` target `facts: Debi`.
+30. Bug fix: `modifiedMessage` di `beforePrompt` tidak lagi mengembalikan string kosong (`""`) saat user hanya mengirim command tanpa teks lain, karena string kosong berpotensi membuat Chub mengabaikan state update. Fallback menjadi `" "` (spasi) agar state tetap tersimpan dan command tidak dikirim ke LLM.
+31. Debug UI dinaikkan ke `V1.3`.
 
 Jika prompt header asli nanti diubah lagi:
 
