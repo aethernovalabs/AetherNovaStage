@@ -4277,7 +4277,7 @@ function normalizeBareDialogueLine(line: string, state: NarrativeFormatState): s
     const speaker = inferBareDialogueSpeaker(clean, state);
 
     if (speaker == null) {
-        return null;
+        return normalizeDialogueText(clean);
     }
 
     state.recentSpeaker = speaker;
@@ -4355,24 +4355,21 @@ function normalizeDialogueText(value: string): string {
     const clean = formatPlainActionBeatBetweenDialogue(formatInlineNarrationInDialogue(replaceInlineEmphasis(stripOuterSingleItalic(value.trim()))));
     const repaired = formatLeadingMisquotedActionBeat(clean);
     const beatBeforeDialogue = formatLeadingActionBeatBeforeDialogue(repaired);
+    const wrapped = wrapLeadingPlainActionBeat(beatBeforeDialogue);
 
-    if (beatBeforeDialogue.length === 0) {
+    if (wrapped.length === 0) {
         return "";
     }
 
-    if (beatBeforeDialogue !== clean) {
-        return beatBeforeDialogue;
+    if (wrapped !== beatBeforeDialogue) {
+        return wrapped;
     }
 
-    if (isLeadingActionBeatBeforeDialogue(beatBeforeDialogue)) {
-        return beatBeforeDialogue;
+    if (wrapped.startsWith("\"") || wrapped.startsWith("*")) {
+        return wrapped;
     }
 
-    if (beatBeforeDialogue.startsWith("\"")) {
-        return beatBeforeDialogue;
-    }
-
-    return `"${beatBeforeDialogue}"`;
+    return `"${wrapped}"`;
 }
 
 function formatLeadingMisquotedActionBeat(value: string): string {
@@ -4418,6 +4415,30 @@ function formatLeadingActionBeatBeforeDialogue(value: string): string {
     const dialogue = match[2].trim();
 
     return looksLikeInlineNarrationBeat(beat) ? `*${beat}* ${dialogue}` : value;
+}
+
+function wrapLeadingPlainActionBeat(value: string): string {
+    const firstQuote = value.indexOf('"');
+    if (firstQuote <= 0) {
+        return value;
+    }
+
+    const before = value.slice(0, firstQuote).trim();
+    const after = value.slice(firstQuote);
+
+    if (before.length === 0) {
+        return value;
+    }
+
+    if (before.startsWith("*") || before.startsWith("'") || before.startsWith('"')) {
+        return value;
+    }
+
+    if (!looksLikeInlineNarrationBeat(before)) {
+        return value;
+    }
+
+    return `*${before}* ${after}`;
 }
 
 function isLeadingActionBeatBeforeDialogue(value: string): boolean {
@@ -4534,7 +4555,8 @@ function isDialoguePayloadText(value: string): boolean {
 
     return isQuotedDialogueText(clean)
         || /^'[^'\n]{2,180}'\s+"/.test(clean)
-        || /^\*[^*\n]{2,180}\*\s+"/.test(clean);
+        || /^\*[^*\n]{2,180}\*\s+"/.test(clean)
+        || /".{2,}"/.test(clean);
 }
 
 function isSimpleSpeakerName(value: string): boolean {
@@ -4555,7 +4577,12 @@ function stripOuterSingleItalic(value: string): string {
 
 function replaceInlineEmphasis(value: string): string {
     return value.replace(/(^|[^*])\*([^*\n]{1,80})\*(?!\*)/g, (_match, prefix: string, inner: string) => {
-        return `${prefix}'${inner.trim()}'`;
+        const clean = inner.trim();
+        const words = clean.split(/\s+/).filter(Boolean);
+        if (words.length >= 1 && words.length <= 3) {
+            return `${prefix}'${clean}'`;
+        }
+        return _match;
     });
 }
 
