@@ -274,15 +274,17 @@ Saat `position: ADJACENT` dan config `debugUi` aktif, stage menampilkan panel de
 
 Command memory manual:
 
-Command ditulis dalam bracket dan dihapus dari pesan sebelum dikirim ke LLM. Command juga diterapkan ulang setelah `afterResponse`, agar `delete`, `clearfacts`, atau `set` tidak langsung tertimpa lagi saat NPC masih muncul di header response berikutnya.
+Command ditulis langsung dalam teks tanpa delimiter khusus dan dihapus dari pesan sebelum dikirim ke LLM. Command juga diterapkan ulang setelah `afterResponse`, agar `delete`, `clearfacts`, atau `set` tidak langsung tertimpa lagi saat NPC masih muncul di header response berikutnya.
 
 ```text
-~npc memory delete: Debi~
-~npc memory clearfacts: Debi~
-~npc memory set: Debi | role=Market broker | racial=Human | relationship=guarded | fact={{user}} paid Kaelen to find Debi~
+npc memory delete: Debi
+npc memory clearfacts: Debi
+npc memory set: Debi | role=Market broker | racial=Human | relationship=guarded | fact={{user}} paid Kaelen to find Debi
 ```
 
 `set` boleh memakai field `name`, `role`, `racial`, `relationship`, `fact`, atau `knownFacts`. Field `fact` menambah fakta ke KnownFacts lama; `knownFacts` mengganti daftar KnownFacts dengan isi baru yang dipisahkan `;`.
+
+Command dikenali di mana pun dalam teks pesan {{user}} dan akan dihapus dari pesan sebelum dikirim ke LLM. Batas akhir command adalah tanda baca kalimat (`.`, `!`, `?`), baris baru, atau akhir string.
 
 ### Narrative Format
 
@@ -427,8 +429,8 @@ Penyesuaian yang sudah diterapkan:
 25. Role/title NPC memory diperketat agar hanya mengambil title yang dekat dengan nama NPC terkait, serta command manual `[npc memory set/delete/clearfacts: ...]` ditambahkan untuk koreksi data saat testing.
 26. Debug UI dinaikkan ke `V1.1`, command guide ditampilkan dekat `NPC Memory`, dan command memory diterapkan ulang setelah response agar hasil manual tidak langsung dibuat ulang oleh auto-memory dari header.
 27. Debug UI dinaikkan ke `V1.2`; `pendingNpcMemoryCommand` disimpan ke messageState agar command tetap tersedia untuk `afterResponse` walaupun stage lifecycle memakai instance/state berbeda. Panel juga menampilkan `Pending Memory Command`.
-28. Format command NPC memory diubah dari `[...]` menjadi `~...~` (tilde). Regex pattern `NPC_MEMORY_COMMAND_PATTERN` di `aetherNovaHeader.ts` diubah dari `[\[【]...[\】】]` menjadi `~...~`. Command guide di debug UI dan dokumentasi juga diperbarui. Contoh: `~npc memory delete: Debi~`, `~npc memory set: Debi | role=...~`.
-29. Bug fix: urutan alternatif di regex `actionMatch` diperbaiki — `clearfacts|clear\s+facts` dipindahkan sebelum `clear` agar `~npc memory clearfacts: Debi~` tidak salah parsing sebagai action `delete` target `facts: Debi`.
+28. Format command NPC memory diubah dari `[...]` menjadi tanpa delimiter. Stage mendeteksi `npc memory <action>: <target>` langsung di teks, tanpa perlu delimiter khusus. Contoh: `npc memory delete: Debi`, `npc memory set: Debi | role=...`. Batas command adalah tanda baca kalimat (`.`, `!`, `?`), baris baru, atau akhir string. Jika teks setelah target tidak mengandung `|`, command dianggap selesai pada kata target.
+29. Bug fix: urutan alternatif di regex `actionMatch` diperbaiki — `clearfacts|clear\s+facts` dipindahkan sebelum `clear` agar `npc memory clearfacts: Debi` tidak salah parsing sebagai action `delete` target `facts: Debi`.
 30. Bug fix: `modifiedMessage` di `beforePrompt` tidak lagi mengembalikan string kosong (`""`) saat user hanya mengirim command tanpa teks lain, karena string kosong berpotensi membuat Chub mengabaikan state update. Fallback menjadi `" "` (spasi) agar state tetap tersimpan dan command tidak dikirim ke LLM.
 31. Debug UI dinaikkan ke `V1.3`.
 

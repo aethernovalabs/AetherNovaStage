@@ -81,7 +81,7 @@ interface NormalizeStatusOptions {
 const CLOCK_PATTERN = /\b([01]?\d|2[0-3]):([0-5]\d)\b/;
 const TIME_OF_DAYS: TimeOfDay[] = ["Morning", "Afternoon", "Evening", "Night"];
 const HEADER_DIVIDER = "***";
-const NPC_MEMORY_COMMAND_PATTERN = /~\s*npc[\s_-]*memory\s*:?\s*([^~]+)~/gi;
+const NPC_MEMORY_COMMAND_PATTERN = /npc[\s_-]*memory\s+((?:delete|remove|clearfacts|clear|set|update)\s*:?\s*(?:[^|.\n]+(?:\s*\|\s*[^|.\n]+)*))/gi;
 
 const DEFAULT_STATE: AetherNovaMessageState = {
     location: "Unknown Region - Current Place - Active Area",
