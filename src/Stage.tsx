@@ -144,11 +144,11 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         this.lastModifiedMessageChanged = normalized.content !== botMessage.content;
         this.lastSystemMessage = joinSystemMessages(normalized.systemMessage, afterResponseCommand?.systemMessage);
         const obsCount = Object.values(finalState.pendingNpcObservations ?? {}).reduce((s, f) => s + f.length, 0);
-        const markersFound = /\[npc_obs:/i.test(botMessage.content);
-        const markersInResponse = markersFound ? " [npc_obs FOUND in raw]" : "";
+        const prevObsCount = Object.values(previousState.pendingNpcObservations ?? {}).reduce((s, f) => s + f.length, 0);
+        const obsDelta = obsCount > prevObsCount ? ` (+${obsCount - prevObsCount} new)` : "";
         this.pushDebugEvent(
             "afterResponse",
-            `response ${this.lastModifiedMessageChanged ? "modified" : "unchanged"}; changed: ${changedFields.length > 0 ? changedFields.join(", ") : "none"}; NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}; observations pending: ${obsCount}${markersInResponse}; memory command reapply ${afterResponseCommand?.applied === true ? "yes" : "no"}; system debug ${this.lastSystemMessage.length > 0 ? "sent" : "none"}`,
+            `response ${this.lastModifiedMessageChanged ? "modified" : "unchanged"}; changed: ${changedFields.length > 0 ? changedFields.join(", ") : "none"}; NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}; observations pending: ${obsCount}${obsDelta}; memory command reapply ${afterResponseCommand?.applied === true ? "yes" : "no"}; system debug ${this.lastSystemMessage.length > 0 ? "sent" : "none"}`,
         );
         this.latestUserMessage = "";
         this.latestNpcMemoryCommandMessage = "";

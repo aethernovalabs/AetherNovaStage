@@ -1210,8 +1210,7 @@ export function normalizeAetherNovaResponse(
     context: string = "",
 ): NormalizedResponse {
     const extracted = extractHeader(content);
-    const { observations: freshObservations, cleaned: cleanedNarrative } = extractNpcObservations(extracted.narrative);
-    const correctionContext = `${context}\n${cleanedNarrative}`;
+    const correctionContext = `${context}\n${extracted.narrative}`;
     const timeLocation = normalizeLocationTimeLine(extracted.locationLine, previousState, correctionContext);
     const sceneChanged = !sameText(timeLocation.location, previousState.location);
     const wallet = normalizeWalletLine(
@@ -1220,12 +1219,13 @@ export function normalizeAetherNovaResponse(
         correctionContext,
         previousState.walletInitialized === true,
     );
+    const newNpc = normalizeNpcLine(extracted.npcLine ?? "", previousState.npc, correctionContext, {sceneChanged});
     const state: AetherNovaMessageState = {
         location: timeLocation.location,
         timeOfDay: timeLocation.timeOfDay,
         clock: timeLocation.clock,
         you: normalizeYouLine(extracted.youLine ?? "", previousState.you, correctionContext, {sceneChanged}),
-        npc: normalizeNpcLine(extracted.npcLine ?? "", previousState.npc, correctionContext, {sceneChanged}),
+        npc: newNpc,
         thread: normalizeThreadLine(extracted.threadLine ?? "", previousState.thread, correctionContext),
         wallet: wallet.value,
         walletInitialized: wallet.initialized,
@@ -1235,6 +1235,7 @@ export function normalizeAetherNovaResponse(
         pendingNpcObservations: previousState.pendingNpcObservations,
     };
     state.npcMemory = updateNpcMemory(previousState.npcMemory, state.npc, `${state.location}\n${correctionContext}`);
+    const freshObservations = extractNpcObservations(newNpc, extracted.narrative, context);
     const accumulated = accumulateNpcObservations(previousState.pendingNpcObservations ?? {}, freshObservations);
     const flushed = flushNpcObservations(state.npcMemory, accumulated);
     state.npcMemory = flushed.npcMemory;
@@ -1243,7 +1244,7 @@ export function normalizeAetherNovaResponse(
     const debugMessage = buildNpcDebugFooter(debugQuery, state.npcMemory);
 
     return {
-        content: formatResponse(state, cleanedNarrative),
+        content: formatResponse(state, extracted.narrative),
         state,
         systemMessage: debugMessage.length > 0 ? debugMessage : null,
     };
@@ -1344,8 +1345,8 @@ function buildNpcMemoryDirections(state: AetherNovaMessageState, userMessage: st
 
     if (presentEntries.length > 0) {
         const obsCount = Object.values(state.pendingNpcObservations).reduce((sum, facts) => sum + facts.length, 0);
-        const obsHint = obsCount > 0 ? ` (${obsCount} pending)` : "";
-        lines.push(`NPC Memory Context${obsHint}: Include full memory for present NPCs as in-story knowledge. When a present NPC learns something important about {{user}} during this scene, append: [npc_obs: NPC_Name | short fact]. Example: [npc_obs: Yume | {{user}} ventured into the Cave of Echoes]. The stage tracks these automatically to build continuity.`);
+        const obsHint = obsCount > 0 ? ` (${obsCount} observations pending)` : "";
+        lines.push(`NPC Memory Context${obsHint}: Include full memory for present NPCs as in-story knowledge:`);
         lines.push("Present NPCs (full memory):");
         for (const entry of presentEntries.slice(0, 4)) {
             lines.push(`- ${formatNpcMemoryForPrompt(entry, true)}`);
@@ -2088,25 +2089,37 @@ function mergeUniqueList(values: string[], maxItems: number): string[] {
     return result;
 }
 
-const NPC_OBSERVATION_PATTERN = /\[npc_obs:\s*([^\]|]+?)\s*\|\s*([^\]]+?)\s*\]/gi;
 const NPC_OBSERVATION_FLUSH_THRESHOLD = 5;
 const NPC_OBSERVATION_MAX_PENDING = 20;
 
-function extractNpcObservations(text: string): { observations: Record<string, string[]>; cleaned: string } {
+function extractNpcObservations(
+    npcLine: string,
+    narrative: string,
+    userContext: string,
+): Record<string, string[]> {
     const observations: Record<string, string[]> = {};
-    const cleaned = text.replace(NPC_OBSERVATION_PATTERN, (_match: string, name: string, fact: string) => {
-        const key = npcMemoryKey(name.trim());
-        const clean = cleanFactText(fact.trim());
-        if (clean.length > 0) {
+    const entries = npcHeaderMemoryEntries(npcLine);
+    if (entries.length === 0) return observations;
+
+    const combined = `${userContext}\n${narrative}`;
+
+    for (const entry of entries) {
+        const key = npcMemoryKey(entry.firstName || entry.name);
+        for (const sentence of npcMemorySentences(combined)) {
+            if (!npcMentionedInText(entry.name, sentence)) continue;
+            if (!/\b(?:i|you|\{\{user\}\}|we|my|me|our)\b/i.test(sentence)) continue;
+            const clean = cleanFactText(sentence);
+            if (clean.length < 30) continue;
             if (!observations[key]) observations[key] = [];
             observations[key].push(clean);
         }
-        return "";
-    });
-    return {
-        observations,
-        cleaned: cleaned.replace(/\n{3,}/g, "\n\n").trim(),
-    };
+    }
+
+    for (const key of Object.keys(observations)) {
+        observations[key] = mergeUniqueList(observations[key], NPC_OBSERVATION_MAX_PENDING);
+    }
+
+    return observations;
 }
 
 function accumulateNpcObservations(

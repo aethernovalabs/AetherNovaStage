@@ -315,8 +315,8 @@ Penyesuaian yang sudah diterapkan:
 4. Debug UI diperbarui menampilkan field baru (Race, Physical Extra, Behavior, OnlyKnows).
 
 5. `inferNpcOnlyKnows` diperluas: stage sekarang mengekstrak fakta dari narasi saat `{{user}}` bersama NPC — bukan hanya saat `{{user}}` secara eksplisit "told" NPC. Pola baru: `{{user}} and NPC [aktivitas]`, `{{user}} gave/showed NPC [sesuatu]`, `{{user}} told/asked NPC about [topik]`, `{{user}} helped/saved/protected NPC`, `{{user}} traveled/went with NPC`.
-6. **NPC Observation System (LLM-assisted)**: Stage inject instruksi `[npc_obs: NPC_Name | fact]` ke dalam `buildNpcMemoryDirections` — bagian dari NPC Memory Context yang selalu dikirim saat ada NPC aktif. Stage ekstrak marker dari response, strip dari narasi, akumulasi di `pendingNpcObservations`, dan flush ke OnlyKnows setelah 5 observasi terkumpul per NPC. Field `pendingNpcObservations: Record<string, string[]>` di state. Treshold flush: 5. Max pending: 20 per NPC.
-7. **Debug UI V1.4**: Menampilkan `pendingNpcObservations` dengan progress bar per NPC, total pending di header metric, deteksi `[npc_obs FOUND in raw]` di `afterResponse`, dan indikator `[NPC context active]` di `beforePrompt`.
+6. **NPC Observation System (stage-side extraction)**: Tanpa LLM marker. Stage langsung ekstrak kalimat dari narasi + pesan user yang menyebut NPC dan `{{user}}`/I/you dalam kalimat yang sama. Akumulasi di `pendingNpcObservations`, flush ke OnlyKnows setelah 5 observasi terkumpul per NPC. Threshold flush: 5. Max pending: 20 per NPC.
+7. **Debug UI V1.4**: Menampilkan `pendingNpcObservations` dengan progress bar per NPC, total pending di header metric, dan delta observasi baru (`+N new`) di `afterResponse`.
 
 Jika prompt header asli nanti diubah lagi:
 
