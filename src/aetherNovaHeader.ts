@@ -1202,8 +1202,10 @@ export function buildStageDirections(state: AetherNovaMessageState, userMessage:
     }
 
     const obsCount = Object.values(effectiveState.pendingNpcObservations).reduce((sum, facts) => sum + facts.length, 0);
-    if (obsCount > 0) {
-        directions.push(`NPC observation buffer active (${obsCount} pending). When a present NPC learns something significant about {{user}}, append: [npc_obs: NPC_Name | brief fact]. Use sparingly for truly important moments.`);
+    const presentNpcs = npcMemoryKeysFromHeader(effectiveState.npc, effectiveState.npcMemory);
+    if (presentNpcs.length > 0) {
+        const obsHint = obsCount > 0 ? ` (${obsCount} pending)` : "";
+        directions.push(`NPC observation system active${obsHint}. When a present NPC learns something significant about {{user}}, append: [npc_obs: NPC_Name | brief fact]. Use sparingly for truly important moments.`);
     }
 
     return directions.join("\n");
