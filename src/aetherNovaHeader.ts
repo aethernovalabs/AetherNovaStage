@@ -321,6 +321,20 @@ const POSITION_SPATIAL_CUES = [
     "beside",
     "next to",
     "near",
+    "above",
+    "below",
+    "beneath",
+    "under",
+    "over",
+    "atop",
+    "upon",
+    "against",
+    "beyond",
+    "past",
+    "around",
+    "inside",
+    "outside",
+    "alongside",
     "before",
     "behind",
     "in front of",
@@ -3276,7 +3290,7 @@ function splitMixedStatusPart(part: string): string[] {
         return commaParts;
     }
 
-    const withDetail = clean.match(/^(.*?\b(?:standing|seated|sitting|walking|kneeling|crouching|lying|beside|before|behind|near|facing|left|right|front|table|door|counter)\b.*?)\s+with\s+((?:his|her|their|your|both|one)?\s*(?:eye|eyes|gaze|tail|tails|ear|ears|wing|wings|horn|horns|hand|hands|arm|arms|posture|body)\b.*)$/i);
+    const withDetail = clean.match(/^(.*?\b(?:standing|seated|sitting|walking|kneeling|crouching|lying|above|below|beneath|under|over|atop|upon|against|beyond|past|around|inside|outside|alongside|beside|before|behind|near|facing|left|right|front|table|door|counter)\b.*?)\s+with\s+((?:his|her|their|your|both|one)?\s*(?:eye|eyes|gaze|tail|tails|ear|ears|wing|wings|horn|horns|hand|hands|arm|arms|posture|body)\b.*)$/i);
     if (withDetail != null) {
         return [withDetail[1], withDetail[2]].map(cleanFragment).filter(Boolean);
     }

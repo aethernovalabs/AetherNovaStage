@@ -198,7 +198,7 @@ Contoh alasan valid:
 * baju tersangkut
 * user sendiri menyatakan perubahan pakaian
 
-State seperti towel, blanket, cloak, disguise, armor, atau keadaan pakaian lain boleh masuk ke bagian `Clothes`.
+State seperti Naked, towel, blanket, cloak, disguise, armor, atau keadaan pakaian lain boleh masuk ke bagian `Clothes`.
 
 Jika AI menghapus `Clothes`, Stage harus mengambil `Clothes` terakhir dari state sebelumnya.
 
