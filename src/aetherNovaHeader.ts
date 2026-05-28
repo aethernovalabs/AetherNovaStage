@@ -3181,18 +3181,7 @@ function normalizeStatus(
     const clothing = statusChangeIsSupported(rawClothing, fallbackClothing, clothingContext, "clothing", kind) ? rawClothing : fallbackClothing;
     const fallbackDetail = normalizeDetail(fallbackParts[2] ?? defaultParts[2], defaultParts[2], kind);
     const rawDetail = normalizeDetail(rawParts[2] ?? fallbackDetail, fallbackDetail, kind);
-    let detail = rawDetail;
-
-    if (kind === "you" && !youDetailChangeIsSupported(rawDetail, fallbackDetail, context)) {
-        detail = staleYouDetailCanYieldToCandidate(rawDetail, fallbackDetail, context) ? rawDetail : fallbackDetail;
-    }
-
-    if (
-        kind === "you"
-        && staleYouDetailShouldReset(detail, fallbackDetail, position, fallbackPosition, context, options.sceneChanged === true)
-    ) {
-        detail = defaultParts[2] ?? "hands visible";
-    }
+    const detail = rawDetail;
 
     return `${clothing}; ${position}; ${detail}`;
 }
@@ -3422,11 +3411,9 @@ function normalizeDetail(value: string, fallback: string, kind: "you" | "npc"): 
 
     if (kind === "you") {
         clean = stripDramaticLanguage(clean);
-        clean = clean.split(/[,.]/)[0].trim();
-        clean = limitWords(clean, 12);
-    } else {
-        clean = limitWords(clean, 24);
     }
+
+    clean = limitWords(clean, 40);
 
     if (isInvalidStatusPart(clean, kind)) {
         return safeFallback;
