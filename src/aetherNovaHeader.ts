@@ -12,6 +12,7 @@ export interface AetherNovaMessageState {
     wallet: string;
     walletInitialized: boolean;
     npcMemory: NpcMemoryStore;
+    pendingNpcDebugQuery: string | null;
 }
 
 export interface NpcMemoryEntry {
@@ -82,6 +83,7 @@ const DEFAULT_STATE: AetherNovaMessageState = {
     wallet: "0G ; 0S ; 0C",
     walletInitialized: false,
     npcMemory: {},
+    pendingNpcDebugQuery: null,
 };
 
 const RACE_KEYWORDS = [
@@ -1140,12 +1142,24 @@ export function coerceHeaderState(
         wallet: walletState.value,
         walletInitialized: walletState.initialized,
         npcMemory,
+        pendingNpcDebugQuery: normalizePendingNpcDebugQuery(raw.pendingNpcDebugQuery),
+    };
+}
+
+export function prepareAetherNovaStateForPrompt(
+    state: AetherNovaMessageState,
+    userMessage: string,
+): AetherNovaMessageState {
+    return {
+        ...state,
+        npcMemory: updateNpcMemory(state.npcMemory, state.npc, state.location),
+        pendingNpcDebugQuery: debugNpcQuery(userMessage),
     };
 }
 
 export function buildStageDirections(state: AetherNovaMessageState, userMessage: string = ""): string {
     const effectiveState: AetherNovaMessageState = {
-        ...state,
+        ...prepareAetherNovaStateForPrompt(state, userMessage),
         npcMemory: updateNpcMemory(state.npcMemory, state.npc, state.location),
     };
     const directions = [
@@ -1162,6 +1176,11 @@ export function buildStageDirections(state: AetherNovaMessageState, userMessage:
 
     if (npcMemoryContext.length > 0) {
         directions.push(npcMemoryContext);
+    }
+
+    const debugContext = buildNpcDebugDirections(effectiveState.pendingNpcDebugQuery, effectiveState.npcMemory);
+    if (debugContext.length > 0) {
+        directions.push(debugContext);
     }
 
     return directions.join("\n");
@@ -1192,9 +1211,11 @@ export function normalizeAetherNovaResponse(
         wallet: wallet.value,
         walletInitialized: wallet.initialized,
         npcMemory: previousState.npcMemory,
+        pendingNpcDebugQuery: null,
     };
     state.npcMemory = updateNpcMemory(previousState.npcMemory, state.npc, `${state.location}\n${correctionContext}`);
-    const debugFooter = buildNpcDebugFooter(context, state.npcMemory);
+    const debugQuery = previousState.pendingNpcDebugQuery ?? debugNpcQuery(context);
+    const debugFooter = buildNpcDebugFooter(debugQuery, state.npcMemory);
 
     return {
         content: appendDebugFooter(formatResponse(state, extracted.narrative), debugFooter),
@@ -1414,9 +1435,26 @@ function formatNpcMemoryForPrompt(entry: NpcMemoryEntry, includeKnownFacts: bool
     return parts.join(" | ");
 }
 
-function buildNpcDebugFooter(userMessage: string, memory: NpcMemoryStore): string {
-    const query = debugNpcQuery(userMessage);
+function buildNpcDebugDirections(query: string | null, memory: NpcMemoryStore): string {
+    if (query == null) {
+        return "";
+    }
 
+    const key = resolveNpcMemoryKey(query, memory);
+    const entry = key == null ? null : memory[key];
+
+    if (entry == null) {
+        return `NPC Debug Request (temporary): ${query} has no stored NPC memory yet. After the response, stage will append a debug footer.`;
+    }
+
+    return [
+        "NPC Debug Request (temporary; do not narrate this debug block in-character):",
+        formatNpcMemoryForPrompt(entry, true),
+        "After the response, stage will append this NPC memory as a footer.",
+    ].join("\n");
+}
+
+function buildNpcDebugFooter(query: string | null, memory: NpcMemoryStore): string {
     if (query == null) {
         return "";
     }
@@ -1445,6 +1483,10 @@ function appendDebugFooter(content: string, footer: string): string {
 function debugNpcQuery(userMessage: string): string | null {
     const match = userMessage.match(/[\[【]\s*debug\s*:\s*npc\s+([^\]】]+)[\]】]/i);
     return match == null ? null : cleanFragment(match[1]);
+}
+
+function normalizePendingNpcDebugQuery(value: unknown): string | null {
+    return typeof value === "string" && cleanFragment(value).length > 0 ? cleanFragment(value) : null;
 }
 
 function splitNpcTitleFromName(value: string): {name: string; title: string} {

@@ -6,6 +6,7 @@ import {
     coerceHeaderState,
     createInitialHeaderState,
     normalizeAetherNovaResponse,
+    prepareAetherNovaStateForPrompt,
 } from "./aetherNovaHeader";
 
 type MessageStateType = AetherNovaMessageState;
@@ -40,6 +41,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 
     async beforePrompt(userMessage: Message): Promise<Partial<StageResponse<ChatStateType, MessageStateType>>> {
         this.latestUserMessage = userMessage.content;
+        this.state = prepareAetherNovaStateForPrompt(this.state, this.latestUserMessage);
 
         return {
             stageDirections: buildStageDirections(this.state, this.latestUserMessage),
