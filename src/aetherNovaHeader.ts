@@ -404,12 +404,6 @@ const CLOTHING_CHANGE_CUES = [
     "only wearing",
     "wears only",
     "wearing only",
-    "naked",
-    "fully naked",
-    "mostly naked",
-    "nude",
-    "unclothed",
-    "without clothes",
     "left sleeve",
     "right sleeve",
     "loose shirt",
@@ -3736,6 +3730,11 @@ function youClothingChangeIsSupported(candidate: string, previous: string, conte
         && (CLOTHING_DAMAGE_WORDS.test(candidate) || sharesMeaningfulClothingWord(candidate, previous))
     ) {
         return true;
+    }
+
+    if (isGenericStatusPart(candidate) && !isGenericStatusPart(previous)) {
+        return looksLikeClothingSlot(candidate)
+            && containsAnyCue(lowerContext, [candidate.toLowerCase(), candidate.toLowerCase().replace(/\bclothing\b/g, "clothes")]);
     }
 
     if (hasChangeCue) {
