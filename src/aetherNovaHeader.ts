@@ -3732,13 +3732,16 @@ function youClothingChangeIsSupported(candidate: string, previous: string, conte
         return true;
     }
 
-    if (isGenericStatusPart(candidate) && !isGenericStatusPart(previous)) {
-        return looksLikeClothingSlot(candidate)
-            && containsAnyCue(lowerContext, [candidate.toLowerCase(), candidate.toLowerCase().replace(/\bclothing\b/g, "clothes")]);
+    if (hasChangeCue && !isGenericStatusPart(previous) && isDefaultClothingValue(candidate)) {
+        return containsAnyCue(lowerContext, defaultClothingVariants(candidate));
     }
 
     if (hasChangeCue) {
         return true;
+    }
+
+    if (!isGenericStatusPart(previous) && isDefaultClothingValue(candidate)) {
+        return false;
     }
 
     return CLOTHING_DAMAGE_WORDS.test(lowerCandidate)
@@ -4174,6 +4177,35 @@ function clothingWords(value: string): string[] {
         .toLowerCase()
         .split(/[^a-z0-9]+/)
         .filter((word) => word.length > 2 && !["the", "and", "with", "regular", "clothing", "clothes", "outfit", "only", "fully", "mostly"].includes(word));
+}
+
+function isDefaultClothingValue(value: string): boolean {
+    const clean = cleanFragment(value).toLowerCase();
+    return clean === "regular clothing"
+        || clean === "regular clothes"
+        || clean === "regular outfit"
+        || clean === "standard clothing"
+        || clean === "standard clothes"
+        || clean === "standard outfit"
+        || clean === "normal clothing"
+        || clean === "normal clothes"
+        || clean === "normal outfit"
+        || clean === "ordinary clothing"
+        || clean === "ordinary clothes"
+        || clean === "simple clothing"
+        || clean === "simple clothes";
+}
+
+function defaultClothingVariants(value: string): string[] {
+    const clean = cleanFragment(value).toLowerCase();
+    const base = clean
+        .replace(/\b(clothing|clothes|outfit)\b/, "");
+    const trimmed = base.replace(/\s+/g, " ").trim();
+    return [
+        `${trimmed} clothing`,
+        `${trimmed} clothes`,
+        `${trimmed} outfit`,
+    ];
 }
 
 function npcIdentityKey(value: string): string {
