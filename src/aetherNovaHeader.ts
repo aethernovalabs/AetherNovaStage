@@ -1217,10 +1217,10 @@ export function normalizeAetherNovaResponse(
     };
     state.npcMemory = updateNpcMemory(previousState.npcMemory, state.npc, `${state.location}\n${correctionContext}`);
     const debugQuery = previousState.pendingNpcDebugQuery ?? debugNpcQuery(context) ?? markerDebugQuery;
-    const debugFooter = buildNpcDebugFooter(debugQuery, state.npcMemory);
+    const debugBlock = buildNpcDebugFooter(debugQuery, state.npcMemory);
 
     return {
-        content: appendDebugFooter(formatResponse(state, extracted.narrative), debugFooter),
+        content: insertDebugBlockAfterHeader(formatResponse(state, extracted.narrative), debugBlock),
         state,
     };
 }
@@ -1478,11 +1478,26 @@ function buildNpcDebugFooter(query: string | null, memory: NpcMemoryStore): stri
     ].join("\n");
 }
 
-function appendDebugFooter(content: string, footer: string): string {
-    return footer.length === 0 ? content : `${content}\n\n${footer}`;
+function insertDebugBlockAfterHeader(content: string, debugBlock: string): string {
+    if (debugBlock.length === 0) {
+        return content;
+    }
+
+    const dividerIndex = content.indexOf(HEADER_DIVIDER);
+    if (dividerIndex < 0) {
+        return `${debugBlock}\n\n${content}`;
+    }
+
+    const headerEnd = dividerIndex + HEADER_DIVIDER.length;
+    const header = content.slice(0, headerEnd);
+    const body = content.slice(headerEnd).trimStart();
+
+    return body.length > 0
+        ? `${header}\n\n${debugBlock}\n\n${body}`
+        : `${header}\n\n${debugBlock}`;
 }
 
-function debugNpcQuery(userMessage: string): string | null {
+export function debugNpcQuery(userMessage: string): string | null {
     const match = userMessage.match(/[\[【]\s*debug\s*:\s*npc\s+([^\]】]+)[\]】]/i);
     return match == null ? null : cleanFragment(match[1]);
 }

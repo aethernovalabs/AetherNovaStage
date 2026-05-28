@@ -265,7 +265,7 @@ Injection ke prompt bersifat selektif:
 
 Debug sementara:
 
-Jika user mengetik `[debug: npc nama]`, stage menyimpan debug request ke state sebelum prompt dikirim, menginject blok debug sementara ke LLM, lalu setelah LLM merespons stage menambahkan footer debug pada output berisi data NPC yang tersimpan. Sebagai fallback, stage juga meminta LLM menulis marker `[[AETHER_NOVA_DEBUG_NPC:nama]]` di akhir response; marker itu dihapus oleh stage dan diganti footer debug. Debug harus cocok dengan first name atau nama lengkap, boleh memakai spasi ekstra seperti `[debug: npc debi ]`, dan ditempel langsung di akhir output tanpa markdown divider agar tidak hilang di UI.
+Jika user mengetik `[debug: npc nama]`, stage menyimpan debug request ke state dan fallback localStorage sebelum prompt dikirim, menginject blok debug sementara ke LLM, lalu setelah LLM merespons stage menambahkan blok debug berisi data NPC tepat di bawah header `***` dan di atas narasi. Sebagai fallback tambahan, stage juga meminta LLM menulis marker `[[AETHER_NOVA_DEBUG_NPC:nama]]` di akhir response; marker itu dihapus oleh stage dan diganti blok debug. Debug harus cocok dengan first name atau nama lengkap dan boleh memakai spasi ekstra seperti `[debug: npc debi ]`.
 
 ### Narrative Format
 
@@ -409,7 +409,7 @@ Penyesuaian yang sudah diterapkan:
 20. Evidence wallet dibedakan antara narasi dan dialog: nominal uang di dalam dialog tidak memicu perubahan wallet, dan jika ada transaksi non-dialog yang jelas stage memilih arah hitungan yang benar daripada angka wallet AI yang keliru.
 21. Formatter dialog diperbaiki agar speaker line yang salah dibungkus `*...*` tetap dibaca sebagai dialog, sementara single-quoted atau italic action beat sebelum quote dialog dipertahankan sebagai action beat.
 22. Status slot classifier ditambahkan agar pakaian/naked dideteksi dari isi slot, urutan status salah seperti `position; body/racial; clothing` dikoreksi, dan detail eyes/gaze/tail/ears/wings/horns dipindahkan dari position ke body/racial detail.
-23. `npcMemory` ditambahkan agar stage menyimpan Name, Role/Title, Racial, Relationship, dan KnownFacts per NPC, lalu menginject data lengkap hanya untuk NPC di header aktif dan identitas saja untuk NPC yang sekadar disebut user. Debug NPC memakai pending state dan marker fallback: request disimpan sebelum prompt, diinject ke LLM, LLM diminta menulis marker debug, lalu stage menghapus marker dan menempel footer setelah response.
+23. `npcMemory` ditambahkan agar stage menyimpan Name, Role/Title, Racial, Relationship, dan KnownFacts per NPC, lalu menginject data lengkap hanya untuk NPC di header aktif dan identitas saja untuk NPC yang sekadar disebut user. Debug NPC memakai pending state, localStorage, dan marker fallback; setelah response, stage menyisipkan blok debug di bawah header dan di atas narasi.
 
 Jika prompt header asli nanti diubah lagi:
 
