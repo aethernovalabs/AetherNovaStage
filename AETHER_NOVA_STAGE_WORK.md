@@ -321,7 +321,28 @@ Jika prompt header asli nanti diubah lagi:
 1. Baca file Guide.Consepts.stage.md dan Guide.State.md untuk refensi
 2. Build ulang dengan `npm run build`.
 
-Catatan verifikasi terakhir:
+## Bug Fix: State Restoration Stripping Clothing Value
+
+### Masalah
+
+Saat state di-restore melalui `coerceHeaderState` (constructor, branch/swipe restore), fungsi `normalizeYouLine` dipanggil **tanpa context** (kosong). Akibatnya semua guard clothing (`statusChangeIsSupported` → `youClothingChangeIsSupported`) berjalan dengan `context = ""` — tidak ada evidence naratif.
+
+Ketika incoming state (`raw.you`) menyimpan nilai spesifik seperti `"Naked"` tetapi fallback (`DEFAULT_STATE` atau current state) berisi `"Regular clothing"`, guard menolak perubahan karena tidak ada cue di context kosong, lalu mengembalikan `fallbackClothing` = `"Regular clothing"`.
+
+Ini menyebabkan:
+- State `you` yang tadinya `"Naked"` berubah menjadi `"Regular clothing"` saat state di-restore.
+- "Stuck data" — stage menyimpan `"Regular clothing"` sebagai fallback, jadi di turn berikutnya `previousYou` sudah `"Regular clothing"` dan LLM yang benar output `"Naked"` tetap dikoreksi karena sebelumnya sudah corrupt.
+
+### Fix
+
+1. **`NormalizeStatusOptions`**: tambah field `trustRawStatus?: boolean`.
+2. **`normalizeStatus`**: saat `options.trustRawStatus === true`, skip clothing guard (`statusChangeIsSupported`) dan position guard — langsung pakai `rawClothing` / `rawPosition`.
+3. **`coerceHeaderState`**: panggil `normalizeYouLine(raw.you ?? "", fallback.you, "", {trustRawStatus: true})` agar state restore tidak terpotong oleh kurangnya evidence naratif.
+
+### Perubahan file
+- `src/aetherNovaHeader.ts`: `NormalizeStatusOptions` (line 79), `normalizeStatus` (line 3172-3181), `coerceHeaderState` (line 1160).
+
+Verifikasi:
 
 - `npm run build` berhasil.
 - `inferNpcOnlyKnows` memakai `nearNpcContext` untuk deteksi kehadiran NPC di narasi sebelum ekstraksi.

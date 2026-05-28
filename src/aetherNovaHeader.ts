@@ -78,6 +78,7 @@ interface NarrativeFormatState {
 
 interface NormalizeStatusOptions {
     sceneChanged?: boolean;
+    trustRawStatus?: boolean;
 }
 
 const CLOCK_PATTERN = /\b([01]?\d|2[0-3]):([0-5]\d)\b/;
@@ -1157,7 +1158,7 @@ export function coerceHeaderState(
         location: normalizeLocation(raw.location ?? "", fallback.location),
         timeOfDay: timeOfDayForClock(clock),
         clock,
-        you: normalizeYouLine(raw.you ?? "", fallback.you),
+        you: normalizeYouLine(raw.you ?? "", fallback.you, "", {trustRawStatus: true}),
         npc,
         thread: normalizeThreadLine(raw.thread ?? "", fallback.thread, ""),
         wallet: walletState.value,
@@ -3168,11 +3169,15 @@ function normalizeStatus(
     const inferredClothing = kind === "you" ? inferYouClothingFromContext(clothingContext) : null;
     const rawClothing = normalizeClothing(inferredClothing ?? rawParts[0] ?? fallbackClothing, fallbackClothing);
     const rawPosition = normalizePosition(rawParts[1] ?? fallbackPosition, fallbackPosition, kind);
-    const position = statusChangeIsSupported(rawPosition, fallbackPosition, context, "position", kind)
-        || (options.sceneChanged === true && rawParts[1] != null && !isGenericStatusPart(rawPosition))
+    const position = options.trustRawStatus === true
         ? rawPosition
-        : fallbackPosition;
-    const clothing = statusChangeIsSupported(rawClothing, fallbackClothing, clothingContext, "clothing", kind) ? rawClothing : fallbackClothing;
+        : (statusChangeIsSupported(rawPosition, fallbackPosition, context, "position", kind)
+            || (options.sceneChanged === true && rawParts[1] != null && !isGenericStatusPart(rawPosition))
+            ? rawPosition
+            : fallbackPosition);
+    const clothing = options.trustRawStatus === true
+        ? rawClothing
+        : (statusChangeIsSupported(rawClothing, fallbackClothing, clothingContext, "clothing", kind) ? rawClothing : fallbackClothing);
     const fallbackDetail = normalizeDetail(fallbackParts[2] ?? defaultParts[2], defaultParts[2], kind);
     const rawDetail = normalizeDetail(rawParts[2] ?? fallbackDetail, fallbackDetail, kind);
     const detail = rawDetail;
