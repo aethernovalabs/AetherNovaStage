@@ -70,6 +70,12 @@ html, body, #root {
   line-height: 1.1;
 }
 
+.aether-debug-header h1 span {
+  color: #d7b46a;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
 .aether-debug-pill {
   flex: 0 0 auto;
   padding: 5px 9px;
@@ -145,6 +151,25 @@ html, body, #root {
 .aether-debug-memory-list {
   display: grid;
   gap: 8px;
+}
+
+.aether-debug-command-guide {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid rgba(215, 180, 106, 0.22);
+  border-radius: 8px;
+  background: #171a1a !important;
+}
+
+.aether-debug-command-guide code {
+  display: block;
+  color: #f2d08d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.73rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .aether-debug-memory-card {

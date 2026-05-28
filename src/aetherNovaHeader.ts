@@ -80,6 +80,7 @@ interface NormalizeStatusOptions {
 const CLOCK_PATTERN = /\b([01]?\d|2[0-3]):([0-5]\d)\b/;
 const TIME_OF_DAYS: TimeOfDay[] = ["Morning", "Afternoon", "Evening", "Night"];
 const HEADER_DIVIDER = "***";
+const NPC_MEMORY_COMMAND_PATTERN = /[\[【]\s*npc[\s_-]*memory\s*:?\s*([^\]】]+)[\]】]/gi;
 
 const DEFAULT_STATE: AetherNovaMessageState = {
     location: "Unknown Region - Current Place - Active Area",
@@ -1542,7 +1543,7 @@ interface NpcMemoryCommandUpdates {
 }
 
 function parseNpcMemoryCommands(userMessage: string): NpcMemoryCommand[] {
-    return Array.from(userMessage.matchAll(/[\[【]\s*npc\s+memory\s+([^\]】]+)[\]】]/gi))
+    return Array.from(userMessage.matchAll(NPC_MEMORY_COMMAND_PATTERN))
         .map((match) => parseNpcMemoryCommandBody(match[1]))
         .filter((command): command is NpcMemoryCommand => command != null);
 }
@@ -1674,7 +1675,7 @@ function splitNpcMemoryFacts(value: string): string[] {
 
 function stripNpcMemoryCommands(userMessage: string): string {
     return normalizeLineEndings(userMessage)
-        .replace(/[\[【]\s*npc\s+memory\s+[^\]】]+[\]】]/gi, "")
+        .replace(NPC_MEMORY_COMMAND_PATTERN, "")
         .replace(/[ \t]+\n/g, "\n")
         .replace(/\n{3,}/g, "\n\n")
         .trim();

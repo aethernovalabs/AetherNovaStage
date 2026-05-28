@@ -18,6 +18,7 @@ type ConfigType = {
 type InitStateType = Record<string, never>;
 type ChatStateType = Record<string, never>;
 const DEBUG_STORAGE_KEY = "aether-nova-stage.pendingNpcDebugQuery";
+const DEBUG_UI_VERSION = "V1.1";
 
 interface DebugEvent {
     id: number;
@@ -45,6 +46,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
     private lastStageDirections: string;
     private lastSystemMessage: string;
     private lastModifiedMessageChanged: boolean;
+    private latestNpcMemoryCommandMessage: string;
 
     constructor(data: InitialData<InitStateType, ChatStateType, MessageStateType, ConfigType>) {
         super(data);
@@ -56,6 +58,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         this.lastStageDirections = "";
         this.lastSystemMessage = "";
         this.lastModifiedMessageChanged = false;
+        this.latestNpcMemoryCommandMessage = "";
         this.pushDebugEvent("init", `state ready; ${countNpcMemory(this.state)} NPC memory entries`);
     }
 
@@ -87,6 +90,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 
         this.state = commandResult.state;
         this.latestUserMessage = commandResult.cleanedMessage;
+        this.latestNpcMemoryCommandMessage = commandResult.applied ? originalUserMessage : "";
         if (commandResult.systemMessage != null) {
             this.lastSystemMessage = commandResult.systemMessage;
         }
@@ -118,15 +122,20 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         }
 
         const normalized = normalizeAetherNovaResponse(botMessage.content, this.state, this.latestUserMessage);
-        const changedFields = changedStateFields(previousState, normalized.state);
-        this.state = normalized.state;
+        const afterResponseCommand = this.latestNpcMemoryCommandMessage.length > 0
+            ? applyNpcMemoryCommands(normalized.state, this.latestNpcMemoryCommandMessage)
+            : null;
+        const finalState = afterResponseCommand?.state ?? normalized.state;
+        const changedFields = changedStateFields(previousState, finalState);
+        this.state = finalState;
         this.lastModifiedMessageChanged = normalized.content !== botMessage.content;
         this.lastSystemMessage = normalized.systemMessage ?? "";
         this.pushDebugEvent(
             "afterResponse",
-            `response ${this.lastModifiedMessageChanged ? "modified" : "unchanged"}; changed: ${changedFields.length > 0 ? changedFields.join(", ") : "none"}; NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}; system debug ${this.lastSystemMessage.length > 0 ? "sent" : "none"}`,
+            `response ${this.lastModifiedMessageChanged ? "modified" : "unchanged"}; changed: ${changedFields.length > 0 ? changedFields.join(", ") : "none"}; NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}; memory command reapply ${afterResponseCommand?.applied === true ? "yes" : "no"}; system debug ${this.lastSystemMessage.length > 0 ? "sent" : "none"}`,
         );
         this.latestUserMessage = "";
+        this.latestNpcMemoryCommandMessage = "";
         clearPendingDebugQuery();
 
         return {
@@ -189,7 +198,7 @@ function AetherNovaDebugPanel({getSnapshot}: {getSnapshot: () => DebugSnapshot})
             <header className="aether-debug-header">
                 <div>
                     <p className="aether-debug-kicker">Aether Nova Stage</p>
-                    <h1>Debug UI</h1>
+                    <h1>Debug UI <span>{DEBUG_UI_VERSION}</span></h1>
                 </div>
                 <span className={snapshot.lastModifiedMessageChanged ? "aether-debug-pill active" : "aether-debug-pill"}>
                     {snapshot.lastModifiedMessageChanged ? "Modified" : "Idle"}
@@ -209,6 +218,11 @@ function AetherNovaDebugPanel({getSnapshot}: {getSnapshot: () => DebugSnapshot})
                 <div className="aether-debug-section-title">
                     <h2>NPC Memory</h2>
                     <span>{npcMemoryEntries.length}</span>
+                </div>
+                <div className="aether-debug-command-guide" aria-label="NPC memory command examples">
+                    <code>[npc memory delete: Debi]</code>
+                    <code>[npc memory clearfacts: Debi]</code>
+                    <code>[npc memory set: Debi | role=Market broker | racial=Human | relationship=guarded | fact={"{{user}}"} paid Kaelen to find Debi]</code>
                 </div>
                 {npcMemoryEntries.length === 0 ? (
                     <p className="aether-debug-empty">No NPC memory stored yet.</p>

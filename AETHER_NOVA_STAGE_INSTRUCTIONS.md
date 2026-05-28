@@ -270,11 +270,11 @@ Jika user mengetik `[debug: npc nama]`, stage menyimpan debug request ke state d
 
 Debug UI sementara:
 
-Saat `position: ADJACENT` dan config `debugUi` aktif, stage menampilkan panel debug yang hanya terlihat oleh user. Panel ini memperlihatkan header state terakhir, jumlah dan isi `npcMemory`, activity log dari `load`, `setState`, `beforePrompt`, dan `afterResponse`, `stageDirections` terakhir, `systemMessage` debug terakhir, serta pesan user terakhir yang sedang diproses. Data panel tidak dikirim ke LLM kecuali bagian `stageDirections` yang memang dikirim oleh `beforePrompt`.
+Saat `position: ADJACENT` dan config `debugUi` aktif, stage menampilkan panel debug yang hanya terlihat oleh user. Panel ini memperlihatkan header state terakhir, jumlah dan isi `npcMemory`, command guide, activity log dari `load`, `setState`, `beforePrompt`, dan `afterResponse`, `stageDirections` terakhir, `systemMessage` debug terakhir, serta pesan user terakhir yang sedang diproses. Data panel tidak dikirim ke LLM kecuali bagian `stageDirections` yang memang dikirim oleh `beforePrompt`. Versi debug UI saat ini: `V1.1`.
 
 Command memory manual:
 
-Command ditulis dalam bracket dan dihapus dari pesan sebelum dikirim ke LLM.
+Command ditulis dalam bracket dan dihapus dari pesan sebelum dikirim ke LLM. Command juga diterapkan ulang setelah `afterResponse`, agar `delete`, `clearfacts`, atau `set` tidak langsung tertimpa lagi saat NPC masih muncul di header response berikutnya.
 
 ```text
 [npc memory delete: Debi]
@@ -425,6 +425,7 @@ Penyesuaian yang sudah diterapkan:
 23. `npcMemory` ditambahkan agar stage menyimpan Name, Role/Title, Racial, Relationship, dan KnownFacts per NPC, lalu menginject data lengkap hanya untuk NPC di header aktif dan identitas saja untuk NPC yang sekadar disebut user. Debug NPC memakai pending state dan localStorage, tetapi hasil debug dikirim sebagai `systemMessage`, bukan disisipkan ke isi response, agar tidak mengganggu `Thread`.
 24. Debug UI sementara ditambahkan agar state header, `npcMemory`, lifecycle activity, `stageDirections`, dan `systemMessage` debug bisa diperiksa tanpa menempelkan debug ke narasi.
 25. Role/title NPC memory diperketat agar hanya mengambil title yang dekat dengan nama NPC terkait, serta command manual `[npc memory set/delete/clearfacts: ...]` ditambahkan untuk koreksi data saat testing.
+26. Debug UI dinaikkan ke `V1.1`, command guide ditampilkan dekat `NPC Memory`, dan command memory diterapkan ulang setelah response agar hasil manual tidak langsung dibuat ulang oleh auto-memory dari header.
 
 Jika prompt header asli nanti diubah lagi:
 
