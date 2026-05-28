@@ -8,21 +8,21 @@ Stage ini adalah guard teknis Chub Stage yang memperbaiki header output setelah 
 
 ## Status Implementasi
 
-Stage sudah dibuat sebagai stage tanpa UI.
+Stage sedang memakai debug UI sementara untuk pengujian.
 
 File utama:
 
-- `src/Stage.tsx`: wrapper Chub Stage, hook `load`, `beforePrompt`, `afterResponse`, dan render kosong.
+- `src/Stage.tsx`: wrapper Chub Stage, hook `load`, `beforePrompt`, `afterResponse`, dan debug UI sementara.
 - `src/aetherNovaHeader.ts`: logic parsing, normalisasi, koreksi header, dan update state.
-- `public/chub_meta.yaml`: metadata stage, `position: NONE`, dan schema state.
+- `public/chub_meta.yaml`: metadata stage, `position: ADJACENT` saat debug UI aktif, dan schema state.
 
 Stage berjalan dengan:
 
 ```yaml
-position: NONE
+position: ADJACENT
 ```
 
-Artinya stage tidak menampilkan panel, button, dashboard, atau visual tambahan.
+Artinya stage menampilkan panel debug di samping chat selama pengujian. Setelah debug selesai, kembalikan ke `position: NONE` agar stage kembali berjalan tanpa UI.
 
 ## Tujuan Stage
 
@@ -45,8 +45,8 @@ Output AI ditargetkan menjadi:
 
 ```md
 **Main Location - Sub Location - Detailed Area | Time of Day | HH:MM**
-**You: Gender - Apparent Race (Position; Clothes/disguise; body detail)**
-**NPC: Full Name - Race (Position; Clothes; body/racial detail), Full Name - Race (Position; Clothes; body/racial detail)**
+**You: Gender - Apparent Race (Clothes/disguise; Position; body detail)**
+**NPC: Full Name - Race (Clothes; Position; body/racial detail), Full Name - Race (Clothes; Position; body/racial detail)**
 **Thread: Main mission/status ; Major obstacle/status**
 **Wallet: XG ; XS ; XC**
 ***
@@ -58,8 +58,8 @@ Contoh:
 
 ```md
 **Valerest Kingdom - Royal Palace - Guest Chamber | Night | 22:10**
-**You: Male - Human (Standing near window; Regular shirt; arms crossed)**
-**NPC: Yume Nozomikara - Kitsune (Standing before {{user}}; Kimono; tails still, ears forward, violet-gold eyes bright)**
+**You: Male - Human (Regular shirt; Standing near window; arms crossed)**
+**NPC: Yume Nozomikara - Kitsune (Kimono; Standing before {{user}}; tails still, ears forward, violet-gold eyes bright)**
 **Thread: Prospective meeting with King Halvair (on pause) ; Yume and {{user}} at odds**
 **Wallet: 12G ; 35S ; 8C**
 ***
@@ -112,7 +112,7 @@ Thread: ...
 Wallet: ...
 ```
 
-Reminder juga menekankan divider `***`, format status `Position; Clothes/disguise; optional body/racial detail`, pemisah thread ` ; `, dan wallet yang hanya boleh berubah dengan evidence transaksi/reward/loss di narasi.
+Reminder juga menekankan divider `***`, format status `Clothes/disguise; Position; optional body/racial detail`, pemisah thread ` ; `, dan wallet yang hanya boleh berubah dengan evidence transaksi/reward/loss di narasi.
 Tujuannya agar AI mencoba menjaga format header sejak awal, sebelum `afterResponse` perlu memperbaiki.
 
 ### afterResponse
@@ -167,16 +167,16 @@ Contoh: `Evening | 23:10` dikoreksi menjadi `Night | 23:10`.
 Format target:
 
 ```md
-**You: Gender - Apparent Race (Position; Clothes/disguise; body detail)**
+**You: Gender - Apparent Race (Clothes/disguise; Position; body detail)**
 ```
 
 Stage mencoba menghapus bahasa yang terlalu dramatis dan mempertahankan status fisik yang jelas.
 Stage menolak `Anomaly` sebagai apparent race kecuali sudah revealed atau confirmed di konteks.
 Stage juga menyaring thoughts, feelings, expression, dialogue, actions, movement, transformation, consent, dan choices dari line `You`.
-Position, clothes/disguise, dan body detail memakai state lama kecuali konteks user atau narasi AI terbaru memberi bukti perubahan.
+Clothes/disguise, position, dan body detail memakai state lama kecuali konteks user atau narasi AI terbaru memberi bukti perubahan.
 Perubahan pakaian didukung oleh evidence berbahasa Inggris seperti change/wear/remove, put on, dressed in, clad in, changes into, atau damage naratif seperti burned/torn/scorched/damaged. Untuk line `You`, evidence pakaian harus datang dari narasi/aksi visible; kata seperti `naked`, `remove clothes`, atau `undress` yang hanya muncul di dialog bertanda kutip tidak boleh mengubah clothing slot.
-Slot kedua dalam status selalu diperlakukan sebagai clothing/disguise slot. Nama pakaian unik seperti ceremonial mantle, moon-silk kimono, battle robe, academy uniform, haori, robe, armor, cloak, atau disguise bisa diterima sebagai pakaian, terutama saat state sebelumnya masih `Regular clothing` atau pakaian itu disebut lagi di narasi terbaru.
-Jika AI menulis urutan status salah, stage mendeteksi isi slot lalu mengembalikannya ke urutan `Position; Clothes/disguise; body/racial detail`. Contoh `standing beside Yume; eyes lowered; kimono` menjadi `standing beside Yume; kimono; eyes lowered`. Jika tidak ada slot yang mengacu pada pakaian/naked, stage mempertahankan pakaian dari state sebelumnya.
+Slot pertama dalam status selalu diperlakukan sebagai clothing/disguise slot. Nama pakaian unik seperti ceremonial mantle, moon-silk kimono, battle robe, academy uniform, haori, robe, armor, cloak, atau disguise bisa diterima sebagai pakaian, terutama saat state sebelumnya masih `Regular clothing` atau pakaian itu disebut lagi di narasi terbaru.
+Jika AI menulis urutan status salah, stage mendeteksi isi slot lalu mengembalikannya ke urutan `Clothes/disguise; Position; body/racial detail`. Contoh `standing beside Yume; eyes lowered; kimono` menjadi `kimono; standing beside Yume; eyes lowered`. Jika tidak ada slot yang mengacu pada pakaian/naked, stage mempertahankan pakaian dari state sebelumnya.
 Clothing slot boleh berisi kondisi pakaian yang relevan, seperti naked, fully naked, loose shirt, baggy pants, pants only, shirt caught on a fence, left sleeve torn, cloak burned, atau armor cracked. Stage tidak memotong detail clothing hanya karena ada `and`, `with`, atau comma selama masih berada di slot pakaian.
 Perubahan posisi didukung oleh cue seperti walk/stop/arrive/sit/stand/reach/collapse, dan juga bisa diterima saat location sudah terbukti berpindah scene.
 Position slot boleh mencantumkan scene blocking dengan nama NPC atau `{{user}}`, arah, dan jarak, seperti `Standing left of Yume`, `Sitting to the right of {{user}}`, `Standing six steps before {{user}}`, atau `Standing beside Yume near the door`.
@@ -197,7 +197,7 @@ Jika format `You` kacau, stage mengambil bagian yang hilang dari state sebelumny
 Format target:
 
 ```md
-**NPC: Full Name - Race (Position; Clothes; body/racial detail)**
+**NPC: Full Name - Race (Clothes; Position; body/racial detail)**
 ```
 
 Stage mendukung lebih dari satu NPC dengan pemisah koma di level atas.
@@ -265,7 +265,11 @@ Injection ke prompt bersifat selektif:
 
 Debug sementara:
 
-Jika user mengetik `[debug: npc nama]`, stage menyimpan debug request ke state dan fallback localStorage sebelum prompt dikirim, menginject blok debug sementara ke LLM, lalu setelah LLM merespons stage menambahkan blok debug berisi data NPC tepat di bawah header `***` dan di atas narasi. Sebagai fallback tambahan, stage juga meminta LLM menulis marker `[[AETHER_NOVA_DEBUG_NPC:nama]]` di akhir response; marker itu dihapus oleh stage dan diganti blok debug. Debug harus cocok dengan first name atau nama lengkap dan boleh memakai spasi ekstra seperti `[debug: npc debi ]`.
+Jika user mengetik `[debug: npc nama]`, stage menyimpan debug request ke state dan fallback localStorage sebelum prompt dikirim, menginject blok debug sementara ke LLM, lalu setelah LLM merespons stage mengirim data NPC melalui `systemMessage`. Debug tidak boleh dimasukkan ke `modifiedMessage` agar tidak merusak header, narasi, atau `Thread`. Debug harus cocok dengan first name atau nama lengkap dan boleh memakai spasi ekstra seperti `[debug: npc debi ]`.
+
+Debug UI sementara:
+
+Saat `position: ADJACENT` dan config `debugUi` aktif, stage menampilkan panel debug yang hanya terlihat oleh user. Panel ini memperlihatkan header state terakhir, jumlah dan isi `npcMemory`, activity log dari `load`, `setState`, `beforePrompt`, dan `afterResponse`, `stageDirections` terakhir, `systemMessage` debug terakhir, serta pesan user terakhir yang sedang diproses. Data panel tidak dikirim ke LLM kecuali bagian `stageDirections` yang memang dikirim oleh `beforePrompt`.
 
 ### Narrative Format
 
@@ -319,8 +323,8 @@ Tempel system prompt header asli di sini:
 {{char}} MUST begin every narrative reply with this exact header:
 
 **Main Location - Sub Location - Detailed Area | Time of Day | HH:MM**
-**You: Gender - Apparent Race (Position; Clothes/disguise; body detail)**
-**NPC: Full Name - Race (Position; Clothes; body/racial detail), Full Name - Race (Position; Clothes; body/racial detail)**
+**You: Gender - Apparent Race (Clothes/disguise; Position; body detail)**
+**NPC: Full Name - Race (Clothes; Position; body/racial detail), Full Name - Race (Clothes; Position; body/racial detail)**
 **Thread: Main mission/status ; Major obstacle/status**
 **Wallet: XG ; XS ; XC**
 ***
@@ -329,7 +333,7 @@ Rules:
 - All 4 header lines MUST use ** at the start and end.
 - Use exactly *** before narration.
 - NPCs cannot read, know, or react to You/NPC/Thread data unless learned in-story.
-- Status format is fixed: Position; Clothes; Opsional body/racial detail.
+- Status format is fixed: Clothes; Position; Opsional body/racial detail.
 - Do not replace position or clothes with mood, emotion, role, or vague status.
 - Only add Body/Racial details when needed, such as fighting, intimacy or sudden movements.
 
@@ -340,8 +344,8 @@ Rules:
 - Normal talk advances 5-15 minutes. Quick reactions may keep the same minute. Travel, waiting, sleep, rituals, missions, or recovery may skip hours.
 
 [Header YOU LINE Rules]
-- Format: Gender - Apparent Race (Position; Clothes/disguise; body detail)
-- Position and clothes/disguise must always stay in Status.
+- Format: Gender - Apparent Race (Clothes/disguise; Position; body detail)
+- Clothes/disguise and position must always stay in Status.
 - Keep last known position and clothes unless {{user}} changes them or the scene clearly moves.
 - Apparent Race is visible form, not true identity.
 - Never write "Anomaly" unless revealed or confirmed in-story.
@@ -350,12 +354,12 @@ Rules:
 
 [Header NPC LINE Rules]
 - Include all NPCs currently around {{user}}.
-- Format: Full Name - Race (Position; Clothes; body/racial detail)
+- Format: Full Name - Race (Clothes; Position; body/racial detail)
 - Race uses dash. Status uses parentheses.
 - Separate multiple NPCs with commas only.
 - {{user}} is not an NPC.
 - Minor unnamed NPCs may be grouped by role.
-- Position and clothes must always stay in Status.
+- Clothes and position must always stay in Status.
 - Keep last known position and clothes unless the NPC visibly moves, leaves, follows, changes clothes, removes armor, or the scene changes.
 - Position must show scene blocking: Standing before {{user}}, Seated beside throne, Standing by door, Behind {{user}}, At table head.
 - Body/racial detail may include hands, wings, tail, ears, horns, eyes, claws, weapon, posture, or relevant visible anatomy.
@@ -373,15 +377,11 @@ Rules:
 - G=Gold; S=Silver; C=Copper
 - Wallet is the money that {{user}} owns.
 - Wallet changes only through clear in-story transactions
-
-[IMPORTANT]
-- If you make a mistake such as wrong NPC canon info, race, location, status, header format, Thread item, NPC presence, or header data, correct it in the next reply and never preserve the mistake.
-- If a previous reply invented non-canon NPC data, treat it as non-canon and return to official lore.
-- If no NPCs are present, describe only environment, atmosphere, objects, danger, clues, weather, room condition, road condition, or ambient activity.
-- DO NOT DESCRIBE {{user}}'s THOUGHTS, FEELINGS, DIALOGUE, ACTUONS, MOVEMENT, ATTACKS, CONSENT, TRANSFORMATION, or CHOICES.
 ```
 
 ## Catatan Penyesuaian Stage
+
+Baca file Guide.Consepts.stage.md dan Guide.State.md untuk refensi
 
 Stage sudah disesuaikan dengan prompt header asli di atas.
 
@@ -390,7 +390,7 @@ Penyesuaian yang sudah diterapkan:
 1. Divider output memakai `***`, bukan `___`.
 2. `beforePrompt` mengingat pesan user terakhir sebagai konteks perubahan location/thread.
 3. Location change dijaga agar tidak berubah jauh tanpa cue perpindahan.
-4. `You` menjaga apparent race, menolak `Anomaly` jika belum revealed/confirmed, menjaga position/clothes/body detail dari state lama tanpa evidence, dan menyaring thoughts/actions/dialogue.
+4. `You` menjaga apparent race, menolak `Anomaly` jika belum revealed/confirmed, menjaga clothes/position/body detail dari state lama tanpa evidence, dan menyaring thoughts/actions/dialogue.
 5. `NPC: None` diterima saat tidak ada NPC.
 6. `Thread` dinormalisasi dengan pemisah ` ; ` dan item minor/selesai dibersihkan.
 7. Header yang muncul setelah teks pembuka tetap dideteksi, lalu dipindahkan menjadi satu header normal di paling atas.
@@ -408,8 +408,9 @@ Penyesuaian yang sudah diterapkan:
 19. Evidence pakaian `You` dibedakan antara narasi dan dialog: pembahasan membuka pakaian di dalam dialog tidak mengubah clothing slot menjadi `Naked` kecuali narasi/action beat benar-benar menunjukkan pakaian berubah.
 20. Evidence wallet dibedakan antara narasi dan dialog: nominal uang di dalam dialog tidak memicu perubahan wallet, dan jika ada transaksi non-dialog yang jelas stage memilih arah hitungan yang benar daripada angka wallet AI yang keliru.
 21. Formatter dialog diperbaiki agar speaker line yang salah dibungkus `*...*` tetap dibaca sebagai dialog, sementara single-quoted atau italic action beat sebelum quote dialog dipertahankan sebagai action beat.
-22. Status slot classifier ditambahkan agar pakaian/naked dideteksi dari isi slot, urutan status salah seperti `position; body/racial; clothing` dikoreksi, dan detail eyes/gaze/tail/ears/wings/horns dipindahkan dari position ke body/racial detail.
-23. `npcMemory` ditambahkan agar stage menyimpan Name, Role/Title, Racial, Relationship, dan KnownFacts per NPC, lalu menginject data lengkap hanya untuk NPC di header aktif dan identitas saja untuk NPC yang sekadar disebut user. Debug NPC memakai pending state, localStorage, dan marker fallback; setelah response, stage menyisipkan blok debug di bawah header dan di atas narasi.
+22. Status slot classifier ditambahkan agar pakaian/naked dideteksi dari isi slot, urutan status salah seperti `position; body/racial; clothing` dikoreksi menjadi `clothing; position; body/racial`, dan detail eyes/gaze/tail/ears/wings/horns dipindahkan dari position ke body/racial detail.
+23. `npcMemory` ditambahkan agar stage menyimpan Name, Role/Title, Racial, Relationship, dan KnownFacts per NPC, lalu menginject data lengkap hanya untuk NPC di header aktif dan identitas saja untuk NPC yang sekadar disebut user. Debug NPC memakai pending state dan localStorage, tetapi hasil debug dikirim sebagai `systemMessage`, bukan disisipkan ke isi response, agar tidak mengganggu `Thread`.
+24. Debug UI sementara ditambahkan agar state header, `npcMemory`, lifecycle activity, `stageDirections`, dan `systemMessage` debug bisa diperiksa tanpa menempelkan debug ke narasi.
 
 Jika prompt header asli nanti diubah lagi:
 

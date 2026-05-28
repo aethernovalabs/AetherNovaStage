@@ -42,6 +42,7 @@ interface HeaderBlock extends Omit<ExtractedHeader, "narrative"> {
 interface NormalizedResponse {
     content: string;
     state: AetherNovaMessageState;
+    systemMessage: string | null;
 }
 
 interface IdentityStatus {
@@ -77,7 +78,7 @@ const DEFAULT_STATE: AetherNovaMessageState = {
     location: "Unknown Region - Current Place - Active Area",
     timeOfDay: "Morning",
     clock: "09:00",
-    you: "Unknown - Human (Standing; Regular clothing; hands visible)",
+    you: "Unknown - Human (Regular clothing; Standing; hands visible)",
     npc: "None",
     thread: "None",
     wallet: "0G ; 0S ; 0C",
@@ -1170,7 +1171,7 @@ export function buildStageDirections(state: AetherNovaMessageState, userMessage:
         `NPC: ${effectiveState.npc}`,
         `Thread: ${effectiveState.thread}`,
         `Wallet: ${effectiveState.wallet}`,
-        "Status format: Position; Clothes/disguise; optional body/racial detail. Keep position/clothes from last state unless the scene clearly changes. Use Thread items separated by \" ; \". Wallet changes only with clear in-story transaction/reward/loss evidence.",
+        "Status format: Clothes/disguise; Position; optional body/racial detail. Keep clothes/position from last state unless the scene clearly changes. Use Thread items separated by \" ; \". Wallet changes only with clear in-story transaction/reward/loss evidence.",
     ];
     const npcMemoryContext = buildNpcMemoryDirections(effectiveState, userMessage);
 
@@ -1191,9 +1192,7 @@ export function normalizeAetherNovaResponse(
     previousState: AetherNovaMessageState,
     context: string = "",
 ): NormalizedResponse {
-    const markerDebugQuery = debugNpcMarkerQuery(content);
-    const contentWithoutDebugMarkers = stripNpcDebugMarkers(content);
-    const extracted = extractHeader(contentWithoutDebugMarkers);
+    const extracted = extractHeader(content);
     const correctionContext = `${context}\n${extracted.narrative}`;
     const timeLocation = normalizeLocationTimeLine(extracted.locationLine, previousState, correctionContext);
     const sceneChanged = !sameText(timeLocation.location, previousState.location);
@@ -1216,12 +1215,13 @@ export function normalizeAetherNovaResponse(
         pendingNpcDebugQuery: null,
     };
     state.npcMemory = updateNpcMemory(previousState.npcMemory, state.npc, `${state.location}\n${correctionContext}`);
-    const debugQuery = previousState.pendingNpcDebugQuery ?? debugNpcQuery(context) ?? markerDebugQuery;
-    const debugBlock = buildNpcDebugFooter(debugQuery, state.npcMemory);
+    const debugQuery = previousState.pendingNpcDebugQuery ?? debugNpcQuery(context);
+    const debugMessage = buildNpcDebugFooter(debugQuery, state.npcMemory);
 
     return {
-        content: insertDebugBlockAfterHeader(formatResponse(state, extracted.narrative), debugBlock),
+        content: formatResponse(state, extracted.narrative),
         state,
+        systemMessage: debugMessage.length > 0 ? debugMessage : null,
     };
 }
 
@@ -1452,7 +1452,7 @@ function buildNpcDebugDirections(query: string | null, memory: NpcMemoryStore): 
     return [
         "NPC Debug Request (temporary; do not narrate this debug block in-character):",
         formatNpcMemoryForPrompt(entry, true),
-        `At the very end of your response, add this exact marker on its own line so the stage can replace it with a debug footer: ${formatNpcDebugMarker(query)}`,
+        "Stage will show this debug data separately as a system message after the response.",
     ].join("\n");
 }
 
@@ -1478,43 +1478,9 @@ function buildNpcDebugFooter(query: string | null, memory: NpcMemoryStore): stri
     ].join("\n");
 }
 
-function insertDebugBlockAfterHeader(content: string, debugBlock: string): string {
-    if (debugBlock.length === 0) {
-        return content;
-    }
-
-    const dividerIndex = content.indexOf(HEADER_DIVIDER);
-    if (dividerIndex < 0) {
-        return `${debugBlock}\n\n${content}`;
-    }
-
-    const headerEnd = dividerIndex + HEADER_DIVIDER.length;
-    const header = content.slice(0, headerEnd);
-    const body = content.slice(headerEnd).trimStart();
-
-    return body.length > 0
-        ? `${header}\n\n${debugBlock}\n\n${body}`
-        : `${header}\n\n${debugBlock}`;
-}
-
 export function debugNpcQuery(userMessage: string): string | null {
     const match = userMessage.match(/[\[【]\s*debug\s*:\s*npc\s+([^\]】]+)[\]】]/i);
     return match == null ? null : cleanFragment(match[1]);
-}
-
-function formatNpcDebugMarker(query: string): string {
-    return `[[AETHER_NOVA_DEBUG_NPC:${cleanFragment(query)}]]`;
-}
-
-function debugNpcMarkerQuery(content: string): string | null {
-    const match = content.match(/\[\[\s*AETHER_NOVA_DEBUG_NPC\s*:\s*([^\]]+?)\s*\]\]/i);
-    return match == null ? null : cleanFragment(match[1]);
-}
-
-function stripNpcDebugMarkers(content: string): string {
-    return normalizeLineEndings(content)
-        .replace(/^\s*\[\[\s*AETHER_NOVA_DEBUG_NPC\s*:\s*[^\]]+?\s*\]\]\s*$/gim, "")
-        .trimEnd();
 }
 
 function normalizePendingNpcDebugQuery(value: unknown): string | null {
@@ -2046,13 +2012,13 @@ function normalizeNewNpcStatus(rawStatus: string, race: string, context: string)
     const defaultStatus = defaultNpcStatusForRace(race);
     const defaultParts = statusParts(defaultStatus, "npc");
     const rawParts = statusParts(rawStatus, "npc");
-    const position = normalizePosition(rawParts[0] ?? defaultParts[0], defaultParts[0], "npc");
+    const position = normalizePosition(rawParts[1] ?? defaultParts[1], defaultParts[1], "npc");
     const inferredClothing = inferNpcClothingFromContext(context);
-    const rawClothing = normalizeClothing(inferredClothing ?? rawParts[1] ?? defaultParts[1], defaultParts[1]);
-    const clothing = inferredClothing != null || newNpcClothingIsSupported(rawClothing, context) ? rawClothing : normalizeClothing(defaultParts[1], "Regular clothing");
+    const rawClothing = normalizeClothing(inferredClothing ?? rawParts[0] ?? defaultParts[0], defaultParts[0]);
+    const clothing = inferredClothing != null || newNpcClothingIsSupported(rawClothing, context) ? rawClothing : normalizeClothing(defaultParts[0], "Regular clothing");
     const detail = normalizeDetail(rawParts[2] ?? defaultParts[2], defaultParts[2], "npc");
 
-    return `${position}; ${clothing}; ${detail}`;
+    return `${clothing}; ${position}; ${detail}`;
 }
 
 function normalizeThreadLine(rawLine: string, previousThread: string, narrative: string): string {
@@ -2815,19 +2781,19 @@ function normalizeStatus(
     context: string = "",
     options: NormalizeStatusOptions = {},
 ): string {
-    const defaultStatus = kind === "you" ? DEFAULT_STATE.you.match(/\((.*)\)$/)?.[1] ?? "Standing; Regular clothing; hands visible" : defaultNpcStatusForRace(race);
+    const defaultStatus = kind === "you" ? DEFAULT_STATE.you.match(/\((.*)\)$/)?.[1] ?? "Regular clothing; Standing; hands visible" : defaultNpcStatusForRace(race);
     const fallbackParts = statusParts(fallbackStatus || defaultStatus, kind);
     const defaultParts = statusParts(defaultStatus, kind);
     const rawParts = statusParts(rawStatus, kind);
 
-    const fallbackPosition = normalizePosition(fallbackParts[0] ?? defaultParts[0], defaultParts[0], kind);
-    const fallbackClothing = normalizeClothing(fallbackParts[1] ?? defaultParts[1], defaultParts[1]);
-    const rawPosition = normalizePosition(rawParts[0] ?? fallbackPosition, fallbackPosition, kind);
+    const fallbackClothing = normalizeClothing(fallbackParts[0] ?? defaultParts[0], defaultParts[0]);
+    const fallbackPosition = normalizePosition(fallbackParts[1] ?? defaultParts[1], defaultParts[1], kind);
     const clothingContext = kind === "you" ? clothingNarrativeEvidenceContext(context) : context;
     const inferredClothing = kind === "you" ? inferYouClothingFromContext(clothingContext) : null;
-    const rawClothing = normalizeClothing(inferredClothing ?? rawParts[1] ?? fallbackClothing, fallbackClothing);
+    const rawClothing = normalizeClothing(inferredClothing ?? rawParts[0] ?? fallbackClothing, fallbackClothing);
+    const rawPosition = normalizePosition(rawParts[1] ?? fallbackPosition, fallbackPosition, kind);
     const position = statusChangeIsSupported(rawPosition, fallbackPosition, context, "position", kind)
-        || (options.sceneChanged === true && rawParts[0] != null && !isGenericStatusPart(rawPosition))
+        || (options.sceneChanged === true && rawParts[1] != null && !isGenericStatusPart(rawPosition))
         ? rawPosition
         : fallbackPosition;
     const clothing = statusChangeIsSupported(rawClothing, fallbackClothing, clothingContext, "clothing", kind) ? rawClothing : fallbackClothing;
@@ -2846,7 +2812,7 @@ function normalizeStatus(
         detail = defaultParts[2] ?? "hands visible";
     }
 
-    return `${position}; ${clothing}; ${detail}`;
+    return `${clothing}; ${position}; ${detail}`;
 }
 
 function statusParts(status: string, kind: "you" | "npc"): string[] {
@@ -2883,7 +2849,7 @@ function orderStatusParts(parts: string[]): string[] {
         .filter((_part, index) => index !== positionIndex)
         .join(", ");
 
-    return [position, clothing, detail];
+    return [clothing, position, detail];
 }
 
 function splitMixedStatusPart(part: string): string[] {
@@ -3089,34 +3055,34 @@ function defaultNpcStatusForRace(race: string): string {
     const lower = race.toLowerCase();
 
     if (lower.includes("kitsune")) {
-        return "Standing nearby; Regular clothing; tails still, ears attentive";
+        return "Regular clothing; Standing nearby; tails still, ears attentive";
     }
 
     if (lower.includes("catkin")) {
-        return "Standing nearby; Regular clothing; ears attentive, tail still";
+        return "Regular clothing; Standing nearby; ears attentive, tail still";
     }
 
     if (lower.includes("dragonkin")) {
-        return "Standing nearby; Regular clothing; wings settled, tail still, horns visible";
+        return "Regular clothing; Standing nearby; wings settled, tail still, horns visible";
     }
 
     if (lower.includes("angel")) {
-        return "Standing nearby; Regular clothing; wings settled, halo visible";
+        return "Regular clothing; Standing nearby; wings settled, halo visible";
     }
 
     if (lower.includes("demon")) {
-        return "Standing nearby; Regular clothing; horns visible, tail still, eyes alert";
+        return "Regular clothing; Standing nearby; horns visible, tail still, eyes alert";
     }
 
     if (lower.includes("vampire")) {
-        return "Standing nearby; Regular clothing; fangs hidden, eyes alert";
+        return "Regular clothing; Standing nearby; fangs hidden, eyes alert";
     }
 
     if (lower.includes("pixie") || lower.includes("fey")) {
-        return "Standing nearby; Regular clothing; wings still, faint glow visible";
+        return "Regular clothing; Standing nearby; wings still, faint glow visible";
     }
 
-    return "Standing nearby; Regular clothing; posture attentive";
+    return "Regular clothing; Standing nearby; posture attentive";
 }
 
 function locationChangeIsSupported(candidate: string, previous: string, context: string): boolean {

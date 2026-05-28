@@ -18,7 +18,7 @@ tagline: "Keeps Aether Nova responses on-format without rendering UI."
 #   but leave the text input box.
 # 'FULLSCREEN' will make nothing below the header bar
 #   show except for your stage.
-position: NONE
+position: ADJACENT
 
 # Self-explanatory.
 tags:
@@ -31,7 +31,11 @@ tags:
 #   defined schema, it won't work.
 config_schema:
   type: object
-  properties: {}
+  properties:
+    debugUi:
+      type: boolean
+      default: true
+      title: Enable debug UI
 
 # The schema of the state that you store.
 # This isn't needed even if you do store state,
@@ -65,6 +69,12 @@ state_schema:
         type: string
       walletInitialized:
         type: boolean
+      npcMemory:
+        type: object
+      pendingNpcDebugQuery:
+        type:
+          - string
+          - 'null'
   chat:
     type: object
     properties: {}

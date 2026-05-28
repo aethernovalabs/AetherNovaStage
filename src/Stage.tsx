@@ -1,4 +1,4 @@
-import {ReactElement} from "react";
+import {ReactElement, useEffect, useState} from "react";
 import {InitialData, LoadResponse, Message, StageBase, StageResponse} from "@chub-ai/stages-ts";
 import {
     AetherNovaMessageState,
@@ -11,23 +11,56 @@ import {
 } from "./aetherNovaHeader";
 
 type MessageStateType = AetherNovaMessageState;
-type ConfigType = Record<string, never>;
+type ConfigType = {
+    debugUi?: boolean;
+};
 type InitStateType = Record<string, never>;
 type ChatStateType = Record<string, never>;
 const DEBUG_STORAGE_KEY = "aether-nova-stage.pendingNpcDebugQuery";
+
+interface DebugEvent {
+    id: number;
+    at: string;
+    label: string;
+    detail: string;
+}
+
+interface DebugSnapshot {
+    state: AetherNovaMessageState;
+    latestUserMessage: string;
+    lastStageDirections: string;
+    lastSystemMessage: string;
+    lastModifiedMessageChanged: boolean;
+    debugEvents: DebugEvent[];
+}
 
 export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateType, ConfigType> {
 
     private state: AetherNovaMessageState;
     private latestUserMessage: string;
+    private debugUiEnabled: boolean;
+    private debugEventId: number;
+    private debugEvents: DebugEvent[];
+    private lastStageDirections: string;
+    private lastSystemMessage: string;
+    private lastModifiedMessageChanged: boolean;
 
     constructor(data: InitialData<InitStateType, ChatStateType, MessageStateType, ConfigType>) {
         super(data);
         this.state = createInitialHeaderState(data.characters, data.messageState);
         this.latestUserMessage = "";
+        this.debugUiEnabled = data.config?.debugUi !== false;
+        this.debugEventId = 0;
+        this.debugEvents = [];
+        this.lastStageDirections = "";
+        this.lastSystemMessage = "";
+        this.lastModifiedMessageChanged = false;
+        this.pushDebugEvent("init", `state ready; ${countNpcMemory(this.state)} NPC memory entries`);
     }
 
     async load(): Promise<Partial<LoadResponse<InitStateType, ChatStateType, MessageStateType>>> {
+        this.pushDebugEvent("load", `messageState loaded; debug UI ${this.debugUiEnabled ? "enabled" : "disabled"}`);
+
         return {
             success: true,
             error: null,
@@ -39,6 +72,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 
     async setState(state: MessageStateType): Promise<void> {
         this.state = coerceHeaderState(state, this.state);
+        this.pushDebugEvent("setState", `branch/swipe state restored; ${countNpcMemory(this.state)} NPC memory entries`);
     }
 
     async beforePrompt(userMessage: Message): Promise<Partial<StageResponse<ChatStateType, MessageStateType>>> {
@@ -48,9 +82,14 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             writePendingDebugQuery(debugQuery);
         }
         this.state = prepareAetherNovaStateForPrompt(this.state, this.latestUserMessage);
+        this.lastStageDirections = buildStageDirections(this.state, this.latestUserMessage);
+        this.pushDebugEvent(
+            "beforePrompt",
+            `directions injected (${this.lastStageDirections.length} chars); debug request: ${debugQuery ?? "none"}`,
+        );
 
         return {
-            stageDirections: buildStageDirections(this.state, this.latestUserMessage),
+            stageDirections: this.lastStageDirections,
             messageState: this.state,
             modifiedMessage: null,
             systemMessage: null,
@@ -60,6 +99,8 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
     }
 
     async afterResponse(botMessage: Message): Promise<Partial<StageResponse<ChatStateType, MessageStateType>>> {
+        const previousState = this.state;
+        const previousNpcMemoryCount = countNpcMemory(this.state);
         const storedDebugQuery = this.state.pendingNpcDebugQuery ?? readPendingDebugQuery();
         if (storedDebugQuery != null) {
             this.state = {
@@ -69,7 +110,14 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         }
 
         const normalized = normalizeAetherNovaResponse(botMessage.content, this.state, this.latestUserMessage);
+        const changedFields = changedStateFields(previousState, normalized.state);
         this.state = normalized.state;
+        this.lastModifiedMessageChanged = normalized.content !== botMessage.content;
+        this.lastSystemMessage = normalized.systemMessage ?? "";
+        this.pushDebugEvent(
+            "afterResponse",
+            `response ${this.lastModifiedMessageChanged ? "modified" : "unchanged"}; changed: ${changedFields.length > 0 ? changedFields.join(", ") : "none"}; NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}; system debug ${this.lastSystemMessage.length > 0 ? "sent" : "none"}`,
+        );
         this.latestUserMessage = "";
         clearPendingDebugQuery();
 
@@ -77,15 +125,184 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             stageDirections: null,
             messageState: this.state,
             modifiedMessage: normalized.content,
-            systemMessage: null,
+            systemMessage: normalized.systemMessage,
             error: null,
             chatState: null,
         };
     }
 
     render(): ReactElement {
-        return <></>;
+        if (!this.debugUiEnabled) {
+            return <></>;
+        }
+
+        return <AetherNovaDebugPanel getSnapshot={() => this.createDebugSnapshot()} />;
     }
+
+    private createDebugSnapshot(): DebugSnapshot {
+        return {
+            state: this.state,
+            latestUserMessage: this.latestUserMessage,
+            lastStageDirections: this.lastStageDirections,
+            lastSystemMessage: this.lastSystemMessage,
+            lastModifiedMessageChanged: this.lastModifiedMessageChanged,
+            debugEvents: this.debugEvents.slice(),
+        };
+    }
+
+    private pushDebugEvent(label: string, detail: string): void {
+        this.debugEventId += 1;
+        this.debugEvents = [
+            {
+                id: this.debugEventId,
+                at: new Date().toLocaleTimeString(),
+                label,
+                detail,
+            },
+            ...this.debugEvents,
+        ].slice(0, 30);
+    }
+}
+
+function AetherNovaDebugPanel({getSnapshot}: {getSnapshot: () => DebugSnapshot}): ReactElement {
+    const [snapshot, setSnapshot] = useState<DebugSnapshot>(() => getSnapshot());
+    const npcMemoryEntries = Object.values(snapshot.state.npcMemory ?? {});
+
+    useEffect(() => {
+        const intervalId = window.setInterval(() => {
+            setSnapshot(getSnapshot());
+        }, 500);
+
+        return () => window.clearInterval(intervalId);
+    }, [getSnapshot]);
+
+    return (
+        <main className="aether-debug-shell">
+            <header className="aether-debug-header">
+                <div>
+                    <p className="aether-debug-kicker">Aether Nova Stage</p>
+                    <h1>Debug UI</h1>
+                </div>
+                <span className={snapshot.lastModifiedMessageChanged ? "aether-debug-pill active" : "aether-debug-pill"}>
+                    {snapshot.lastModifiedMessageChanged ? "Modified" : "Idle"}
+                </span>
+            </header>
+
+            <section className="aether-debug-grid" aria-label="Current header state">
+                <DebugMetric label="Location" value={`${snapshot.state.location} | ${snapshot.state.timeOfDay} | ${snapshot.state.clock}`} />
+                <DebugMetric label="You" value={snapshot.state.you} />
+                <DebugMetric label="NPC" value={snapshot.state.npc} />
+                <DebugMetric label="Thread" value={snapshot.state.thread} />
+                <DebugMetric label="Wallet" value={snapshot.state.wallet} />
+                <DebugMetric label="Pending NPC Debug" value={snapshot.state.pendingNpcDebugQuery ?? "None"} />
+            </section>
+
+            <section className="aether-debug-section">
+                <div className="aether-debug-section-title">
+                    <h2>NPC Memory</h2>
+                    <span>{npcMemoryEntries.length}</span>
+                </div>
+                {npcMemoryEntries.length === 0 ? (
+                    <p className="aether-debug-empty">No NPC memory stored yet.</p>
+                ) : (
+                    <div className="aether-debug-memory-list">
+                        {npcMemoryEntries.map((entry) => (
+                            <article className="aether-debug-memory-card" key={entry.name}>
+                                <h3>{entry.name}</h3>
+                                <dl>
+                                    <DebugDetail label="Role" value={entry.roleTitle} />
+                                    <DebugDetail label="Racial" value={entry.racial} />
+                                    <DebugDetail label="Relationship" value={entry.relationship} />
+                                </dl>
+                                <p className="aether-debug-facts-label">KnownFacts</p>
+                                {entry.knownFacts.length === 0 ? (
+                                    <p className="aether-debug-empty compact">None</p>
+                                ) : (
+                                    <ul>
+                                        {entry.knownFacts.map((fact) => <li key={fact}>{fact}</li>)}
+                                    </ul>
+                                )}
+                            </article>
+                        ))}
+                    </div>
+                )}
+            </section>
+
+            <section className="aether-debug-section">
+                <div className="aether-debug-section-title">
+                    <h2>Stage Activity</h2>
+                    <span>{snapshot.debugEvents.length}</span>
+                </div>
+                <ol className="aether-debug-events">
+                    {snapshot.debugEvents.map((event) => (
+                        <li key={event.id}>
+                            <time>{event.at}</time>
+                            <strong>{event.label}</strong>
+                            <span>{event.detail}</span>
+                        </li>
+                    ))}
+                </ol>
+            </section>
+
+            <details className="aether-debug-details">
+                <summary>Stage Directions</summary>
+                <pre>{snapshot.lastStageDirections || "No stage directions captured yet."}</pre>
+            </details>
+
+            <details className="aether-debug-details">
+                <summary>System Debug Message</summary>
+                <pre>{snapshot.lastSystemMessage || "No system debug message captured yet."}</pre>
+            </details>
+
+            <details className="aether-debug-details">
+                <summary>Latest User Message</summary>
+                <pre>{snapshot.latestUserMessage || "No pending user message."}</pre>
+            </details>
+        </main>
+    );
+}
+
+function DebugMetric({label, value}: {label: string; value: string}): ReactElement {
+    return (
+        <article className="aether-debug-metric">
+            <span>{label}</span>
+            <p>{value}</p>
+        </article>
+    );
+}
+
+function DebugDetail({label, value}: {label: string; value: string}): ReactElement {
+    return (
+        <>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+        </>
+    );
+}
+
+function countNpcMemory(state: AetherNovaMessageState): number {
+    return Object.keys(state.npcMemory ?? {}).length;
+}
+
+function changedStateFields(previous: AetherNovaMessageState, next: AetherNovaMessageState): string[] {
+    const fields: Array<keyof AetherNovaMessageState> = [
+        "location",
+        "timeOfDay",
+        "clock",
+        "you",
+        "npc",
+        "thread",
+        "wallet",
+        "walletInitialized",
+        "pendingNpcDebugQuery",
+    ];
+    const changed = fields.filter((field) => previous[field] !== next[field]).map(String);
+
+    if (JSON.stringify(previous.npcMemory ?? {}) !== JSON.stringify(next.npcMemory ?? {})) {
+        changed.push("npcMemory");
+    }
+
+    return changed;
 }
 
 function writePendingDebugQuery(query: string): void {
