@@ -315,7 +315,8 @@ Penyesuaian yang sudah diterapkan:
 4. Debug UI diperbarui menampilkan field baru (Race, Physical Extra, Behavior, OnlyKnows).
 
 5. `inferNpcOnlyKnows` diperluas: stage sekarang mengekstrak fakta dari narasi saat `{{user}}` bersama NPC — bukan hanya saat `{{user}}` secara eksplisit "told" NPC. Pola baru: `{{user}} and NPC [aktivitas]`, `{{user}} gave/showed NPC [sesuatu]`, `{{user}} told/asked NPC about [topik]`, `{{user}} helped/saved/protected NPC`, `{{user}} traveled/went with NPC`.
-6. **NPC Observation System (LLM-assisted)**: Stage inject instruksi ke LLM untuk output `[npc_obs: NPC_Name | fact]` saat NPC belajar sesuatu penting tentang `{{user}}`. Stage ekstrak marker dari response, strip dari narasi, akumulasi di `pendingNpcObservations`, dan flush ke OnlyKnows setelah 5 observasi terkumpul per NPC. Field `pendingNpcObservations: Record<string, string[]>` di state. Treshold flush: 5. Max pending: 20 per NPC.
+6. **NPC Observation System (LLM-assisted)**: Stage inject instruksi `[npc_obs: NPC_Name | fact]` ke dalam `buildNpcMemoryDirections` — bagian dari NPC Memory Context yang selalu dikirim saat ada NPC aktif. Stage ekstrak marker dari response, strip dari narasi, akumulasi di `pendingNpcObservations`, dan flush ke OnlyKnows setelah 5 observasi terkumpul per NPC. Field `pendingNpcObservations: Record<string, string[]>` di state. Treshold flush: 5. Max pending: 20 per NPC.
+7. **Debug UI V1.4**: Menampilkan `pendingNpcObservations` dengan progress bar per NPC, total pending di header metric, deteksi `[npc_obs FOUND in raw]` di `afterResponse`, dan indikator `[NPC context active]` di `beforePrompt`.
 
 Jika prompt header asli nanti diubah lagi:
 
@@ -325,5 +326,6 @@ Jika prompt header asli nanti diubah lagi:
 Catatan verifikasi terakhir:
 
 - `npm run build` berhasil.
-- Debug UI V1.4 — menampilkan `pendingNpcObservations` dengan progress bar per NPC.
+- Debug UI V1.4 — menampilkan `pendingNpcObservations` dengan progress bar per NPC, deteksi `[npc_obs FOUND in raw]` di afterResponse, dan `[NPC context active]` di beforePrompt.
+- `buildNpcMemoryDirections` sekarang inject instruksi observasi di baris pertama NPC Memory Context — selalu aktif saat ada NPC.
 - `inferNpcOnlyKnows` memakai `nearNpcContext` untuk deteksi kehadiran NPC di narasi sebelum ekstraksi.

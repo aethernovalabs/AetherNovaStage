@@ -101,9 +101,10 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         }
         this.lastStageDirections = buildStageDirections(this.state, this.latestUserMessage);
         const obsCount = Object.values(this.state.pendingNpcObservations ?? {}).reduce((s, f) => s + f.length, 0);
+        const hasNpcContext = /NPC Memory Context/i.test(this.lastStageDirections);
         this.pushDebugEvent(
             "beforePrompt",
-            `directions injected (${this.lastStageDirections.length} chars); debug request: ${debugQuery ?? "none"}; memory command: ${commandResult.applied ? "applied" : "none"}; observations pending: ${obsCount}`,
+            `directions injected (${this.lastStageDirections.length} chars)${hasNpcContext ? " [NPC context active]" : " [no NPC context]"}; debug request: ${debugQuery ?? "none"}; memory command: ${commandResult.applied ? "applied" : "none"}; observations pending: ${obsCount}`,
         );
 
         return {
@@ -143,9 +144,11 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         this.lastModifiedMessageChanged = normalized.content !== botMessage.content;
         this.lastSystemMessage = joinSystemMessages(normalized.systemMessage, afterResponseCommand?.systemMessage);
         const obsCount = Object.values(finalState.pendingNpcObservations ?? {}).reduce((s, f) => s + f.length, 0);
+        const markersFound = /\[npc_obs:/i.test(botMessage.content);
+        const markersInResponse = markersFound ? " [npc_obs FOUND in raw]" : "";
         this.pushDebugEvent(
             "afterResponse",
-            `response ${this.lastModifiedMessageChanged ? "modified" : "unchanged"}; changed: ${changedFields.length > 0 ? changedFields.join(", ") : "none"}; NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}; observations pending: ${obsCount}; memory command reapply ${afterResponseCommand?.applied === true ? "yes" : "no"}; system debug ${this.lastSystemMessage.length > 0 ? "sent" : "none"}`,
+            `response ${this.lastModifiedMessageChanged ? "modified" : "unchanged"}; changed: ${changedFields.length > 0 ? changedFields.join(", ") : "none"}; NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}; observations pending: ${obsCount}${markersInResponse}; memory command reapply ${afterResponseCommand?.applied === true ? "yes" : "no"}; system debug ${this.lastSystemMessage.length > 0 ? "sent" : "none"}`,
         );
         this.latestUserMessage = "";
         this.latestNpcMemoryCommandMessage = "";

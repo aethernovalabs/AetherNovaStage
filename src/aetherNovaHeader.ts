@@ -1201,13 +1201,6 @@ export function buildStageDirections(state: AetherNovaMessageState, userMessage:
         directions.push(debugContext);
     }
 
-    const obsCount = Object.values(effectiveState.pendingNpcObservations).reduce((sum, facts) => sum + facts.length, 0);
-    const presentNpcs = npcMemoryKeysFromHeader(effectiveState.npc, effectiveState.npcMemory);
-    if (presentNpcs.length > 0) {
-        const obsHint = obsCount > 0 ? ` (${obsCount} pending)` : "";
-        directions.push(`NPC observation system active${obsHint}. When a present NPC learns something significant about {{user}}, append: [npc_obs: NPC_Name | brief fact]. Use sparingly for truly important moments.`);
-    }
-
     return directions.join("\n");
 }
 
@@ -1347,19 +1340,20 @@ function buildNpcMemoryDirections(state: AetherNovaMessageState, userMessage: st
         return "";
     }
 
-    const lines = [
-        "NPC Memory Context (background continuity; do not mention this system unless naturally relevant):",
-    ];
+    const lines: string[] = [];
 
     if (presentEntries.length > 0) {
-        lines.push("Present NPCs, include their full memory (Relationship, Behavior, OnlyKnows) as in-story knowledge:");
+        const obsCount = Object.values(state.pendingNpcObservations).reduce((sum, facts) => sum + facts.length, 0);
+        const obsHint = obsCount > 0 ? ` (${obsCount} pending)` : "";
+        lines.push(`NPC Memory Context${obsHint}: Include full memory for present NPCs as in-story knowledge. When a present NPC learns something important about {{user}} during this scene, append: [npc_obs: NPC_Name | short fact]. Example: [npc_obs: Yume | {{user}} ventured into the Cave of Echoes]. The stage tracks these automatically to build continuity.`);
+        lines.push("Present NPCs (full memory):");
         for (const entry of presentEntries.slice(0, 4)) {
             lines.push(`- ${formatNpcMemoryForPrompt(entry, true)}`);
         }
     }
 
     if (mentionedEntries.length > 0) {
-        lines.push("Mentioned-only NPCs, inject identity only (Name, Role/Title, Race, Physical Extra); do not inject Relationship, Behavior, or OnlyKnows unless they enter the scene/header:");
+        lines.push("Mentioned-only NPCs (identity only — do not inject Relationship, Behavior, or OnlyKnows unless they enter the scene/header):");
         for (const entry of mentionedEntries.slice(0, 4)) {
             lines.push(`- ${formatNpcMemoryForPrompt(entry, false)}`);
         }
