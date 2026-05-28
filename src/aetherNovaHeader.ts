@@ -4683,6 +4683,10 @@ function looksLikeInlineNarrationBeat(value: string): boolean {
         return false;
     }
 
+    if (words.length > 5) {
+        return true;
+    }
+
     return inlineNarrationStartsLikeBeat(clean)
         || inlineNarrationStartsWithActionVerb(clean)
         || inlineNarrationHasBeatAction(clean);
@@ -4733,7 +4737,9 @@ function stripOuterSingleItalic(value: string): string {
 function replaceInlineEmphasis(value: string): string {
     return value.replace(/(^|[^*])\*([^*\n]{1,80})\*(?!\*)/g, (_match, prefix: string, inner: string) => {
         const clean = inner.trim();
-        return clean.length > 0 ? `${prefix}'${clean}'` : _match;
+        if (clean.length === 0) return _match;
+        if (looksLikeInlineNarrationBeat(clean)) return _match;
+        return `${prefix}'${clean}'`;
     });
 }
 

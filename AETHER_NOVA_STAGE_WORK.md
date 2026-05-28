@@ -344,5 +344,29 @@ Ini menyebabkan:
 
 Verifikasi:
 
+## Bug Fix: Action Beat Wrapped in Single Quotes Instead of Asterisks
+
+### Masalah
+
+Action beat dalam dialogue line seperti `'a wet laugh, broken by a moan as you kept moving, slow and deep inside her'` dibungkus single quotes `'...'` bukan asterisks `*...*`.
+
+**Penyebab** — dua fungsi saling terkait:
+
+1. **`replaceInlineEmphasis`** (line 4733): mengonversi SEMUA `*...*` menjadi `'...'` tanpa pandang bulu — termasuk action beat multi-kata yang seharusnya tetap `*...*`.
+2. **`formatInlineNarrationInDialogue`** (line 4604): mencoba mengembalikan `'...'` → `*...*` hanya jika `looksLikeInlineNarrationBeat` mengembalikan `true`. Untuk beat panjang seperti `a wet laugh, broken by a moan...`:
+   - `inlineNarrationStartsLikeBeat` → false (mulai dengan "a", bukan kapital/he/she/they)
+   - `inlineNarrationStartsWithActionVerb` → false ("a" bukan action verb)
+   - `inlineNarrationHasBeatAction` → false ("laugh", "moan", "moving" tidak ada di keyword list)
+   - **Hasil**: `looksLikeInlineNarrationBeat` → false → `'...'` tidak dikembalikan ke `*...*`.
+
+### Fix
+
+1. **`replaceInlineEmphasis`**: skip konversi jika konten sudah `looksLikeInlineNarrationBeat(clean) === true` — jangan rusak action beat yang sudah benar.
+2. **`looksLikeInlineNarrationBeat`**: tambah heuristic word-count. Konten `> 5` kata hampir pasti action beat, bukan inline emphasis. Ini menutup celah untuk beat yang tidak cocok keyword list.
+
+### Perubahan file
+- `src/aetherNovaHeader.ts`: `replaceInlineEmphasis` (line 4733), `looksLikeInlineNarrationBeat` (line 4678).
+
+Verifikasi:
+
 - `npm run build` berhasil.
-- `inferNpcOnlyKnows` memakai `nearNpcContext` untuk deteksi kehadiran NPC di narasi sebelum ekstraksi.
