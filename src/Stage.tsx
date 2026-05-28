@@ -2,6 +2,7 @@ import {ReactElement, useEffect, useState} from "react";
 import {InitialData, LoadResponse, Message, StageBase, StageResponse} from "@chub-ai/stages-ts";
 import {
     AetherNovaMessageState,
+    applyNpcMemoryCommands,
     buildStageDirections,
     coerceHeaderState,
     createInitialHeaderState,
@@ -76,23 +77,30 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
     }
 
     async beforePrompt(userMessage: Message): Promise<Partial<StageResponse<ChatStateType, MessageStateType>>> {
-        this.latestUserMessage = userMessage.content;
-        const debugQuery = debugNpcQuery(this.latestUserMessage);
+        const originalUserMessage = userMessage.content;
+        const debugQuery = debugNpcQuery(originalUserMessage);
         if (debugQuery != null) {
             writePendingDebugQuery(debugQuery);
         }
-        this.state = prepareAetherNovaStateForPrompt(this.state, this.latestUserMessage);
+        const preparedState = prepareAetherNovaStateForPrompt(this.state, originalUserMessage);
+        const commandResult = applyNpcMemoryCommands(preparedState, originalUserMessage);
+
+        this.state = commandResult.state;
+        this.latestUserMessage = commandResult.cleanedMessage;
+        if (commandResult.systemMessage != null) {
+            this.lastSystemMessage = commandResult.systemMessage;
+        }
         this.lastStageDirections = buildStageDirections(this.state, this.latestUserMessage);
         this.pushDebugEvent(
             "beforePrompt",
-            `directions injected (${this.lastStageDirections.length} chars); debug request: ${debugQuery ?? "none"}`,
+            `directions injected (${this.lastStageDirections.length} chars); debug request: ${debugQuery ?? "none"}; memory command: ${commandResult.applied ? "applied" : "none"}`,
         );
 
         return {
             stageDirections: this.lastStageDirections,
             messageState: this.state,
-            modifiedMessage: null,
-            systemMessage: null,
+            modifiedMessage: commandResult.cleanedMessage !== originalUserMessage ? commandResult.cleanedMessage : null,
+            systemMessage: commandResult.systemMessage,
             error: null,
             chatState: null,
         };

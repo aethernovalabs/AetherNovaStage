@@ -45,6 +45,13 @@ interface NormalizedResponse {
     systemMessage: string | null;
 }
 
+export interface NpcMemoryCommandResult {
+    state: AetherNovaMessageState;
+    cleanedMessage: string;
+    systemMessage: string | null;
+    applied: boolean;
+}
+
 interface IdentityStatus {
     identity: string;
     status: string;
@@ -1160,8 +1167,8 @@ export function prepareAetherNovaStateForPrompt(
 
 export function buildStageDirections(state: AetherNovaMessageState, userMessage: string = ""): string {
     const effectiveState: AetherNovaMessageState = {
-        ...prepareAetherNovaStateForPrompt(state, userMessage),
-        npcMemory: updateNpcMemory(state.npcMemory, state.npc, state.location),
+        ...state,
+        pendingNpcDebugQuery: state.pendingNpcDebugQuery ?? debugNpcQuery(userMessage),
     };
     const directions = [
         "Maintain Aether Nova header format. Start with exactly five bold header lines followed by *** before narration.",
@@ -1483,6 +1490,196 @@ export function debugNpcQuery(userMessage: string): string | null {
     return match == null ? null : cleanFragment(match[1]);
 }
 
+export function applyNpcMemoryCommands(
+    state: AetherNovaMessageState,
+    userMessage: string,
+): NpcMemoryCommandResult {
+    const commands = parseNpcMemoryCommands(userMessage);
+
+    if (commands.length === 0) {
+        return {
+            state,
+            cleanedMessage: userMessage,
+            systemMessage: null,
+            applied: false,
+        };
+    }
+
+    let npcMemory = coerceNpcMemory(state.npcMemory);
+    const messages: string[] = [];
+
+    for (const command of commands) {
+        const result = applyNpcMemoryCommand(npcMemory, command);
+        npcMemory = result.memory;
+        messages.push(result.message);
+    }
+
+    return {
+        state: {
+            ...state,
+            npcMemory,
+        },
+        cleanedMessage: stripNpcMemoryCommands(userMessage),
+        systemMessage: messages.length > 0 ? messages.join("\n") : null,
+        applied: true,
+    };
+}
+
+interface NpcMemoryCommand {
+    raw: string;
+    action: "delete" | "set" | "clearfacts";
+    target: string;
+    updates: Partial<NpcMemoryCommandUpdates>;
+}
+
+interface NpcMemoryCommandUpdates {
+    name: string;
+    roleTitle: string;
+    racial: string;
+    relationship: string;
+    knownFacts: string[];
+    addFacts: string[];
+}
+
+function parseNpcMemoryCommands(userMessage: string): NpcMemoryCommand[] {
+    return Array.from(userMessage.matchAll(/[\[【]\s*npc\s+memory\s+([^\]】]+)[\]】]/gi))
+        .map((match) => parseNpcMemoryCommandBody(match[1]))
+        .filter((command): command is NpcMemoryCommand => command != null);
+}
+
+function parseNpcMemoryCommandBody(rawBody: string): NpcMemoryCommand | null {
+    const segments = splitTopLevel(rawBody, "|").map(cleanFragment).filter(Boolean);
+    const head = segments.shift() ?? "";
+    const actionMatch = /^(delete|remove|clear|set|update|clearfacts|clear\s+facts)\s*:?\s*(.+)$/i.exec(head);
+
+    if (actionMatch == null) {
+        return null;
+    }
+
+    const actionWord = actionMatch[1].toLowerCase().replace(/\s+/g, "");
+    const action: NpcMemoryCommand["action"] = actionWord === "delete" || actionWord === "remove" || actionWord === "clear"
+        ? "delete"
+        : actionWord === "clearfacts"
+            ? "clearfacts"
+            : "set";
+    const target = cleanNpcMemoryName(actionMatch[2]);
+
+    if (target.length === 0) {
+        return null;
+    }
+
+    return {
+        raw: cleanFragment(rawBody),
+        action,
+        target,
+        updates: parseNpcMemoryCommandUpdates(segments),
+    };
+}
+
+function parseNpcMemoryCommandUpdates(segments: string[]): Partial<NpcMemoryCommandUpdates> {
+    const updates: Partial<NpcMemoryCommandUpdates> = {};
+    const addFacts: string[] = [];
+
+    for (const segment of segments) {
+        const match = /^([A-Za-z ]+)\s*(?:=|:)\s*(.+)$/i.exec(segment);
+        if (match == null) {
+            continue;
+        }
+
+        const key = match[1].toLowerCase().replace(/\s+/g, "");
+        const value = cleanFragment(match[2]);
+        if (value.length === 0) {
+            continue;
+        }
+
+        if (key === "name" || key === "fullname" || key === "fullnpcname") {
+            updates.name = cleanNpcMemoryName(value);
+        } else if (key === "role" || key === "title" || key === "roletitle") {
+            updates.roleTitle = cleanMemoryField(value, "Unknown role/title");
+        } else if (key === "race" || key === "racial") {
+            updates.racial = cleanMemoryField(value, "Unknown racial");
+        } else if (key === "relationship" || key === "relation") {
+            updates.relationship = cleanMemoryField(value, "Unknown");
+        } else if (key === "knownfacts" || key === "facts") {
+            updates.knownFacts = splitNpcMemoryFacts(value);
+        } else if (key === "fact" || key === "knownfact" || key === "addfact") {
+            addFacts.push(...splitNpcMemoryFacts(value));
+        }
+    }
+
+    if (addFacts.length > 0) {
+        updates.addFacts = addFacts;
+    }
+
+    return updates;
+}
+
+function applyNpcMemoryCommand(memory: NpcMemoryStore, command: NpcMemoryCommand): {memory: NpcMemoryStore; message: string} {
+    const next = coerceNpcMemory(memory);
+    const key = resolveNpcMemoryKey(command.target, next);
+
+    if (command.action === "delete") {
+        if (key == null) {
+            return {memory: next, message: `NPC memory command: no stored memory found for ${command.target}.`};
+        }
+
+        const deletedName = next[key]?.name ?? command.target;
+        delete next[key];
+        return {memory: next, message: `NPC memory command: deleted ${deletedName}.`};
+    }
+
+    if (command.action === "clearfacts") {
+        if (key == null) {
+            return {memory: next, message: `NPC memory command: no stored memory found for ${command.target}.`};
+        }
+
+        next[key] = {
+            ...next[key],
+            knownFacts: [],
+        };
+        return {memory: next, message: `NPC memory command: cleared KnownFacts for ${next[key].name}.`};
+    }
+
+    const previous = key == null ? null : next[key];
+    const name = completeNpcMemoryName(command.updates.name ?? command.target, previous, next);
+    const nextKey = npcMemoryKey(name);
+    const entry: NpcMemoryEntry = {
+        name,
+        roleTitle: cleanMemoryField(command.updates.roleTitle ?? previous?.roleTitle, "Unknown role/title"),
+        racial: cleanMemoryField(command.updates.racial ?? previous?.racial, "Unknown racial"),
+        relationship: cleanMemoryField(command.updates.relationship ?? previous?.relationship, "Unknown"),
+        knownFacts: command.updates.knownFacts != null
+            ? mergeKnownFacts([], command.updates.knownFacts)
+            : mergeKnownFacts(previous?.knownFacts ?? [], command.updates.addFacts ?? []),
+    };
+
+    if (key != null && key !== nextKey) {
+        delete next[key];
+    }
+
+    next[nextKey] = entry;
+
+    return {
+        memory: next,
+        message: `NPC memory command: saved ${entry.name}.`,
+    };
+}
+
+function splitNpcMemoryFacts(value: string): string[] {
+    return value
+        .split(/\s*;\s*/g)
+        .map(cleanFactText)
+        .filter(Boolean);
+}
+
+function stripNpcMemoryCommands(userMessage: string): string {
+    return normalizeLineEndings(userMessage)
+        .replace(/[\[【]\s*npc\s+memory\s+[^\]】]+[\]】]/gi, "")
+        .replace(/[ \t]+\n/g, "\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+}
+
 function normalizePendingNpcDebugQuery(value: unknown): string | null {
     return typeof value === "string" && cleanFragment(value).length > 0 ? cleanFragment(value) : null;
 }
@@ -1502,30 +1699,40 @@ function splitNpcTitleFromName(value: string): {name: string; title: string} {
 }
 
 function inferNpcRoleTitle(headerEntry: NpcHeaderMemoryEntry, previous: NpcMemoryEntry | null, context: string): string {
-    const direct = inferRoleTitleFromContext(headerEntry.name, context) || headerEntry.titleFromName;
-    const withDomain = direct.length > 0 && /\bsolmeryn\b/i.test(context) && /^king$/i.test(direct)
-        ? "King of Solmeryn"
-        : direct;
+    const nearby = nearNpcContext(headerEntry.name, context);
+    const direct = inferRoleTitleFromContext(headerEntry.name, `${headerEntry.status}\n${nearby}`) || headerEntry.titleFromName;
 
-    return cleanMemoryField(withDomain || previous?.roleTitle, "Unknown role/title");
+    return cleanMemoryField(direct || previous?.roleTitle, "Unknown role/title");
 }
 
 function inferRoleTitleFromContext(name: string, context: string): string {
     const nameSource = npcNameRegexSource(name);
     const firstNameSource = npcNameRegexSource(firstNameOf(name));
-    const titleSource = "(King|Queen|Prince|Princess|Emperor|Empress|Lord|Lady|Duke|Duchess|Captain|Commander|General|Minister|Priest|Priestess|Knight|Guard|Merchant|Broker|Informant|Innkeeper)";
+    const titleSource = "(King|Queen|Prince|Princess|Emperor|Empress|Lord|Lady|Duke|Duchess|Captain|Commander|General|Minister|Priest|Priestess|Knight|Guard|Merchant|Broker|Informant|Innkeeper|Market\\s+broker|Information\\s+broker|Relic\\s+broker|Artifact\\s+broker)";
     const before = new RegExp(`\\b${titleSource}(?:\\s+of\\s+([A-Z][A-Za-z'._ -]{1,40}))?\\s+(?:${nameSource}|${firstNameSource})\\b`, "i").exec(context);
 
     if (before != null) {
-        return before[2] == null ? titleCase(before[1]) : `${titleCase(before[1])} of ${cleanFragment(before[2])}`;
+        return before[2] == null ? normalizeRoleTitle(before[1]) : `${normalizeRoleTitle(before[1])} of ${cleanFragment(before[2])}`;
     }
 
-    const after = new RegExp(`\\b(?:${nameSource}|${firstNameSource})\\b[^.!?\\n]{0,80}\\b${titleSource}(?:\\s+of\\s+([A-Z][A-Za-z'._ -]{1,40}))?\\b`, "i").exec(context);
+    const after = new RegExp(`\\b(?:${nameSource}|${firstNameSource})\\b\\s*(?:,|[-—–]|\\bis\\b|\\bwas\\b|\\bas\\b|\\bthe\\b|\\ban?\\b|\\bknown\\s+as\\b|\\bcalled\\b|\\bworks\\s+as\\b|\\bserves\\s+as\\b)\\s*(?:the\\s+|an?\\s+)?${titleSource}(?:\\s+of\\s+([A-Z][A-Za-z'._ -]{1,40}))?\\b`, "i").exec(context);
     if (after != null) {
-        return after[2] == null ? titleCase(after[1]) : `${titleCase(after[1])} of ${cleanFragment(after[2])}`;
+        return after[2] == null ? normalizeRoleTitle(after[1]) : `${normalizeRoleTitle(after[1])} of ${cleanFragment(after[2])}`;
+    }
+
+    const marketBroker = new RegExp(`\\b(?:${nameSource}|${firstNameSource})\\b[^.!?\\n]{0,60}\\b(?:market|information|relic|artifact|scroll)\\s+broker\\b`, "i").exec(context);
+    if (marketBroker != null) {
+        return "Market broker";
     }
 
     return "";
+}
+
+function normalizeRoleTitle(value: string): string {
+    return cleanFragment(value)
+        .toLowerCase()
+        .replace(/\b[a-z]/g, (char) => char.toUpperCase())
+        .replace(/\bBroker\b/g, "broker");
 }
 
 function inferNpcRacial(headerEntry: NpcHeaderMemoryEntry, previous: NpcMemoryEntry | null, context: string): string {
@@ -1659,7 +1866,7 @@ function resolveNpcMemoryKey(name: string, memory: NpcMemoryStore): string | nul
 function nearNpcContext(name: string, context: string): string {
     const sentences = npcMemorySentences(context);
     const related = sentences.filter((sentence) => npcMentionedInText(name, sentence));
-    return related.length > 0 ? related.join(" ") : context;
+    return related.join(" ");
 }
 
 function npcMentionedInText(name: string, text: string): boolean {

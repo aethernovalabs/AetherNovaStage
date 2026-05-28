@@ -256,6 +256,7 @@ Name sebaiknya memakai nama lengkap minimal dua kata jika sudah pernah diketahui
 Role/title dan racial dipakai untuk mencegah AI melupakan identitas penting NPC saat data lengkap tidak selalu muncul di header.
 Relationship boleh berubah mengikuti perkembangan cerita, misalnya dari suspicious/formal menjadi friendly/trusted atau hostile.
 KnownFacts berisi fakta yang diketahui NPC itu, seperti `{{user}} told Halvair their name`, `{{user}} told Yume about memory loss`, atau `{{user}} threatened Halvair`.
+Pengambilan role/title harus dekat dengan nama NPC itu atau berasal dari command manual. Jangan mengambil role/title dari topik obrolan yang membahas NPC lain. Contoh: saat Debi hadir tetapi narasi membahas King Solmeryn, Debi tidak boleh menjadi `King of Solmeryn`.
 
 Injection ke prompt bersifat selektif:
 
@@ -270,6 +271,18 @@ Jika user mengetik `[debug: npc nama]`, stage menyimpan debug request ke state d
 Debug UI sementara:
 
 Saat `position: ADJACENT` dan config `debugUi` aktif, stage menampilkan panel debug yang hanya terlihat oleh user. Panel ini memperlihatkan header state terakhir, jumlah dan isi `npcMemory`, activity log dari `load`, `setState`, `beforePrompt`, dan `afterResponse`, `stageDirections` terakhir, `systemMessage` debug terakhir, serta pesan user terakhir yang sedang diproses. Data panel tidak dikirim ke LLM kecuali bagian `stageDirections` yang memang dikirim oleh `beforePrompt`.
+
+Command memory manual:
+
+Command ditulis dalam bracket dan dihapus dari pesan sebelum dikirim ke LLM.
+
+```text
+[npc memory delete: Debi]
+[npc memory clearfacts: Debi]
+[npc memory set: Debi | role=Market broker | racial=Human | relationship=guarded | fact={{user}} paid Kaelen to find Debi]
+```
+
+`set` boleh memakai field `name`, `role`, `racial`, `relationship`, `fact`, atau `knownFacts`. Field `fact` menambah fakta ke KnownFacts lama; `knownFacts` mengganti daftar KnownFacts dengan isi baru yang dipisahkan `;`.
 
 ### Narrative Format
 
@@ -411,6 +424,7 @@ Penyesuaian yang sudah diterapkan:
 22. Status slot classifier ditambahkan agar pakaian/naked dideteksi dari isi slot, urutan status salah seperti `position; body/racial; clothing` dikoreksi menjadi `clothing; position; body/racial`, dan detail eyes/gaze/tail/ears/wings/horns dipindahkan dari position ke body/racial detail.
 23. `npcMemory` ditambahkan agar stage menyimpan Name, Role/Title, Racial, Relationship, dan KnownFacts per NPC, lalu menginject data lengkap hanya untuk NPC di header aktif dan identitas saja untuk NPC yang sekadar disebut user. Debug NPC memakai pending state dan localStorage, tetapi hasil debug dikirim sebagai `systemMessage`, bukan disisipkan ke isi response, agar tidak mengganggu `Thread`.
 24. Debug UI sementara ditambahkan agar state header, `npcMemory`, lifecycle activity, `stageDirections`, dan `systemMessage` debug bisa diperiksa tanpa menempelkan debug ke narasi.
+25. Role/title NPC memory diperketat agar hanya mengambil title yang dekat dengan nama NPC terkait, serta command manual `[npc memory set/delete/clearfacts: ...]` ditambahkan untuk koreksi data saat testing.
 
 Jika prompt header asli nanti diubah lagi:
 
