@@ -229,9 +229,9 @@ function AetherNovaDebugPanel({getSnapshot}: {getSnapshot: () => DebugSnapshot})
                     <span>{npcMemoryEntries.length}</span>
                 </div>
                 <div className="aether-debug-command-guide" aria-label="NPC memory command examples">
-                    <code>[npc memory delete: Debi]</code>
-                    <code>[npc memory clearfacts: Debi]</code>
-                    <code>[npc memory set: Debi | role=Market broker | racial=Human | relationship=guarded | fact={"{{user}}"} paid Kaelen to find Debi]</code>
+                    <code>~npc memory delete: Debi~</code>
+                    <code>~npc memory clearfacts: Debi~</code>
+                    <code>~npc memory set: Debi | role=Market broker | racial=Human | relationship=guarded | fact={"{{user}}"} paid Kaelen to find Debi~</code>
                 </div>
                 {npcMemoryEntries.length === 0 ? (
                     <p className="aether-debug-empty">No NPC memory stored yet.</p>

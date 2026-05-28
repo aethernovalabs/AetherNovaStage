@@ -277,9 +277,9 @@ Command memory manual:
 Command ditulis dalam bracket dan dihapus dari pesan sebelum dikirim ke LLM. Command juga diterapkan ulang setelah `afterResponse`, agar `delete`, `clearfacts`, atau `set` tidak langsung tertimpa lagi saat NPC masih muncul di header response berikutnya.
 
 ```text
-[npc memory delete: Debi]
-[npc memory clearfacts: Debi]
-[npc memory set: Debi | role=Market broker | racial=Human | relationship=guarded | fact={{user}} paid Kaelen to find Debi]
+~npc memory delete: Debi~
+~npc memory clearfacts: Debi~
+~npc memory set: Debi | role=Market broker | racial=Human | relationship=guarded | fact={{user}} paid Kaelen to find Debi~
 ```
 
 `set` boleh memakai field `name`, `role`, `racial`, `relationship`, `fact`, atau `knownFacts`. Field `fact` menambah fakta ke KnownFacts lama; `knownFacts` mengganti daftar KnownFacts dengan isi baru yang dipisahkan `;`.
@@ -427,6 +427,7 @@ Penyesuaian yang sudah diterapkan:
 25. Role/title NPC memory diperketat agar hanya mengambil title yang dekat dengan nama NPC terkait, serta command manual `[npc memory set/delete/clearfacts: ...]` ditambahkan untuk koreksi data saat testing.
 26. Debug UI dinaikkan ke `V1.1`, command guide ditampilkan dekat `NPC Memory`, dan command memory diterapkan ulang setelah response agar hasil manual tidak langsung dibuat ulang oleh auto-memory dari header.
 27. Debug UI dinaikkan ke `V1.2`; `pendingNpcMemoryCommand` disimpan ke messageState agar command tetap tersedia untuk `afterResponse` walaupun stage lifecycle memakai instance/state berbeda. Panel juga menampilkan `Pending Memory Command`.
+28. Format command NPC memory diubah dari `[...]` menjadi `~...~` (tilde). Regex pattern di `aetherNovaHeader.ts` diubah dari `[\[【]...[\】】]` menjadi `~...~`. Command guide di debug UI dan dokumentasi juga diperbarui. Contoh: `~npc memory delete: Debi~`, `~npc memory set: Debi | role=...~`.
 
 Jika prompt header asli nanti diubah lagi:
 
