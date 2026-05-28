@@ -238,6 +238,35 @@ Untuk penghitungan lintas pecahan, stage memakai konversi internal `1G = 100S` d
 Jika belum ada wallet yang pernah tersimpan, wallet valid pertama dari header dipakai sebagai nilai awal, termasuk first message atau alternate first message; stage tidak memaksa angka awal menjadi `0G ; 0S ; 0C`.
 Stage tidak mengizinkan NPC atau narasi membaca wallet sebagai info in-character kecuali uang itu memang diketahui lewat cerita.
 
+### NPC Memory
+
+Stage menyimpan perkembangan NPC yang pernah muncul di header ke state internal `npcMemory`.
+
+Data yang disimpan:
+
+```md
+Name: Full NPC Name
+Role/Title: role/title penting
+Racial: race + detail racial penting
+Relationship with {{user}}: relasi/sikap terbaru
+KnownFacts: fakta yang diketahui NPC itu
+```
+
+Name sebaiknya memakai nama lengkap minimal dua kata jika sudah pernah diketahui, misalnya `Halvair Montreval`. Jika header berikutnya hanya memakai first name seperti `Halvair`, stage mencocokkan ke memory lama dan tetap memakai nama lengkap yang tersimpan.
+Role/title dan racial dipakai untuk mencegah AI melupakan identitas penting NPC saat data lengkap tidak selalu muncul di header.
+Relationship boleh berubah mengikuti perkembangan cerita, misalnya dari suspicious/formal menjadi friendly/trusted atau hostile.
+KnownFacts berisi fakta yang diketahui NPC itu, seperti `{{user}} told Halvair their name`, `{{user}} told Yume about memory loss`, atau `{{user}} threatened Halvair`.
+
+Injection ke prompt bersifat selektif:
+
+- Jika NPC tertulis di header aktif, stage menginject Name, Role/Title, Racial, Relationship, dan KnownFacts NPC itu.
+- Jika NPC hanya disebut oleh user dalam pesan, stage hanya menginject Name, Role/Title, Racial, dan Relationship. KnownFacts tidak ikut diinject sampai NPC itu masuk header/scene.
+- Jika NPC tidak ada di header dan tidak disebut user, data tetap disimpan tetapi tidak diinject.
+
+Debug sementara:
+
+Jika user mengetik `[debug: npc nama]`, stage menambahkan footer debug pada output berisi data NPC yang tersimpan, misalnya `[debug: npc halvair]`.
+
 ### Narrative Format
 
 Stage menjaga format narasi tanpa rewrite besar.
@@ -380,6 +409,7 @@ Penyesuaian yang sudah diterapkan:
 20. Evidence wallet dibedakan antara narasi dan dialog: nominal uang di dalam dialog tidak memicu perubahan wallet, dan jika ada transaksi non-dialog yang jelas stage memilih arah hitungan yang benar daripada angka wallet AI yang keliru.
 21. Formatter dialog diperbaiki agar speaker line yang salah dibungkus `*...*` tetap dibaca sebagai dialog, sementara single-quoted atau italic action beat sebelum quote dialog dipertahankan sebagai action beat.
 22. Status slot classifier ditambahkan agar pakaian/naked dideteksi dari isi slot, urutan status salah seperti `position; body/racial; clothing` dikoreksi, dan detail eyes/gaze/tail/ears/wings/horns dipindahkan dari position ke body/racial detail.
+23. `npcMemory` ditambahkan agar stage menyimpan Name, Role/Title, Racial, Relationship, dan KnownFacts per NPC, lalu menginject data lengkap hanya untuk NPC di header aktif dan identitas saja untuk NPC yang sekadar disebut user.
 
 Jika prompt header asli nanti diubah lagi:
 

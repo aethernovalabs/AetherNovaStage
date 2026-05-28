@@ -42,7 +42,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         this.latestUserMessage = userMessage.content;
 
         return {
-            stageDirections: buildStageDirections(this.state),
+            stageDirections: buildStageDirections(this.state, this.latestUserMessage),
             messageState: this.state,
             modifiedMessage: null,
             systemMessage: null,

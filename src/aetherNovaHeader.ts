@@ -11,7 +11,18 @@ export interface AetherNovaMessageState {
     thread: string;
     wallet: string;
     walletInitialized: boolean;
+    npcMemory: NpcMemoryStore;
 }
+
+export interface NpcMemoryEntry {
+    name: string;
+    roleTitle: string;
+    racial: string;
+    relationship: string;
+    knownFacts: string[];
+}
+
+export type NpcMemoryStore = Record<string, NpcMemoryEntry>;
 
 interface ExtractedHeader {
     locationLine: string | null;
@@ -70,6 +81,7 @@ const DEFAULT_STATE: AetherNovaMessageState = {
     thread: "None",
     wallet: "0G ; 0S ; 0C",
     walletInitialized: false,
+    npcMemory: {},
 };
 
 const RACE_KEYWORDS = [
@@ -1125,11 +1137,12 @@ export function coerceHeaderState(
         thread: normalizeThreadLine(raw.thread ?? "", fallback.thread, ""),
         wallet: walletState.value,
         walletInitialized: walletState.initialized,
+        npcMemory: coerceNpcMemory(raw.npcMemory, fallback.npcMemory),
     };
 }
 
-export function buildStageDirections(state: AetherNovaMessageState): string {
-    return [
+export function buildStageDirections(state: AetherNovaMessageState, userMessage: string = ""): string {
+    const directions = [
         "Maintain Aether Nova header format. Start with exactly five bold header lines followed by *** before narration.",
         `Location: ${state.location}`,
         `Time: ${state.timeOfDay} | ${state.clock}`,
@@ -1138,7 +1151,14 @@ export function buildStageDirections(state: AetherNovaMessageState): string {
         `Thread: ${state.thread}`,
         `Wallet: ${state.wallet}`,
         "Status format: Position; Clothes/disguise; optional body/racial detail. Keep position/clothes from last state unless the scene clearly changes. Use Thread items separated by \" ; \". Wallet changes only with clear in-story transaction/reward/loss evidence.",
-    ].join("\n");
+    ];
+    const npcMemoryContext = buildNpcMemoryDirections(state, userMessage);
+
+    if (npcMemoryContext.length > 0) {
+        directions.push(npcMemoryContext);
+    }
+
+    return directions.join("\n");
 }
 
 export function normalizeAetherNovaResponse(
@@ -1165,10 +1185,13 @@ export function normalizeAetherNovaResponse(
         thread: normalizeThreadLine(extracted.threadLine ?? "", previousState.thread, correctionContext),
         wallet: wallet.value,
         walletInitialized: wallet.initialized,
+        npcMemory: previousState.npcMemory,
     };
+    state.npcMemory = updateNpcMemory(previousState.npcMemory, state.npc, `${state.location}\n${correctionContext}`);
+    const debugFooter = buildNpcDebugFooter(context, state.npcMemory);
 
     return {
-        content: formatResponse(state, extracted.narrative),
+        content: appendDebugFooter(formatResponse(state, extracted.narrative), debugFooter),
         state,
     };
 }
@@ -1198,6 +1221,450 @@ function createDefaultState(characters: Record<string, Character>): AetherNovaMe
         ...DEFAULT_STATE,
         npc: `${name} - ${race} (${defaultNpcStatusForRace(race)})`,
     };
+}
+
+function coerceNpcMemory(rawMemory: unknown, fallbackMemory: NpcMemoryStore = {}): NpcMemoryStore {
+    const next: NpcMemoryStore = {};
+
+    for (const entry of Object.values(fallbackMemory)) {
+        const normalized = normalizeNpcMemoryEntry(entry);
+        if (normalized != null) {
+            next[npcMemoryKey(normalized.name)] = normalized;
+        }
+    }
+
+    if (rawMemory == null || typeof rawMemory !== "object") {
+        return next;
+    }
+
+    for (const value of Object.values(rawMemory as Record<string, unknown>)) {
+        const normalized = normalizeNpcMemoryEntry(value);
+        if (normalized != null) {
+            next[npcMemoryKey(normalized.name)] = normalized;
+        }
+    }
+
+    return next;
+}
+
+function normalizeNpcMemoryEntry(value: unknown): NpcMemoryEntry | null {
+    if (value == null || typeof value !== "object") {
+        return null;
+    }
+
+    const raw = value as Partial<NpcMemoryEntry>;
+    const name = typeof raw.name === "string" ? cleanNpcMemoryName(raw.name) : "";
+
+    if (name.length === 0) {
+        return null;
+    }
+
+    const knownFacts = Array.isArray(raw.knownFacts)
+        ? raw.knownFacts.filter((fact): fact is string => typeof fact === "string").map(cleanFactText).filter(Boolean).slice(0, 8)
+        : [];
+
+    return {
+        name,
+        roleTitle: cleanMemoryField(raw.roleTitle, "Unknown role/title"),
+        racial: cleanMemoryField(raw.racial, "Unknown racial"),
+        relationship: cleanMemoryField(raw.relationship, "Unknown"),
+        knownFacts,
+    };
+}
+
+function buildNpcMemoryDirections(state: AetherNovaMessageState, userMessage: string): string {
+    const store = coerceNpcMemory(state.npcMemory);
+    const presentKeys = npcMemoryKeysFromHeader(state.npc, store);
+    const mentionedKeys = npcMemoryKeysMentionedInText(userMessage, store).filter((key) => !presentKeys.includes(key));
+    const presentEntries = presentKeys.map((key) => store[key]).filter((entry): entry is NpcMemoryEntry => entry != null);
+    const mentionedEntries = mentionedKeys.map((key) => store[key]).filter((entry): entry is NpcMemoryEntry => entry != null);
+
+    if (presentEntries.length === 0 && mentionedEntries.length === 0) {
+        return "";
+    }
+
+    const lines = [
+        "NPC Memory Context (background continuity; do not mention this system unless naturally relevant):",
+    ];
+
+    if (presentEntries.length > 0) {
+        lines.push("Present NPCs, include their KnownFacts as in-story memory:");
+        for (const entry of presentEntries.slice(0, 4)) {
+            lines.push(`- ${formatNpcMemoryForPrompt(entry, true)}`);
+        }
+    }
+
+    if (mentionedEntries.length > 0) {
+        lines.push("Mentioned-only NPCs, inject identity only; do not inject their private KnownFacts unless they enter the scene/header:");
+        for (const entry of mentionedEntries.slice(0, 4)) {
+            lines.push(`- ${formatNpcMemoryForPrompt(entry, false)}`);
+        }
+    }
+
+    return lines.join("\n");
+}
+
+function updateNpcMemory(previousMemory: NpcMemoryStore, npcLine: string, context: string): NpcMemoryStore {
+    const next = coerceNpcMemory(previousMemory);
+    const entries = npcHeaderMemoryEntries(npcLine);
+
+    for (const headerEntry of entries) {
+        const existingKey = resolveNpcMemoryKey(headerEntry.name, next);
+        const previous = existingKey == null ? null : next[existingKey];
+        const name = completeNpcMemoryName(headerEntry.name, previous, next);
+        const key = npcMemoryKey(name);
+        const roleTitle = inferNpcRoleTitle(headerEntry, previous, context);
+        const racial = inferNpcRacial(headerEntry, previous, context);
+        const relationship = inferNpcRelationship(headerEntry, previous, context);
+        const knownFacts = mergeKnownFacts(previous?.knownFacts ?? [], inferNpcKnownFacts(headerEntry, context));
+
+        if (existingKey != null && existingKey !== key) {
+            delete next[existingKey];
+        }
+
+        next[key] = {
+            name,
+            roleTitle,
+            racial,
+            relationship,
+            knownFacts,
+        };
+    }
+
+    return next;
+}
+
+interface NpcHeaderMemoryEntry {
+    name: string;
+    firstName: string;
+    titleFromName: string;
+    race: string;
+    status: string;
+}
+
+function npcHeaderMemoryEntries(npcLine: string): NpcHeaderMemoryEntry[] {
+    if (isNoNpcValue(npcLine)) {
+        return [];
+    }
+
+    return splitTopLevel(npcLine, ",")
+        .map((entry) => {
+            const parsed = parseIdentityStatus(entry);
+            const identity = splitIdentity(parsed.identity, "Unknown NPC", "Human");
+            const titleName = splitNpcTitleFromName(identity.left);
+            const name = cleanNpcMemoryName(titleName.name);
+
+            if (name.length === 0 || /^unknown npc$/i.test(name)) {
+                return null;
+            }
+
+            return {
+                name,
+                firstName: firstNameOf(name),
+                titleFromName: titleName.title,
+                race: cleanMemoryField(identity.right, "Unknown racial"),
+                status: cleanFragment(parsed.status),
+            };
+        })
+        .filter((entry): entry is NpcHeaderMemoryEntry => entry != null);
+}
+
+function npcMemoryKeysFromHeader(npcLine: string, memory: NpcMemoryStore): string[] {
+    return npcHeaderMemoryEntries(npcLine)
+        .map((entry) => resolveNpcMemoryKey(entry.name, memory))
+        .filter((key): key is string => key != null);
+}
+
+function npcMemoryKeysMentionedInText(text: string, memory: NpcMemoryStore): string[] {
+    const keys: string[] = [];
+
+    for (const [key, entry] of Object.entries(memory)) {
+        if (npcMemoryEntryMentioned(entry, text)) {
+            keys.push(key);
+        }
+    }
+
+    return keys;
+}
+
+function npcMemoryEntryMentioned(entry: NpcMemoryEntry, text: string): boolean {
+    const clean = normalizeLineEndings(text);
+    const names = [entry.name, firstNameOf(entry.name)].filter((name) => name.length > 0);
+    return names.some((name) => new RegExp(`\\b${npcNameRegexSource(name)}\\b`, "i").test(clean));
+}
+
+function formatNpcMemoryForPrompt(entry: NpcMemoryEntry, includeKnownFacts: boolean): string {
+    const parts = [
+        `Name: ${entry.name}`,
+        `Role/Title: ${entry.roleTitle}`,
+        `Racial: ${entry.racial}`,
+        `Relationship with {{user}}: ${entry.relationship}`,
+    ];
+
+    if (includeKnownFacts) {
+        parts.push(`KnownFacts: ${entry.knownFacts.length > 0 ? entry.knownFacts.join(" ; ") : "None recorded"}`);
+    }
+
+    return parts.join(" | ");
+}
+
+function buildNpcDebugFooter(userMessage: string, memory: NpcMemoryStore): string {
+    const query = debugNpcQuery(userMessage);
+
+    if (query == null) {
+        return "";
+    }
+
+    const key = resolveNpcMemoryKey(query, memory);
+    const entry = key == null ? null : memory[key];
+
+    if (entry == null) {
+        return `[debug: npc ${query}]\nNo stored NPC memory found.`;
+    }
+
+    return [
+        `[debug: npc ${query}]`,
+        `Name: ${entry.name}`,
+        `Role/Title: ${entry.roleTitle}`,
+        `Racial: ${entry.racial}`,
+        `Relationship with {{user}}: ${entry.relationship}`,
+        `KnownFacts: ${entry.knownFacts.length > 0 ? entry.knownFacts.join(" ; ") : "None recorded"}`,
+    ].join("\n");
+}
+
+function appendDebugFooter(content: string, footer: string): string {
+    return footer.length === 0 ? content : `${content}\n\n---\n${footer}`;
+}
+
+function debugNpcQuery(userMessage: string): string | null {
+    const match = userMessage.match(/\[debug:\s*npc\s+([^\]]+)\]/i);
+    return match == null ? null : cleanFragment(match[1]);
+}
+
+function splitNpcTitleFromName(value: string): {name: string; title: string} {
+    const clean = cleanNpcMemoryName(value);
+    const match = clean.match(/^(King|Queen|Prince|Princess|Emperor|Empress|Lord|Lady|Duke|Duchess|Sir|Captain|Commander|General|Minister|Priest|Priestess|Knight|Guard|Merchant|Broker|Informant|Innkeeper)\s+(.+)$/i);
+
+    if (match == null) {
+        return {name: clean, title: ""};
+    }
+
+    return {
+        name: cleanNpcMemoryName(match[2]),
+        title: titleCase(match[1]),
+    };
+}
+
+function inferNpcRoleTitle(headerEntry: NpcHeaderMemoryEntry, previous: NpcMemoryEntry | null, context: string): string {
+    const direct = inferRoleTitleFromContext(headerEntry.name, context) || headerEntry.titleFromName;
+    const withDomain = direct.length > 0 && /\bsolmeryn\b/i.test(context) && /^king$/i.test(direct)
+        ? "King of Solmeryn"
+        : direct;
+
+    return cleanMemoryField(withDomain || previous?.roleTitle, "Unknown role/title");
+}
+
+function inferRoleTitleFromContext(name: string, context: string): string {
+    const nameSource = npcNameRegexSource(name);
+    const firstNameSource = npcNameRegexSource(firstNameOf(name));
+    const titleSource = "(King|Queen|Prince|Princess|Emperor|Empress|Lord|Lady|Duke|Duchess|Captain|Commander|General|Minister|Priest|Priestess|Knight|Guard|Merchant|Broker|Informant|Innkeeper)";
+    const before = new RegExp(`\\b${titleSource}(?:\\s+of\\s+([A-Z][A-Za-z'._ -]{1,40}))?\\s+(?:${nameSource}|${firstNameSource})\\b`, "i").exec(context);
+
+    if (before != null) {
+        return before[2] == null ? titleCase(before[1]) : `${titleCase(before[1])} of ${cleanFragment(before[2])}`;
+    }
+
+    const after = new RegExp(`\\b(?:${nameSource}|${firstNameSource})\\b[^.!?\\n]{0,80}\\b${titleSource}(?:\\s+of\\s+([A-Z][A-Za-z'._ -]{1,40}))?\\b`, "i").exec(context);
+    if (after != null) {
+        return after[2] == null ? titleCase(after[1]) : `${titleCase(after[1])} of ${cleanFragment(after[2])}`;
+    }
+
+    return "";
+}
+
+function inferNpcRacial(headerEntry: NpcHeaderMemoryEntry, previous: NpcMemoryEntry | null, context: string): string {
+    const base = cleanMemoryField(headerEntry.race || previous?.racial, "Unknown racial");
+    const searchable = `${headerEntry.status}\n${nearNpcContext(headerEntry.name, context)}`;
+    const details: string[] = [];
+
+    if (/\b(?:nine[-\s]?tails?|nine[-\s]?tailed|ekor sembilan)\b/i.test(searchable)) {
+        details.push("nine tails");
+    } else if (/\btails?\b/i.test(searchable) && /\bkitsune\b/i.test(base)) {
+        details.push("tails visible");
+    }
+
+    if (/\bears?\b/i.test(searchable) && /\bkitsune|catkin\b/i.test(base)) {
+        details.push("animal ears");
+    }
+
+    const merged = mergeUniqueList(base.split(/\s*;\s*/g).concat(details).map(cleanFragment).filter(Boolean), 4);
+    return merged.length > 0 ? merged.join("; ") : "Unknown racial";
+}
+
+function inferNpcRelationship(headerEntry: NpcHeaderMemoryEntry, previous: NpcMemoryEntry | null, context: string): string {
+    const searchable = nearNpcContext(headerEntry.name, context).toLowerCase();
+    const labels: string[] = [];
+
+    if (/\b(arrogant|aloof|condescending|cold|proud)\b/.test(searchable)) {
+        labels.push("arrogant");
+    }
+    if (/\b(suspicious|wary|guarded|distrust|distrustful|cautious|curiga)\b/.test(searchable)) {
+        labels.push("suspicious");
+    }
+    if (/\b(formal|polite|court|audience|protocol|bow|bowed)\b/.test(searchable)) {
+        labels.push("formal");
+    }
+    if (/\b(friend|friendly|warm|trust|trusted|ally|allied|kind)\b/.test(searchable)) {
+        labels.push("friendly");
+    }
+    if (/\b(hostile|enemy|angry|threatened|threat|fight|attacked)\b/.test(searchable)) {
+        labels.push("hostile");
+    }
+    if (/\b(husband|wife|lover|beloved|intimate|affection|affectionate|flirt|kiss)\b/.test(searchable)) {
+        labels.push("intimate");
+    }
+
+    return labels.length > 0 ? mergeUniqueList(labels, 3).join(" / ") : cleanMemoryField(previous?.relationship, "Unknown");
+}
+
+function inferNpcKnownFacts(headerEntry: NpcHeaderMemoryEntry, context: string): string[] {
+    const firstName = headerEntry.firstName || headerEntry.name;
+    const facts: string[] = [];
+    const lower = context.toLowerCase();
+
+    if (/\b(?:my name is|call me|i am called|i'm called)\b/i.test(context)) {
+        facts.push(`{{user}} told ${firstName} their name`);
+    }
+
+    if (/\b(?:lost|lose|lost my|lost his|lost her|lost their)\s+(?:memory|memories)\b/i.test(context) || /\b(?:amnesia|cannot remember|can't remember|kehilangan ingatan)\b/i.test(context)) {
+        facts.push(`{{user}} told ${firstName} about memory loss`);
+    }
+
+    if (userActionTargetsNpc(headerEntry.name, context, "(?:threaten|threatened|threatening|warn|warned|warning|mengancam)")) {
+        facts.push(`{{user}} threatened or warned ${firstName}`);
+    }
+
+    for (const sentence of npcMemorySentences(context)) {
+        const toldPattern = new RegExp(`\\b(?:i|you|\\{\\{user\\}\\})\\s+(?:told|tell|revealed|reveal|informed|inform)\\s+(?:${npcNameRegexSource(headerEntry.name)}|${npcNameRegexSource(firstName)}|him|her|them|you)\\b\\s*(?:that\\s+)?(.{4,120})`, "i");
+        const told = toldPattern.exec(sentence);
+        if (told != null) {
+            facts.push(`{{user}} told ${firstName}: ${cleanFactText(told[1])}`);
+        }
+    }
+
+    if (lower.includes("{{user}} told") && npcMentionedInText(headerEntry.name, context)) {
+        facts.push(cleanFactText(context));
+    }
+
+    return mergeUniqueList(facts.map(cleanFactText).filter(Boolean), 4);
+}
+
+function userActionTargetsNpc(name: string, context: string, actionSource: string): boolean {
+    const nameSource = npcNameRegexSource(name);
+    const firstNameSource = npcNameRegexSource(firstNameOf(name));
+    const targetSource = `(?:${nameSource}|${firstNameSource})`;
+
+    return new RegExp(`\\b(?:i|you|\\{\\{user\\}\\})(?:\\s+\\w+){0,3}\\s+${actionSource}\\s+${targetSource}\\b`, "i").test(context)
+        || new RegExp(`\\b${targetSource}\\b[^.!?\\n]{0,40}\\b(?:was|is|had been|has been)\\s+${actionSource}\\b`, "i").test(context);
+}
+
+function npcMemorySentences(context: string): string[] {
+    return normalizeLineEndings(context)
+        .split(/(?:[.!?]\s+|\n+)/g)
+        .map(cleanFragment)
+        .filter((sentence) => sentence.length > 0);
+}
+
+function mergeKnownFacts(previous: string[], incoming: string[]): string[] {
+    return mergeUniqueList(previous.concat(incoming).map(cleanFactText).filter(Boolean), 8);
+}
+
+function completeNpcMemoryName(name: string, previous: NpcMemoryEntry | null, memory: NpcMemoryStore): string {
+    const clean = cleanNpcMemoryName(name);
+    if (clean.split(/\s+/).length >= 2) {
+        return clean;
+    }
+
+    if (previous != null && previous.name.split(/\s+/).length >= 2) {
+        return previous.name;
+    }
+
+    const first = firstNameOf(clean).toLowerCase();
+    const full = Object.values(memory).find((entry) => firstNameOf(entry.name).toLowerCase() === first && entry.name.split(/\s+/).length >= 2);
+    return full?.name ?? clean;
+}
+
+function resolveNpcMemoryKey(name: string, memory: NpcMemoryStore): string | null {
+    const clean = cleanNpcMemoryName(name);
+    const exactKey = npcMemoryKey(clean);
+
+    if (memory[exactKey] != null) {
+        return exactKey;
+    }
+
+    const first = firstNameOf(clean).toLowerCase();
+    const match = Object.entries(memory).find(([_key, entry]) => {
+        return first.length > 0 && firstNameOf(entry.name).toLowerCase() === first;
+    });
+
+    return match?.[0] ?? null;
+}
+
+function nearNpcContext(name: string, context: string): string {
+    const sentences = npcMemorySentences(context);
+    const related = sentences.filter((sentence) => npcMentionedInText(name, sentence));
+    return related.length > 0 ? related.join(" ") : context;
+}
+
+function npcMentionedInText(name: string, text: string): boolean {
+    return new RegExp(`\\b${npcNameRegexSource(name)}\\b`, "i").test(text)
+        || new RegExp(`\\b${npcNameRegexSource(firstNameOf(name))}\\b`, "i").test(text);
+}
+
+function npcNameRegexSource(name: string): string {
+    return cleanNpcMemoryName(name).split(/\s+/g).filter(Boolean).map(escapeRegExp).join("\\s+");
+}
+
+function npcMemoryKey(name: string): string {
+    return cleanNpcMemoryName(name).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function cleanNpcMemoryName(value: string): string {
+    return cleanHeaderText(value).replace(/\s+/g, " ").trim();
+}
+
+function cleanMemoryField(value: unknown, fallback: string): string {
+    return typeof value === "string" && cleanFragment(value).length > 0 ? cleanFragment(value) : fallback;
+}
+
+function cleanFactText(value: string): string {
+    return limitWords(cleanFragment(value).replace(/^that\s+/i, ""), 24);
+}
+
+function firstNameOf(name: string): string {
+    return cleanNpcMemoryName(name).split(/\s+/)[0] ?? "";
+}
+
+function mergeUniqueList(values: string[], maxItems: number): string[] {
+    const result: string[] = [];
+
+    for (const value of values) {
+        const clean = cleanFragment(value);
+        if (clean.length === 0 || result.some((entry) => sameText(entry, clean))) {
+            continue;
+        }
+
+        result.push(clean);
+        if (result.length >= maxItems) {
+            break;
+        }
+    }
+
+    return result;
+}
+
+function titleCase(value: string): string {
+    return value.toLowerCase().replace(/\b[a-z]/g, (char) => char.toUpperCase());
 }
 
 function extractHeader(content: string): ExtractedHeader {
