@@ -348,24 +348,34 @@ Verifikasi:
 
 ### Masalah
 
-Action beat dalam dialogue line seperti `'a wet laugh, broken by a moan as you kept moving, slow and deep inside her'` dibungkus single quotes `'...'` bukan asterisks `*...*`.
+Action beat dalam dialogue line (setelah `Speaker:`) dibungkus single quotes `'...'` bukan asterisks `*...*` dan teks dialogue ditambah kutip ekstra.
 
-**Penyebab** — dua fungsi saling terkait:
+Contoh salah:
+```
+Debi: "'whispered, vulnerable' "...Say it again...""
+```
 
-1. **`replaceInlineEmphasis`** (line 4733): mengonversi SEMUA `*...*` menjadi `'...'` tanpa pandang bulu — termasuk action beat multi-kata yang seharusnya tetap `*...*`.
-2. **`formatInlineNarrationInDialogue`** (line 4604): mencoba mengembalikan `'...'` → `*...*` hanya jika `looksLikeInlineNarrationBeat` mengembalikan `true`. Untuk beat panjang seperti `a wet laugh, broken by a moan...`:
-   - `inlineNarrationStartsLikeBeat` → false (mulai dengan "a", bukan kapital/he/she/they)
-   - `inlineNarrationStartsWithActionVerb` → false ("a" bukan action verb)
-   - `inlineNarrationHasBeatAction` → false ("laugh", "moan", "moving" tidak ada di keyword list)
-   - **Hasil**: `looksLikeInlineNarrationBeat` → false → `'...'` tidak dikembalikan ke `*...*`.
+Seharusnya:
+```
+Debi: *whispered, vulnerable* "...Say it again..."
+```
+
+### Penyebab
+
+`replaceInlineEmphasis` dipanggil di DALAM `normalizeDialogueText`. Fungsi ini mengonversi SEMUA `*...*` menjadi `'...'` untuk mencegah konflik dengan outer wrapper `*...*` di paragraf narasi.
+
+Namun, dialogue line TIDAK punya outer wrapper `*...*` — hanya paragraf narasi biasa yang dibungkus. Jadi konversi di dialogue line tidak perlu dan merusak:
+
+1. `*whispered, vulnerable*` → `'whispered, vulnerable'` (salah, seharusnya tetap `*...*`)
+2. `formatInlineNarrationInDialogue` gagal mengembalikan karena `looksLikeInlineNarrationBeat("whispered, vulnerable")` → false (2 kata, tanpa keyword)
+3. `normalizeDialogueText` melihat teks mulai dengan `'`, bukan `"` atau `*` → bungkus seluruh teks dengan `"..."` — hasilnya `"'whispered, vulnerable' "..."`
 
 ### Fix
 
-1. **`replaceInlineEmphasis`**: skip konversi jika konten sudah `looksLikeInlineNarrationBeat(clean) === true` — jangan rusak action beat yang sudah benar.
-2. **`looksLikeInlineNarrationBeat`**: tambah heuristic word-count. Konten `> 5` kata hampir pasti action beat, bukan inline emphasis. Ini menutup celah untuk beat yang tidak cocok keyword list.
+Hapus `replaceInlineEmphasis` dari `normalizeDialogueText`. Fungsi ini tetap ada di `normalizeNarrativeLine` (line 4373) untuk paragraf narasi yang benar-benar dibungkus `*...*`.
 
 ### Perubahan file
-- `src/aetherNovaHeader.ts`: `replaceInlineEmphasis` (line 4733), `looksLikeInlineNarrationBeat` (line 4678).
+- `src/aetherNovaHeader.ts`: `normalizeDialogueText` (line 4510) — hapus panggilan `replaceInlineEmphasis`.
 
 Verifikasi:
 

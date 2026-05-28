@@ -4507,7 +4507,7 @@ function parseDialogueLine(line: string): {speaker: string; text: string; bold: 
 }
 
 function normalizeDialogueText(value: string): string {
-    const clean = formatPlainActionBeatBetweenDialogue(formatInlineNarrationInDialogue(replaceInlineEmphasis(stripOuterSingleItalic(value.trim()))));
+    const clean = formatPlainActionBeatBetweenDialogue(formatInlineNarrationInDialogue(stripOuterSingleItalic(value.trim())));
     const repaired = formatLeadingMisquotedActionBeat(clean);
     const beatBeforeDialogue = formatLeadingActionBeatBeforeDialogue(repaired);
     const wrapped = wrapLeadingPlainActionBeat(beatBeforeDialogue);
@@ -4683,10 +4683,6 @@ function looksLikeInlineNarrationBeat(value: string): boolean {
         return false;
     }
 
-    if (words.length > 5) {
-        return true;
-    }
-
     return inlineNarrationStartsLikeBeat(clean)
         || inlineNarrationStartsWithActionVerb(clean)
         || inlineNarrationHasBeatAction(clean);
@@ -4737,9 +4733,7 @@ function stripOuterSingleItalic(value: string): string {
 function replaceInlineEmphasis(value: string): string {
     return value.replace(/(^|[^*])\*([^*\n]{1,80})\*(?!\*)/g, (_match, prefix: string, inner: string) => {
         const clean = inner.trim();
-        if (clean.length === 0) return _match;
-        if (looksLikeInlineNarrationBeat(clean)) return _match;
-        return `${prefix}'${clean}'`;
+        return clean.length > 0 ? `${prefix}'${clean}'` : _match;
     });
 }
 
