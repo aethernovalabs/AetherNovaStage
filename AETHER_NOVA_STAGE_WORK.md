@@ -294,15 +294,23 @@ Stage melakukan format narasi ringan:
 
 ## 10. Debug UI System
 
-Debug UI (di `Stage.tsx` render) saat ini: **Debug UI V1.5**.
+Debug UI (di `Stage.tsx` render) saat ini: **Debug UI V1.6**.
 
 Debug UI menampilkan:
 - Current state: Location, Time, You, NPC, Thread, Wallet, Pending NPC Debug, Pending Memory Command.
 - NPC Memory cards: semua NPC yang tersimpan dengan detail lengkap.
-- Stage Activity log: 30 event terakhir dengan timestamp.
+- Debug Logs terpisah per kategori:
+  - **NPC Memory Log**: command memory, perubahan jumlah memory, entry yang added/removed/changed.
+  - **Format Header Log**: field header yang berubah (`Location`, `Time`, `You`, `NPC`, `Thread`, `Wallet`) dengan detail before → after.
+  - **Format Narrative Log**: apakah response dimodifikasi, perubahan panjang teks, dan catatan apakah header ikut berubah.
+  - **Wallet / Thread Log**: fokus pada perubahan wallet dan thread.
+  - **Lifecycle Log**: `init`, `load`, `setState`, `beforePrompt`, `afterResponse`.
+  - **System Message Log**: system message yang dikirim balik oleh stage.
 - Stage Directions: isi `stageDirections` yang diinject ke prompt.
-- System Debug Message: system message terakhir.
+- Last System Message: system message terakhir. Bagian ini masih berguna untuk melihat pesan mentah terakhir yang dikirim stage, walau observasi utama sekarang ada di **System Message Log**.
 - Latest User Message: pesan user terbaru (setelah command dihapus).
+
+Debug Logs menyimpan maksimal 120 event terbaru. Tombol **Clear Logs** di header menghapus semua log sementara. Setiap box log juga punya tombol **Clear** untuk menghapus kategori itu saja, tanpa menghapus state utama atau NPC Memory.
 
 Debug UI juga bisa mengatur NPC Memory:
 - **Create NPC Memory**: membuat memory NPC baru dari form.

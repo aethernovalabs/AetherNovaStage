@@ -49,6 +49,33 @@ html, body, #root {
   border-bottom: 1px solid rgba(245, 242, 234, 0.14);
 }
 
+.aether-debug-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.aether-debug-header-actions button,
+.aether-debug-log-panel summary button {
+  min-height: 30px;
+  border: 1px solid rgba(245, 242, 234, 0.16);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: #f5f2ea;
+  background: #242829 !important;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.aether-debug-header-actions button:hover,
+.aether-debug-log-panel summary button:hover {
+  border-color: rgba(215, 180, 106, 0.52);
+  background: #2c302f !important;
+}
+
 .aether-debug-kicker {
   margin: 0 0 3px;
   color: #d7b46a;
@@ -149,6 +176,11 @@ html, body, #root {
 }
 
 .aether-debug-memory-list {
+  display: grid;
+  gap: 8px;
+}
+
+.aether-debug-log-grid {
   display: grid;
   gap: 8px;
 }
@@ -324,6 +356,10 @@ html, body, #root {
   background: transparent !important;
 }
 
+.aether-debug-empty.compact.padded {
+  padding: 10px;
+}
+
 .aether-debug-events {
   display: grid;
   gap: 6px;
@@ -332,15 +368,20 @@ html, body, #root {
   list-style: none;
 }
 
-.aether-debug-events li {
+.aether-debug-events > li {
   display: grid;
-  grid-template-columns: 58px 78px 1fr;
-  gap: 8px;
-  align-items: baseline;
+  gap: 7px;
   padding: 8px;
   border-left: 3px solid #d7b46a;
   border-radius: 6px;
   background: #191c1d !important;
+}
+
+.aether-debug-event-main {
+  display: grid;
+  grid-template-columns: 58px 84px 1fr;
+  gap: 8px;
+  align-items: baseline;
 }
 
 .aether-debug-events strong {
@@ -352,6 +393,21 @@ html, body, #root {
   color: #d8d8cf;
   font-size: 0.8rem;
   line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.aether-debug-event-details {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.aether-debug-event-details li {
+  color: #bfc6bd;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
@@ -370,6 +426,19 @@ html, body, #root {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.aether-debug-log-panel summary {
+  align-items: center;
+}
+
+.aether-debug-log-panel summary > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.aether-debug-log-panel summary button {
+  margin-left: 0;
 }
 
 .aether-debug-details summary::marker {

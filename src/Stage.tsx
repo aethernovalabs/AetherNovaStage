@@ -19,13 +19,26 @@ type ConfigType = {
 type InitStateType = Record<string, never>;
 type ChatStateType = Record<string, never>;
 const DEBUG_STORAGE_KEY = "aether-nova-stage.pendingNpcDebugQuery";
-const DEBUG_UI_VERSION = "V1.5";
+const DEBUG_UI_VERSION = "V1.6";
+
+type DebugCategory = "lifecycle" | "npcMemory" | "headerFormat" | "narrativeFormat" | "walletThread" | "system";
+
+const DEBUG_LOG_GROUPS: Array<{category: DebugCategory; title: string; emptyText: string; defaultOpen?: boolean}> = [
+    {category: "npcMemory", title: "NPC Memory Log", emptyText: "No NPC memory activity yet.", defaultOpen: true},
+    {category: "headerFormat", title: "Format Header Log", emptyText: "No header formatting activity yet.", defaultOpen: true},
+    {category: "narrativeFormat", title: "Format Narrative Log", emptyText: "No narrative formatting activity yet."},
+    {category: "walletThread", title: "Wallet / Thread Log", emptyText: "No wallet or thread activity yet."},
+    {category: "lifecycle", title: "Lifecycle Log", emptyText: "No lifecycle activity yet."},
+    {category: "system", title: "System Message Log", emptyText: "No system messages captured yet."},
+];
 
 interface DebugEvent {
     id: number;
     at: string;
+    category: DebugCategory;
     label: string;
     detail: string;
+    details?: string[];
 }
 
 interface DebugSnapshot {
@@ -70,11 +83,11 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         this.lastSystemMessage = "";
         this.lastModifiedMessageChanged = false;
         this.latestNpcMemoryCommandMessage = "";
-        this.pushDebugEvent("init", `state ready; ${countNpcMemory(this.state)} NPC memory entries`);
+        this.pushDebugEvent("lifecycle", "init", `state ready; ${countNpcMemory(this.state)} NPC memory entries`);
     }
 
     async load(): Promise<Partial<LoadResponse<InitStateType, ChatStateType, MessageStateType>>> {
-        this.pushDebugEvent("load", `messageState loaded; debug UI ${this.debugUiEnabled ? "enabled" : "disabled"}`);
+        this.pushDebugEvent("lifecycle", "load", `messageState loaded; debug UI ${this.debugUiEnabled ? "enabled" : "disabled"}`);
 
         return {
             success: true,
@@ -87,11 +100,12 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 
     async setState(state: MessageStateType): Promise<void> {
         this.state = coerceHeaderState(state, this.state);
-        this.pushDebugEvent("setState", `branch/swipe state restored; ${countNpcMemory(this.state)} NPC memory entries`);
+        this.pushDebugEvent("lifecycle", "setState", `branch/swipe state restored; ${countNpcMemory(this.state)} NPC memory entries`);
     }
 
     async beforePrompt(userMessage: Message): Promise<Partial<StageResponse<ChatStateType, MessageStateType>>> {
         const originalUserMessage = userMessage.content;
+        const previousNpcMemoryCount = countNpcMemory(this.state);
         const debugQuery = debugNpcQuery(originalUserMessage);
         if (debugQuery != null) {
             writePendingDebugQuery(debugQuery);
@@ -119,9 +133,23 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         }
         this.lastStageDirections = buildStageDirections(this.state, this.latestUserMessage);
         this.pushDebugEvent(
+            "lifecycle",
             "beforePrompt",
             `directions injected (${this.lastStageDirections.length} chars); debug request: ${debugQuery ?? "none"}; memory command: ${pendingMemoryCommand != null ? "pending" : "none"}`,
         );
+        this.pushDebugEvent(
+            "npcMemory",
+            "beforePrompt",
+            `NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}; command applied: ${commandResult.applied ? "yes" : "no"}; pending reapply: ${pendingMemoryCommand != null ? "yes" : "no"}`,
+            [
+                `Debug query: ${debugQuery ?? "none"}`,
+                `Cleaned user message chars: ${this.latestUserMessage.length}`,
+                commandSystemMessage.length > 0 ? `System message:\n${commandSystemMessage}` : "System message: none",
+            ],
+        );
+        if (commandSystemMessage.length > 0) {
+            this.pushDebugEvent("system", "beforePrompt", "systemMessage returned from NPC memory command", [commandSystemMessage]);
+        }
 
         return {
             stageDirections: this.lastStageDirections,
@@ -137,6 +165,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 
     async afterResponse(botMessage: Message): Promise<Partial<StageResponse<ChatStateType, MessageStateType>>> {
         const previousState = this.state;
+        const previousNpcMemory = this.state.npcMemory;
         const previousNpcMemoryCount = countNpcMemory(this.state);
         const storedDebugQuery = this.state.pendingNpcDebugQuery ?? readPendingDebugQuery();
         if (storedDebugQuery != null) {
@@ -159,10 +188,40 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         this.state = finalState;
         this.lastModifiedMessageChanged = normalized.content !== botMessage.content;
         this.lastSystemMessage = joinSystemMessages(normalized.systemMessage, afterResponseCommand?.systemMessage);
+        const headerDetails = headerStateChangeDetails(previousState, this.state);
+        const trackedHeaderChanged = headerDetails.some((detail) => detail.includes(" -> "));
         this.pushDebugEvent(
+            "lifecycle",
             "afterResponse",
             `response ${this.lastModifiedMessageChanged ? "modified" : "unchanged"}; changed: ${changedFields.length > 0 ? changedFields.join(", ") : "none"}; NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}; memory command reapply ${afterResponseCommand?.applied === true ? "yes" : "no"}; system debug ${this.lastSystemMessage.length > 0 ? "sent" : "none"}`,
         );
+        this.pushDebugEvent(
+            "headerFormat",
+            "afterResponse",
+            trackedHeaderChanged ? `${headerDetails.length} tracked header field(s) changed` : "tracked header fields unchanged",
+            headerDetails,
+        );
+        this.pushDebugEvent(
+            "narrativeFormat",
+            "afterResponse",
+            `response ${this.lastModifiedMessageChanged ? "modified" : "unchanged"}; chars ${botMessage.content.length} -> ${normalized.content.length}`,
+            narrativeFormatDetails(botMessage.content, normalized.content, changedFields),
+        );
+        this.pushDebugEvent(
+            "npcMemory",
+            "afterResponse",
+            `NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}; command reapply: ${afterResponseCommand?.applied === true ? "yes" : "no"}`,
+            npcMemoryChangeDetails(previousNpcMemory, this.state.npcMemory),
+        );
+        this.pushDebugEvent(
+            "walletThread",
+            "afterResponse",
+            walletThreadSummary(previousState, this.state),
+            walletThreadDetails(previousState, this.state),
+        );
+        if (this.lastSystemMessage.length > 0) {
+            this.pushDebugEvent("system", "afterResponse", "systemMessage returned after response", [this.lastSystemMessage]);
+        }
         this.latestUserMessage = "";
         this.latestNpcMemoryCommandMessage = "";
         clearPendingDebugQuery();
@@ -186,6 +245,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             <AetherNovaDebugPanel
                 getSnapshot={() => this.createDebugSnapshot()}
                 onApplyCommand={(command) => this.applyUiNpcMemoryCommand(command)}
+                onClearLogs={(category) => this.clearDebugEvents(category)}
             />
         );
     }
@@ -201,17 +261,19 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         };
     }
 
-    private pushDebugEvent(label: string, detail: string): void {
+    private pushDebugEvent(category: DebugCategory, label: string, detail: string, details?: string[]): void {
         this.debugEventId += 1;
         this.debugEvents = [
             {
                 id: this.debugEventId,
                 at: new Date().toLocaleTimeString(),
+                category,
                 label,
                 detail,
+                details: details?.filter((entry) => entry.length > 0),
             },
             ...this.debugEvents,
-        ].slice(0, 30);
+        ].slice(0, 120);
     }
 
     private applyUiNpcMemoryCommand(command: string): DebugSnapshot {
@@ -223,7 +285,17 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         if (result.systemMessage != null) {
             this.lastSystemMessage = result.systemMessage;
         }
-        this.pushDebugEvent("uiMemory", result.systemMessage ?? "No NPC memory command applied.");
+        this.pushDebugEvent("npcMemory", "uiMemory", result.systemMessage ?? "No NPC memory command applied.", [`Command: ${command}`]);
+        if (result.systemMessage != null) {
+            this.pushDebugEvent("system", "uiMemory", "systemMessage returned from debug UI command", [result.systemMessage]);
+        }
+        return this.createDebugSnapshot();
+    }
+
+    private clearDebugEvents(category?: DebugCategory): DebugSnapshot {
+        this.debugEvents = category == null
+            ? []
+            : this.debugEvents.filter((event) => event.category !== category);
         return this.createDebugSnapshot();
     }
 }
@@ -231,9 +303,11 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 function AetherNovaDebugPanel({
     getSnapshot,
     onApplyCommand,
+    onClearLogs,
 }: {
     getSnapshot: () => DebugSnapshot;
     onApplyCommand: (command: string) => DebugSnapshot;
+    onClearLogs: (category?: DebugCategory) => DebugSnapshot;
 }): ReactElement {
     const [snapshot, setSnapshot] = useState<DebugSnapshot>(() => getSnapshot());
     const npcMemoryEntries = Object.values(snapshot.state.npcMemory ?? {});
@@ -255,9 +329,12 @@ function AetherNovaDebugPanel({
                     <p className="aether-debug-kicker">Aether Nova Stage</p>
                     <h1>Debug UI <span>{DEBUG_UI_VERSION}</span></h1>
                 </div>
-                <span className={snapshot.lastModifiedMessageChanged ? "aether-debug-pill active" : "aether-debug-pill"}>
-                    {snapshot.lastModifiedMessageChanged ? "Modified" : "Idle"}
-                </span>
+                <div className="aether-debug-header-actions">
+                    <button type="button" onClick={() => setSnapshot(onClearLogs())}>Clear Logs</button>
+                    <span className={snapshot.lastModifiedMessageChanged ? "aether-debug-pill active" : "aether-debug-pill"}>
+                        {snapshot.lastModifiedMessageChanged ? "Modified" : "Idle"}
+                    </span>
+                </div>
             </header>
 
             <section className="aether-debug-grid" aria-label="Current header state">
@@ -367,18 +444,24 @@ function AetherNovaDebugPanel({
                 )}
             </section>
 
-            <details className="aether-debug-details" open>
-                <summary>Stage Activity <span className="aether-debug-summary-badge">{snapshot.debugEvents.length}</span></summary>
-                <ol className="aether-debug-events">
-                    {snapshot.debugEvents.map((event) => (
-                        <li key={event.id}>
-                            <time>{event.at}</time>
-                            <strong>{event.label}</strong>
-                            <span>{event.detail}</span>
-                        </li>
+            <section className="aether-debug-section">
+                <div className="aether-debug-section-title">
+                    <h2>Debug Logs</h2>
+                    <span>{snapshot.debugEvents.length}</span>
+                </div>
+                <div className="aether-debug-log-grid">
+                    {DEBUG_LOG_GROUPS.map((group) => (
+                        <DebugLogPanel
+                            key={group.category}
+                            title={group.title}
+                            events={snapshot.debugEvents.filter((event) => event.category === group.category)}
+                            emptyText={group.emptyText}
+                            defaultOpen={group.defaultOpen === true}
+                            onClear={() => setSnapshot(onClearLogs(group.category))}
+                        />
                     ))}
-                </ol>
-            </details>
+                </div>
+            </section>
 
             <details className="aether-debug-details">
                 <summary>Stage Directions</summary>
@@ -386,7 +469,7 @@ function AetherNovaDebugPanel({
             </details>
 
             <details className="aether-debug-details">
-                <summary>System Debug Message</summary>
+                <summary>Last System Message</summary>
                 <pre>{snapshot.lastSystemMessage || "No system debug message captured yet."}</pre>
             </details>
 
@@ -395,6 +478,56 @@ function AetherNovaDebugPanel({
                 <pre>{snapshot.latestUserMessage || "No pending user message."}</pre>
             </details>
         </main>
+    );
+}
+
+function DebugLogPanel({
+    title,
+    events,
+    emptyText,
+    defaultOpen,
+    onClear,
+}: {
+    title: string;
+    events: DebugEvent[];
+    emptyText: string;
+    defaultOpen: boolean;
+    onClear: () => void;
+}): ReactElement {
+    const [isOpen, setIsOpen] = useState(defaultOpen);
+
+    return (
+        <details className="aether-debug-details aether-debug-log-panel" open={isOpen} onToggle={(event) => setIsOpen(event.currentTarget.open)}>
+            <summary>
+                <span>{title}</span>
+                <span className="aether-debug-summary-badge">{events.length}</span>
+                <button type="button" onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onClear();
+                }}>Clear</button>
+            </summary>
+            {events.length === 0 ? (
+                <p className="aether-debug-empty compact padded">{emptyText}</p>
+            ) : (
+                <ol className="aether-debug-events">
+                    {events.map((event) => (
+                        <li key={event.id}>
+                            <div className="aether-debug-event-main">
+                                <time>{event.at}</time>
+                                <strong>{event.label}</strong>
+                                <span>{event.detail}</span>
+                            </div>
+                            {event.details != null && event.details.length > 0 ? (
+                                <ul className="aether-debug-event-details">
+                                    {event.details.map((detail, index) => <li key={`${event.id}-${index}`}>{detail}</li>)}
+                                </ul>
+                            ) : null}
+                        </li>
+                    ))}
+                </ol>
+            )}
+        </details>
     );
 }
 
@@ -523,6 +656,78 @@ function cleanDebugFacts(value: string): string {
         .map(cleanDebugValue)
         .filter(Boolean)
         .join("; ");
+}
+
+function headerStateChangeDetails(previous: AetherNovaMessageState, next: AetherNovaMessageState): string[] {
+    const details = [
+        formatDebugFieldChange("Location", previous.location, next.location),
+        formatDebugFieldChange("Time", `${previous.timeOfDay} | ${previous.clock}`, `${next.timeOfDay} | ${next.clock}`),
+        formatDebugFieldChange("You", previous.you, next.you),
+        formatDebugFieldChange("NPC", previous.npc, next.npc),
+        formatDebugFieldChange("Thread", previous.thread, next.thread),
+        formatDebugFieldChange("Wallet", previous.wallet, next.wallet),
+    ].filter(Boolean);
+
+    return details.length > 0 ? details : ["No tracked header field changed."];
+}
+
+function narrativeFormatDetails(originalContent: string, normalizedContent: string, changedFields: string[]): string[] {
+    return [
+        `Original chars: ${originalContent.length}`,
+        `Normalized chars: ${normalizedContent.length}`,
+        normalizedContent !== originalContent
+            ? "Modified message returned to chat. This can include header repair, narrative italics, speaker labels, or quote/action cleanup."
+            : "No modified message returned.",
+        changedFields.length > 0
+            ? `Stage state changed too: ${changedFields.join(", ")}`
+            : "Stage state did not change.",
+    ];
+}
+
+function npcMemoryChangeDetails(previous: AetherNovaMessageState["npcMemory"], next: AetherNovaMessageState["npcMemory"]): string[] {
+    const previousKeys = Object.keys(previous ?? {});
+    const nextKeys = Object.keys(next ?? {});
+    const added = nextKeys.filter((key) => previous?.[key] == null).map((key) => next[key].name);
+    const removed = previousKeys.filter((key) => next?.[key] == null).map((key) => previous[key].name);
+    const changed = nextKeys
+        .filter((key) => previous?.[key] != null && JSON.stringify(previous[key]) !== JSON.stringify(next[key]))
+        .map((key) => next[key].name);
+    const details = [
+        added.length > 0 ? `Added: ${added.join(", ")}` : "",
+        removed.length > 0 ? `Removed: ${removed.join(", ")}` : "",
+        changed.length > 0 ? `Changed: ${changed.join(", ")}` : "",
+    ].filter(Boolean);
+
+    return details.length > 0 ? details : ["NPC memory unchanged."];
+}
+
+function walletThreadSummary(previous: AetherNovaMessageState, next: AetherNovaMessageState): string {
+    const walletChanged = previous.wallet !== next.wallet;
+    const threadChanged = previous.thread !== next.thread;
+
+    if (walletChanged && threadChanged) {
+        return "wallet and thread changed";
+    }
+    if (walletChanged) {
+        return "wallet changed";
+    }
+    if (threadChanged) {
+        return "thread changed";
+    }
+    return "wallet and thread unchanged";
+}
+
+function walletThreadDetails(previous: AetherNovaMessageState, next: AetherNovaMessageState): string[] {
+    const details = [
+        formatDebugFieldChange("Wallet", previous.wallet, next.wallet),
+        formatDebugFieldChange("Thread", previous.thread, next.thread),
+    ].filter(Boolean);
+
+    return details.length > 0 ? details : ["No wallet/thread change accepted."];
+}
+
+function formatDebugFieldChange(label: string, previous: string, next: string): string {
+    return previous === next ? "" : `${label}: ${previous} -> ${next}`;
 }
 
 function countNpcMemory(state: AetherNovaMessageState): number {
