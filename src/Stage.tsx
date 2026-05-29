@@ -2,6 +2,7 @@ import {ReactElement, useEffect, useState} from "react";
 import {InitialData, LoadResponse, Message, StageBase, StageResponse} from "@chub-ai/stages-ts";
 import {
     AetherNovaMessageState,
+    NpcMemoryEntry,
     applyNpcMemoryCommands,
     buildStageDirections,
     coerceHeaderState,
@@ -18,7 +19,7 @@ type ConfigType = {
 type InitStateType = Record<string, never>;
 type ChatStateType = Record<string, never>;
 const DEBUG_STORAGE_KEY = "aether-nova-stage.pendingNpcDebugQuery";
-const DEBUG_UI_VERSION = "V1.4";
+const DEBUG_UI_VERSION = "V1.5";
 
 interface DebugEvent {
     id: number;
@@ -34,6 +35,16 @@ interface DebugSnapshot {
     lastSystemMessage: string;
     lastModifiedMessageChanged: boolean;
     debugEvents: DebugEvent[];
+}
+
+interface NpcMemoryDraft {
+    name: string;
+    roleTitle: string;
+    race: string;
+    physicalExtra: string;
+    relationship: string;
+    behavior: string;
+    onlyKnowsText: string;
 }
 
 export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateType, ConfigType> {
@@ -86,22 +97,30 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             writePendingDebugQuery(debugQuery);
         }
         const preparedState = prepareAetherNovaStateForPrompt(this.state, originalUserMessage);
-        const commandResult = applyNpcMemoryCommands(preparedState, originalUserMessage);
+        const pendingCommand = preparedState.pendingNpcMemoryCommand;
+        const pendingCommandResult = pendingCommand == null
+            ? null
+            : applyNpcMemoryCommands(preparedState, pendingCommand);
+        const commandResult = applyNpcMemoryCommands(pendingCommandResult?.state ?? preparedState, originalUserMessage);
+        const pendingMemoryCommand = commandResult.applied
+            ? originalUserMessage
+            : pendingCommand;
 
         this.state = commandResult.state;
         this.latestUserMessage = commandResult.cleanedMessage;
-        this.latestNpcMemoryCommandMessage = commandResult.applied ? originalUserMessage : "";
+        this.latestNpcMemoryCommandMessage = pendingMemoryCommand ?? "";
         this.state = {
             ...this.state,
-            pendingNpcMemoryCommand: commandResult.applied ? originalUserMessage : null,
+            pendingNpcMemoryCommand: pendingMemoryCommand,
         };
-        if (commandResult.systemMessage != null) {
-            this.lastSystemMessage = commandResult.systemMessage;
+        const commandSystemMessage = joinSystemMessages(pendingCommandResult?.systemMessage, commandResult.systemMessage);
+        if (commandSystemMessage.length > 0) {
+            this.lastSystemMessage = commandSystemMessage;
         }
         this.lastStageDirections = buildStageDirections(this.state, this.latestUserMessage);
         this.pushDebugEvent(
             "beforePrompt",
-            `directions injected (${this.lastStageDirections.length} chars); debug request: ${debugQuery ?? "none"}; memory command: ${commandResult.applied ? "applied" : "none"}`,
+            `directions injected (${this.lastStageDirections.length} chars); debug request: ${debugQuery ?? "none"}; memory command: ${pendingMemoryCommand != null ? "pending" : "none"}`,
         );
 
         return {
@@ -110,7 +129,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             modifiedMessage: commandResult.cleanedMessage !== originalUserMessage
                 ? (commandResult.cleanedMessage.length > 0 ? commandResult.cleanedMessage : " ")
                 : null,
-            systemMessage: commandResult.systemMessage,
+            systemMessage: commandSystemMessage.length > 0 ? commandSystemMessage : null,
             error: null,
             chatState: null,
         };
@@ -163,7 +182,12 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             return <></>;
         }
 
-        return <AetherNovaDebugPanel getSnapshot={() => this.createDebugSnapshot()} />;
+        return (
+            <AetherNovaDebugPanel
+                getSnapshot={() => this.createDebugSnapshot()}
+                onApplyCommand={(command) => this.applyUiNpcMemoryCommand(command)}
+            />
+        );
     }
 
     private createDebugSnapshot(): DebugSnapshot {
@@ -189,11 +213,32 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             ...this.debugEvents,
         ].slice(0, 30);
     }
+
+    private applyUiNpcMemoryCommand(command: string): DebugSnapshot {
+        const result = applyNpcMemoryCommands(this.state, command);
+        this.state = {
+            ...result.state,
+            pendingNpcMemoryCommand: result.applied ? command : this.state.pendingNpcMemoryCommand,
+        };
+        if (result.systemMessage != null) {
+            this.lastSystemMessage = result.systemMessage;
+        }
+        this.pushDebugEvent("uiMemory", result.systemMessage ?? "No NPC memory command applied.");
+        return this.createDebugSnapshot();
+    }
 }
 
-function AetherNovaDebugPanel({getSnapshot}: {getSnapshot: () => DebugSnapshot}): ReactElement {
+function AetherNovaDebugPanel({
+    getSnapshot,
+    onApplyCommand,
+}: {
+    getSnapshot: () => DebugSnapshot;
+    onApplyCommand: (command: string) => DebugSnapshot;
+}): ReactElement {
     const [snapshot, setSnapshot] = useState<DebugSnapshot>(() => getSnapshot());
     const npcMemoryEntries = Object.values(snapshot.state.npcMemory ?? {});
+    const [editingName, setEditingName] = useState<string | null>(null);
+    const [draft, setDraft] = useState<NpcMemoryDraft>(emptyNpcMemoryDraft());
 
     useEffect(() => {
         const intervalId = window.setInterval(() => {
@@ -238,27 +283,83 @@ function AetherNovaDebugPanel({getSnapshot}: {getSnapshot: () => DebugSnapshot})
                     <code>npc memory show: Debi</code>
                     <code>npc memory set: Debi | role=Market broker | race=Human | physical=none | relationship=guarded | behavior=guarded | onlyKnows={'{{user}}'} paid Kaelen to find Debi</code>
                 </div>
+                <details className="aether-debug-create">
+                    <summary>Create NPC Memory</summary>
+                    <NpcMemoryEditor
+                        draft={draft}
+                        saveLabel="Create"
+                        onChange={setDraft}
+                        onCancel={() => setDraft(emptyNpcMemoryDraft())}
+                        onSave={() => {
+                            const command = npcMemorySetCommand(draft);
+                            if (command == null) {
+                                return;
+                            }
+                            setSnapshot(onApplyCommand(command));
+                            setDraft(emptyNpcMemoryDraft());
+                        }}
+                    />
+                </details>
                 {npcMemoryEntries.length === 0 ? (
                     <p className="aether-debug-empty">No NPC memory stored yet.</p>
                 ) : (
                     <div className="aether-debug-memory-list">
                         {npcMemoryEntries.map((entry) => (
                             <article className="aether-debug-memory-card" key={entry.name}>
-                                <h3>{entry.name}</h3>
-                                <dl>
-                                    <DebugDetail label="Role" value={entry.roleTitle} />
-                                    <DebugDetail label="Race" value={entry.race} />
-                                    <DebugDetail label="Physical Extra" value={entry.physicalExtra} />
-                                    <DebugDetail label="Relationship" value={entry.relationship} />
-                                    <DebugDetail label="Behavior" value={entry.behavior} />
-                                </dl>
-                                <p className="aether-debug-facts-label">OnlyKnows</p>
-                                {entry.onlyKnows.length === 0 ? (
-                                    <p className="aether-debug-empty compact">None</p>
+                                {editingName === entry.name ? (
+                                    <NpcMemoryEditor
+                                        draft={draft}
+                                        saveLabel="Save"
+                                        onChange={setDraft}
+                                        onCancel={() => {
+                                            setEditingName(null);
+                                            setDraft(emptyNpcMemoryDraft());
+                                        }}
+                                        onSave={() => {
+                                            const command = npcMemorySetCommand(draft, entry.name);
+                                            if (command == null) {
+                                                return;
+                                            }
+                                            setSnapshot(onApplyCommand(command));
+                                            setEditingName(null);
+                                            setDraft(emptyNpcMemoryDraft());
+                                        }}
+                                    />
                                 ) : (
-                                    <ul>
-                                        {entry.onlyKnows.map((fact) => <li key={fact}>{fact}</li>)}
-                                    </ul>
+                                    <>
+                                        <div className="aether-debug-card-header">
+                                            <h3>{entry.name}</h3>
+                                            <div className="aether-debug-card-actions">
+                                                <button type="button" onClick={() => {
+                                                    setEditingName(entry.name);
+                                                    setDraft(draftFromNpcMemory(entry));
+                                                }}>Edit</button>
+                                                <button type="button" onClick={() => setSnapshot(onApplyCommand(`npc memory clearfacts: ${entry.name}`))}>Clear Facts</button>
+                                                <button className="danger" type="button" onClick={() => {
+                                                    setSnapshot(onApplyCommand(`npc memory delete: ${entry.name}`));
+                                                    if (editingName === entry.name) {
+                                                        setEditingName(null);
+                                                        setDraft(emptyNpcMemoryDraft());
+                                                    }
+                                                }}>Delete</button>
+                                            </div>
+                                        </div>
+                                        <dl>
+                                            <DebugDetail label="Role" value={entry.roleTitle} />
+                                            <DebugDetail label="Race" value={entry.race} />
+                                            <DebugDetail label="Physical Extra" value={entry.physicalExtra} />
+                                            <DebugDetail label="Relationship" value={entry.relationship} />
+                                            <DebugDetail label="Behavior" value={entry.behavior} />
+                                        </dl>
+                                        <p className="aether-debug-facts-label">OnlyKnows</p>
+                                        {entry.onlyKnows.length === 0 ? (
+                                            <p className="aether-debug-empty compact">None</p>
+                                        ) : (
+                                            <ul>
+                                                {entry.onlyKnows.map((fact) => <li key={fact}>{fact}</li>)}
+                                            </ul>
+                                        )}
+                                    </>
                                 )}
                             </article>
                         ))}
@@ -297,6 +398,60 @@ function AetherNovaDebugPanel({getSnapshot}: {getSnapshot: () => DebugSnapshot})
     );
 }
 
+function NpcMemoryEditor({
+    draft,
+    saveLabel,
+    onChange,
+    onCancel,
+    onSave,
+}: {
+    draft: NpcMemoryDraft;
+    saveLabel: string;
+    onChange: (draft: NpcMemoryDraft) => void;
+    onCancel: () => void;
+    onSave: () => void;
+}): ReactElement {
+    return (
+        <form className="aether-debug-editor" onSubmit={(event) => {
+            event.preventDefault();
+            onSave();
+        }}>
+            <label>
+                Name
+                <input value={draft.name} onChange={(event) => onChange({...draft, name: event.target.value})} />
+            </label>
+            <label>
+                Role/Title
+                <input value={draft.roleTitle} onChange={(event) => onChange({...draft, roleTitle: event.target.value})} />
+            </label>
+            <label>
+                Race
+                <input value={draft.race} onChange={(event) => onChange({...draft, race: event.target.value})} />
+            </label>
+            <label>
+                Physical Extra
+                <input value={draft.physicalExtra} onChange={(event) => onChange({...draft, physicalExtra: event.target.value})} />
+            </label>
+            <label>
+                Relationship
+                <input value={draft.relationship} onChange={(event) => onChange({...draft, relationship: event.target.value})} />
+            </label>
+            <label>
+                Behavior
+                <input value={draft.behavior} onChange={(event) => onChange({...draft, behavior: event.target.value})} />
+            </label>
+            <label className="wide">
+                OnlyKnows
+                <textarea value={draft.onlyKnowsText} onChange={(event) => onChange({...draft, onlyKnowsText: event.target.value})} />
+            </label>
+            <div className="aether-debug-editor-actions">
+                <button type="submit">{saveLabel}</button>
+                <button type="button" onClick={onCancel}>Cancel</button>
+            </div>
+        </form>
+    );
+}
+
 function DebugMetric({label, value}: {label: string; value: string}): ReactElement {
     return (
         <article className="aether-debug-metric">
@@ -313,6 +468,61 @@ function DebugDetail({label, value}: {label: string; value: string}): ReactEleme
             <dd>{value}</dd>
         </>
     );
+}
+
+function emptyNpcMemoryDraft(): NpcMemoryDraft {
+    return {
+        name: "",
+        roleTitle: "",
+        race: "",
+        physicalExtra: "",
+        relationship: "",
+        behavior: "",
+        onlyKnowsText: "",
+    };
+}
+
+function draftFromNpcMemory(entry: NpcMemoryEntry): NpcMemoryDraft {
+    return {
+        name: entry.name,
+        roleTitle: entry.roleTitle,
+        race: entry.race,
+        physicalExtra: entry.physicalExtra,
+        relationship: entry.relationship,
+        behavior: entry.behavior,
+        onlyKnowsText: entry.onlyKnows.join("; "),
+    };
+}
+
+function npcMemorySetCommand(draft: NpcMemoryDraft, targetName: string = draft.name): string | null {
+    const name = cleanDebugValue(draft.name);
+    const target = cleanDebugValue(targetName || draft.name);
+    if (name.length === 0 || target.length === 0) {
+        return null;
+    }
+
+    return [
+        `npc memory set: ${target}`,
+        `name=${name}`,
+        `role=${cleanDebugValue(draft.roleTitle) || "Unknown role/title"}`,
+        `race=${cleanDebugValue(draft.race) || "Unknown"}`,
+        `physical=${cleanDebugValue(draft.physicalExtra) || "none"}`,
+        `relationship=${cleanDebugValue(draft.relationship) || "Unknown"}`,
+        `behavior=${cleanDebugValue(draft.behavior) || "Unknown"}`,
+        `onlyKnows=${cleanDebugFacts(draft.onlyKnowsText)}`,
+    ].join(" | ");
+}
+
+function cleanDebugValue(value: string): string {
+    return value.replace(/[|\n\r\]】]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function cleanDebugFacts(value: string): string {
+    return value
+        .split(/\n+|;/g)
+        .map(cleanDebugValue)
+        .filter(Boolean)
+        .join("; ");
 }
 
 function countNpcMemory(state: AetherNovaMessageState): number {

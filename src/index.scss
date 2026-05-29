@@ -176,6 +176,102 @@ html, body, #root {
   padding: 10px;
 }
 
+.aether-debug-create {
+  margin-bottom: 8px;
+  border: 1px solid rgba(245, 242, 234, 0.12);
+  border-radius: 8px;
+  background: #181b1c !important;
+}
+
+.aether-debug-create summary {
+  cursor: pointer;
+  padding: 9px 10px;
+  color: #f5f2ea;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.aether-debug-card-header {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.aether-debug-card-actions,
+.aether-debug-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.aether-debug-card-actions button,
+.aether-debug-editor-actions button {
+  min-height: 30px;
+  border: 1px solid rgba(245, 242, 234, 0.16);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: #f5f2ea;
+  background: #242829 !important;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.aether-debug-card-actions button:hover,
+.aether-debug-editor-actions button:hover {
+  border-color: rgba(215, 180, 106, 0.52);
+  background: #2c302f !important;
+}
+
+.aether-debug-card-actions button.danger {
+  color: #ffd6d6;
+  border-color: rgba(255, 118, 118, 0.35);
+  background: #301f20 !important;
+}
+
+.aether-debug-editor {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid rgba(245, 242, 234, 0.1);
+}
+
+.aether-debug-editor label {
+  display: grid;
+  gap: 4px;
+  color: #9ea69b;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.aether-debug-editor input,
+.aether-debug-editor textarea {
+  width: 100%;
+  border: 1px solid rgba(245, 242, 234, 0.14);
+  border-radius: 6px;
+  padding: 7px 8px;
+  color: #f5f2ea;
+  background: #111314 !important;
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.aether-debug-editor textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.aether-debug-editor input:focus,
+.aether-debug-editor textarea:focus {
+  outline: 2px solid rgba(215, 180, 106, 0.38);
+  outline-offset: 1px;
+}
+
 .aether-debug-memory-card h3 {
   color: #f2d08d;
   font-size: 0.95rem;

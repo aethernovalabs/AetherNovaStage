@@ -294,13 +294,23 @@ Stage melakukan format narasi ringan:
 
 ## 10. Debug UI System
 
-Debug UI (di `Stage.tsx` render) menampilkan:
+Debug UI (di `Stage.tsx` render) saat ini: **Debug UI V1.5**.
+
+Debug UI menampilkan:
 - Current state: Location, Time, You, NPC, Thread, Wallet, Pending NPC Debug, Pending Memory Command.
 - NPC Memory cards: semua NPC yang tersimpan dengan detail lengkap.
 - Stage Activity log: 30 event terakhir dengan timestamp.
 - Stage Directions: isi `stageDirections` yang diinject ke prompt.
 - System Debug Message: system message terakhir.
 - Latest User Message: pesan user terbaru (setelah command dihapus).
+
+Debug UI juga bisa mengatur NPC Memory:
+- **Create NPC Memory**: membuat memory NPC baru dari form.
+- **Edit**: mengubah Name, Role/Title, Race, Physical Extra, Relationship, Behavior, dan OnlyKnows.
+- **Clear Facts**: mengosongkan OnlyKnows NPC.
+- **Delete**: menghapus seluruh memory NPC.
+
+Setiap aksi UI memakai command internal `npc memory ...`, mengubah state internal langsung, dan mengisi `pendingNpcMemoryCommand` agar efeknya diterapkan ulang pada lifecycle berikutnya.
 
 Debug diaktifkan dengan `position: ADJACENT` di `chub_meta.yaml`.
 Untuk production, ubah ke `position: NONE`.

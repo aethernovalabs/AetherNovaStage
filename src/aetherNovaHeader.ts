@@ -84,7 +84,7 @@ interface NormalizeStatusOptions {
 const CLOCK_PATTERN = /\b([01]?\d|2[0-3]):([0-5]\d)\b/;
 const TIME_OF_DAYS: TimeOfDay[] = ["Morning", "Afternoon", "Evening", "Night"];
 const HEADER_DIVIDER = "***";
-const NPC_MEMORY_COMMAND_PATTERN = /npc[\s_-]*memory\s+((?:delete|remove|clearfacts|clear|set|update|add\s+fact|addfact|relation|show)\s*:?\s*(?:[^|.\n]+(?:\s*\|\s*[^|.\n]+)*))/gi;
+const NPC_MEMORY_COMMAND_PATTERN = /(?:[\[【]\s*)?npc[\s_-]*memory\s+((?:delete|remove|clearfacts|clear|set|update|add\s+fact|addfact|relation|show)\s*:?\s*[^\n\]】]+)(?:[\]】])?/gi;
 
 const DEFAULT_STATE: AetherNovaMessageState = {
     location: "Unknown Region - Current Place - Active Area",
@@ -1622,14 +1622,14 @@ function parseNpcMemoryCommandUpdates(segments: string[]): Partial<NpcMemoryComm
     const addFacts: string[] = [];
 
     for (const segment of segments) {
-        const match = /^([A-Za-z ]+)\s*(?:=|:)\s*(.+)$/i.exec(segment);
+        const match = /^([A-Za-z ]+)\s*(?:=|:)\s*(.*)$/i.exec(segment);
         if (match == null) {
             continue;
         }
 
         const key = match[1].toLowerCase().replace(/\s+/g, "");
         const value = cleanFragment(match[2]);
-        if (value.length === 0) {
+        if (value.length === 0 && key !== "onlyknows" && key !== "knownfacts" && key !== "facts") {
             continue;
         }
 
