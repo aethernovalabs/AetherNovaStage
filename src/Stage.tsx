@@ -19,7 +19,7 @@ type ConfigType = {
 type InitStateType = Record<string, never>;
 type ChatStateType = Record<string, never>;
 const DEBUG_STORAGE_KEY = "aether-nova-stage.pendingNpcDebugQuery";
-const DEBUG_UI_VERSION = "V1.6";
+const DEBUG_UI_VERSION = "V1.7";
 
 type DebugCategory = "lifecycle" | "npcMemory" | "headerFormat" | "narrativeFormat" | "walletThread" | "system";
 
@@ -55,8 +55,12 @@ interface NpcMemoryDraft {
     roleTitle: string;
     race: string;
     physicalExtra: string;
-    relationship: string;
-    behavior: string;
+    currentMood: string;
+    lastInteractionTone: string;
+    behaviorTowardUserText: string;
+    behaviorScoresText: string;
+    relationshipWithUserText: string;
+    relationshipEventsText: string;
     onlyKnowsText: string;
 }
 
@@ -355,10 +359,14 @@ function AetherNovaDebugPanel({
                 <div className="aether-debug-command-guide" aria-label="NPC memory command examples">
                     <code>npc memory delete: Debi</code>
                     <code>npc memory clearfacts: Debi</code>
+                    <code>npc memory mood: Debi | mood=tense | tone=guarded</code>
+                    <code>npc memory behavior: Debi | behavior=suspicious, formal</code>
+                    <code>npc memory behavior score: Debi | suspicious +1</code>
+                    <code>npc memory relationship: Debi | relationship=ally, suspicious</code>
+                    <code>npc memory relation event: Debi | event=Debi formed a temporary alliance with {'{{user}}'}</code>
                     <code>npc memory add fact: Debi | fact={'{{user}}'} paid Kaelen to find Debi</code>
-                    <code>npc memory relation: Debi | relationship=friendly</code>
                     <code>npc memory show: Debi</code>
-                    <code>npc memory set: Debi | role=Market broker | race=Human | physical=none | relationship=guarded | behavior=guarded | onlyKnows={'{{user}}'} paid Kaelen to find Debi</code>
+                    <code>npc memory set: Debi | role=Market broker | race=Human | physical=none | mood=calm | behavior=suspicious, formal | relationship=acquaintance, formal | onlyKnows={'{{user}}'} paid Kaelen to find Debi</code>
                 </div>
                 <details className="aether-debug-create">
                     <summary>Create NPC Memory</summary>
@@ -425,9 +433,20 @@ function AetherNovaDebugPanel({
                                             <DebugDetail label="Role" value={entry.roleTitle} />
                                             <DebugDetail label="Race" value={entry.race} />
                                             <DebugDetail label="Physical Extra" value={entry.physicalExtra} />
-                                            <DebugDetail label="Relationship" value={entry.relationship} />
-                                            <DebugDetail label="Behavior" value={entry.behavior} />
+                                            <DebugDetail label="Current Mood" value={entry.currentMood} />
+                                            <DebugDetail label="Last Tone" value={entry.lastInteractionTone ?? "unknown"} />
+                                            <DebugDetail label="Relationship" value={formatDebugList(entry.relationshipWithUser, "stranger")} />
+                                            <DebugDetail label="Behavior" value={formatDebugList(entry.behaviorTowardUser, "None stable yet")} />
+                                            <DebugDetail label="Behavior Scores" value={formatDebugScores(entry.behaviorScores)} />
                                         </dl>
+                                        <p className="aether-debug-facts-label">Relationship Events</p>
+                                        {entry.relationshipEvents.length === 0 ? (
+                                            <p className="aether-debug-empty compact">None</p>
+                                        ) : (
+                                            <ul>
+                                                {entry.relationshipEvents.map((event) => <li key={event}>{event}</li>)}
+                                            </ul>
+                                        )}
                                         <p className="aether-debug-facts-label">OnlyKnows</p>
                                         {entry.onlyKnows.length === 0 ? (
                                             <p className="aether-debug-empty compact">None</p>
@@ -566,12 +585,28 @@ function NpcMemoryEditor({
                 <input value={draft.physicalExtra} onChange={(event) => onChange({...draft, physicalExtra: event.target.value})} />
             </label>
             <label>
+                Current Mood
+                <input value={draft.currentMood} onChange={(event) => onChange({...draft, currentMood: event.target.value})} />
+            </label>
+            <label>
+                Last Tone
+                <input value={draft.lastInteractionTone} onChange={(event) => onChange({...draft, lastInteractionTone: event.target.value})} />
+            </label>
+            <label>
                 Relationship
-                <input value={draft.relationship} onChange={(event) => onChange({...draft, relationship: event.target.value})} />
+                <input value={draft.relationshipWithUserText} onChange={(event) => onChange({...draft, relationshipWithUserText: event.target.value})} />
             </label>
             <label>
                 Behavior
-                <input value={draft.behavior} onChange={(event) => onChange({...draft, behavior: event.target.value})} />
+                <input value={draft.behaviorTowardUserText} onChange={(event) => onChange({...draft, behaviorTowardUserText: event.target.value})} />
+            </label>
+            <label className="wide">
+                Behavior Scores
+                <textarea value={draft.behaviorScoresText} onChange={(event) => onChange({...draft, behaviorScoresText: event.target.value})} />
+            </label>
+            <label className="wide">
+                Relationship Events
+                <textarea value={draft.relationshipEventsText} onChange={(event) => onChange({...draft, relationshipEventsText: event.target.value})} />
             </label>
             <label className="wide">
                 OnlyKnows
@@ -609,8 +644,12 @@ function emptyNpcMemoryDraft(): NpcMemoryDraft {
         roleTitle: "",
         race: "",
         physicalExtra: "",
-        relationship: "",
-        behavior: "",
+        currentMood: "",
+        lastInteractionTone: "",
+        behaviorTowardUserText: "",
+        behaviorScoresText: "",
+        relationshipWithUserText: "",
+        relationshipEventsText: "",
         onlyKnowsText: "",
     };
 }
@@ -621,8 +660,12 @@ function draftFromNpcMemory(entry: NpcMemoryEntry): NpcMemoryDraft {
         roleTitle: entry.roleTitle,
         race: entry.race,
         physicalExtra: entry.physicalExtra,
-        relationship: entry.relationship,
-        behavior: entry.behavior,
+        currentMood: entry.currentMood,
+        lastInteractionTone: entry.lastInteractionTone ?? "",
+        behaviorTowardUserText: entry.behaviorTowardUser.join(", "),
+        behaviorScoresText: Object.entries(entry.behaviorScores).map(([label, score]) => `${label}: ${score}`).join("; "),
+        relationshipWithUserText: entry.relationshipWithUser.join(", "),
+        relationshipEventsText: entry.relationshipEvents.join("; "),
         onlyKnowsText: entry.onlyKnows.join("; "),
     };
 }
@@ -640,8 +683,12 @@ function npcMemorySetCommand(draft: NpcMemoryDraft, targetName: string = draft.n
         `role=${cleanDebugValue(draft.roleTitle) || "Unknown role/title"}`,
         `race=${cleanDebugValue(draft.race) || "Unknown"}`,
         `physical=${cleanDebugValue(draft.physicalExtra) || "none"}`,
-        `relationship=${cleanDebugValue(draft.relationship) || "Unknown"}`,
-        `behavior=${cleanDebugValue(draft.behavior) || "Unknown"}`,
+        `mood=${cleanDebugValue(draft.currentMood) || "unknown"}`,
+        `tone=${cleanDebugValue(draft.lastInteractionTone)}`,
+        `behavior=${cleanDebugList(draft.behaviorTowardUserText)}`,
+        `behaviorScores=${cleanDebugScoreMap(draft.behaviorScoresText)}`,
+        `relationship=${cleanDebugList(draft.relationshipWithUserText) || "stranger"}`,
+        `event=${cleanDebugFacts(draft.relationshipEventsText)}`,
         `onlyKnows=${cleanDebugFacts(draft.onlyKnowsText)}`,
     ].join(" | ");
 }
@@ -656,6 +703,38 @@ function cleanDebugFacts(value: string): string {
         .map(cleanDebugValue)
         .filter(Boolean)
         .join("; ");
+}
+
+function cleanDebugList(value: string): string {
+    return value
+        .split(/\n+|;|,/g)
+        .map(cleanDebugValue)
+        .filter(Boolean)
+        .join(", ");
+}
+
+function cleanDebugScoreMap(value: string): string {
+    return value
+        .split(/\n+|;|,/g)
+        .map(cleanDebugValue)
+        .map((entry) => {
+            const match = /^([A-Za-z][A-Za-z -]{1,40})\s*(?:=|:|\s)\s*([+-]?\d+)$/i.exec(entry);
+            return match == null ? "" : `${match[1].trim()}:${match[2]}`;
+        })
+        .filter(Boolean)
+        .join("; ");
+}
+
+function formatDebugList(values: string[], fallback: string): string {
+    return values.length > 0 ? values.join(", ") : fallback;
+}
+
+function formatDebugScores(scores: Record<string, number>): string {
+    const entries = Object.entries(scores)
+        .filter(([_label, score]) => score > 0)
+        .sort((left, right) => right[1] - left[1]);
+
+    return entries.length > 0 ? entries.map(([label, score]) => `${label}:${score}`).join(", ") : "none";
 }
 
 function headerStateChangeDetails(previous: AetherNovaMessageState, next: AetherNovaMessageState): string[] {

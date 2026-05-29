@@ -20,9 +20,13 @@ export interface NpcMemoryEntry {
     name: string;
     roleTitle: string;
     race: string;
-    relationship: string;
-    behavior: string;
     physicalExtra: string;
+    currentMood: string;
+    lastInteractionTone?: string;
+    behaviorTowardUser: string[];
+    behaviorScores: Record<string, number>;
+    relationshipWithUser: string[];
+    relationshipEvents: string[];
     onlyKnows: string[];
 }
 
@@ -84,7 +88,7 @@ interface NormalizeStatusOptions {
 const CLOCK_PATTERN = /\b([01]?\d|2[0-3]):([0-5]\d)\b/;
 const TIME_OF_DAYS: TimeOfDay[] = ["Morning", "Afternoon", "Evening", "Night"];
 const HEADER_DIVIDER = "***";
-const NPC_MEMORY_COMMAND_PATTERN = /(?:[\[【]\s*)?npc[\s_-]*memory\s+((?:delete|remove|clearfacts|clear|set|update|add\s+fact|addfact|relation|show)\s*:?\s*[^\n\]】]+)(?:[\]】])?/gi;
+const NPC_MEMORY_COMMAND_PATTERN = /(?:[\[【]\s*)?npc[\s_-]*memory\s+((?:delete|remove|clearfacts|clear\s+facts|clear|set|update|add\s+fact|addfact|relation\s+event|relationship\s+event|relationship|relation|behavior\s+score|behavior|mood|show)\s*:?\s*[^\n\]】]+)(?:[\]】])?/gi;
 
 const DEFAULT_STATE: AetherNovaMessageState = {
     location: "Unknown Region - Current Place - Active Area",
@@ -1195,6 +1199,7 @@ export function buildStageDirections(state: AetherNovaMessageState, userMessage:
         `Thread: ${effectiveState.thread}`,
         `Wallet: ${effectiveState.wallet}`,
         "Status format: Clothes/disguise; Position; optional body/racial detail. Keep clothes/position from last state unless the scene clearly changes. Use Thread items separated by \" ; \". Wallet changes only with clear in-story transaction/reward/loss evidence.",
+        "NPC memory social rule: Current Mood is temporary; Behavior is stable pattern; Relationship changes only after clear major events such as alliance, betrayal, oath, accepted confession, formal employment, or open hostility.",
     ];
     const npcMemoryContext = buildNpcMemoryDirections(effectiveState, userMessage);
 
@@ -1305,7 +1310,12 @@ function normalizeNpcMemoryEntry(value: unknown): NpcMemoryEntry | null {
         return null;
     }
 
-    const raw = value as Partial<NpcMemoryEntry> & {racial?: string; knownFacts?: string[]};
+    const raw = value as Partial<NpcMemoryEntry> & {
+        racial?: string;
+        knownFacts?: string[];
+        relationship?: string | string[];
+        behavior?: string | string[];
+    };
     const name = typeof raw.name === "string" ? cleanNpcMemoryName(raw.name) : "";
 
     if (name.length === 0) {
@@ -1317,14 +1327,23 @@ function normalizeNpcMemoryEntry(value: unknown): NpcMemoryEntry | null {
         : Array.isArray(raw.knownFacts)
             ? raw.knownFacts.filter((fact): fact is string => typeof fact === "string").map(cleanFactText).filter(Boolean).slice(0, 8)
             : [];
+    const behaviorTowardUser = normalizeMemoryLabelList(raw.behaviorTowardUser ?? raw.behavior, []);
+    const behaviorScores = normalizeBehaviorScores(raw.behaviorScores, behaviorTowardUser);
+    const relationshipWithUser = normalizeRelationshipList(raw.relationshipWithUser ?? raw.relationship);
 
     return {
         name,
         roleTitle: cleanMemoryField(raw.roleTitle, "Unknown role/title"),
         race: cleanMemoryField(raw.race || raw.racial, "Unknown"),
-        relationship: cleanMemoryField(raw.relationship, "Unknown"),
-        behavior: cleanMemoryField(raw.behavior, "Unknown"),
         physicalExtra: cleanMemoryField(raw.physicalExtra, "none"),
+        currentMood: cleanMemoryLabel(raw.currentMood, "unknown"),
+        lastInteractionTone: typeof raw.lastInteractionTone === "string" && cleanFragment(raw.lastInteractionTone).length > 0
+            ? cleanMemoryLabel(raw.lastInteractionTone, "neutral")
+            : undefined,
+        behaviorTowardUser,
+        behaviorScores,
+        relationshipWithUser,
+        relationshipEvents: normalizeMemoryTextList(raw.relationshipEvents, 10),
         onlyKnows,
     };
 }
@@ -1351,7 +1370,7 @@ function buildNpcMemoryDirections(state: AetherNovaMessageState, userMessage: st
     }
 
     if (mentionedEntries.length > 0) {
-        lines.push("Mentioned-only NPCs (identity only — do not inject Relationship, Behavior, or OnlyKnows unless they enter the scene/header):");
+        lines.push("Mentioned-only NPCs (identity only — do not inject Mood, Relationship, Behavior, OnlyKnows, or Relationship Events unless they enter the scene/header):");
         for (const entry of mentionedEntries.slice(0, 4)) {
             lines.push(`- ${formatNpcMemoryForPrompt(entry, false)}`);
         }
@@ -1372,8 +1391,12 @@ function updateNpcMemory(previousMemory: NpcMemoryStore, npcLine: string, contex
         const roleTitle = inferNpcRoleTitle(headerEntry, previous, context);
         const race = cleanMemoryField(headerEntry.race || previous?.race, "Unknown");
         const physicalExtra = inferNpcPhysicalExtra(headerEntry, previous, context);
-        const relationship = inferNpcRelationship(headerEntry, previous, context);
-        const behavior = inferNpcBehavior(context) || previous?.behavior || "Unknown";
+        const mood = inferNpcMood(headerEntry, previous, context);
+        const behaviorScores = updateBehaviorScores(previous?.behaviorScores ?? {}, inferNpcBehaviorEvidence(headerEntry, context));
+        const behaviorTowardUser = stableBehaviorLabels(previous?.behaviorTowardUser ?? [], behaviorScores);
+        const relationshipUpdate = inferNpcRelationshipUpdate(headerEntry, previous, context, behaviorTowardUser);
+        const relationshipWithUser = relationshipUpdate.relationshipWithUser;
+        const relationshipEvents = mergeRelationshipEvents(previous?.relationshipEvents ?? [], relationshipUpdate.events);
         const onlyKnows = mergeKnownFacts(previous?.onlyKnows ?? [], inferNpcOnlyKnows(headerEntry, context));
 
         if (existingKey != null && existingKey !== key) {
@@ -1384,9 +1407,13 @@ function updateNpcMemory(previousMemory: NpcMemoryStore, npcLine: string, contex
             name,
             roleTitle,
             race,
-            relationship,
-            behavior,
             physicalExtra,
+            currentMood: mood.currentMood,
+            lastInteractionTone: mood.lastInteractionTone,
+            behaviorTowardUser,
+            behaviorScores,
+            relationshipWithUser,
+            relationshipEvents,
             onlyKnows,
         };
     }
@@ -1462,9 +1489,14 @@ function formatNpcMemoryForPrompt(entry: NpcMemoryEntry, includeFull: boolean): 
     ];
 
     if (includeFull) {
-        parts.push(`Relationship with {{user}}: ${entry.relationship}`);
-        parts.push(`Behavior toward {{user}}: ${entry.behavior}`);
+        parts.push(`Current Mood: ${entry.currentMood}`);
+        if (entry.lastInteractionTone != null) {
+            parts.push(`Last Interaction Tone: ${entry.lastInteractionTone}`);
+        }
+        parts.push(`Behavior toward {{user}}: ${formatMemoryLabels(entry.behaviorTowardUser, "None stable yet")}`);
+        parts.push(`Relationship with {{user}}: ${formatMemoryLabels(entry.relationshipWithUser, "stranger")}`);
         parts.push(`OnlyKnows: ${entry.onlyKnows.length > 0 ? entry.onlyKnows.join(" ; ") : "None recorded"}`);
+        parts.push(`Important Relationship Events: ${entry.relationshipEvents.length > 0 ? entry.relationshipEvents.slice(-3).join(" ; ") : "None recorded"}`);
     }
 
     return parts.join(" | ");
@@ -1507,8 +1539,12 @@ function buildNpcDebugFooter(query: string | null, memory: NpcMemoryStore): stri
         `Role/Title: ${entry.roleTitle}`,
         `Race: ${entry.race}`,
         `Physical Extra: ${entry.physicalExtra}`,
-        `Relationship with {{user}}: ${entry.relationship}`,
-        `Behavior toward {{user}}: ${entry.behavior}`,
+        `Current Mood: ${entry.currentMood}`,
+        `Last Interaction Tone: ${entry.lastInteractionTone ?? "unknown"}`,
+        `Behavior toward {{user}}: ${formatMemoryLabels(entry.behaviorTowardUser, "None stable yet")}`,
+        `Behavior Scores: ${formatBehaviorScores(entry.behaviorScores)}`,
+        `Relationship with {{user}}: ${formatMemoryLabels(entry.relationshipWithUser, "stranger")}`,
+        `Relationship Events: ${entry.relationshipEvents.length > 0 ? entry.relationshipEvents.join(" ; ") : "None recorded"}`,
         `OnlyKnows: ${entry.onlyKnows.length > 0 ? entry.onlyKnows.join(" ; ") : "None recorded"}`,
     ].join("\n");
 }
@@ -1555,7 +1591,7 @@ export function applyNpcMemoryCommands(
 
 interface NpcMemoryCommand {
     raw: string;
-    action: "delete" | "set" | "clearfacts" | "addfact" | "relation" | "show";
+    action: "delete" | "set" | "clearfacts" | "addfact" | "relationship" | "relationevent" | "mood" | "behavior" | "behaviorscore" | "show";
     target: string;
     updates: Partial<NpcMemoryCommandUpdates>;
 }
@@ -1564,9 +1600,14 @@ interface NpcMemoryCommandUpdates {
     name: string;
     roleTitle: string;
     race: string;
-    relationship: string;
-    behavior: string;
     physicalExtra: string;
+    currentMood: string;
+    lastInteractionTone: string;
+    behaviorTowardUser: string[];
+    behaviorScores: Record<string, number>;
+    behaviorScoreDeltas: Record<string, number>;
+    relationshipWithUser: string[];
+    relationshipEvents: string[];
     onlyKnows: string[];
     addFacts: string[];
 }
@@ -1580,7 +1621,7 @@ function parseNpcMemoryCommands(userMessage: string): NpcMemoryCommand[] {
 function parseNpcMemoryCommandBody(rawBody: string): NpcMemoryCommand | null {
     const segments = splitTopLevel(rawBody, "|").map(cleanFragment).filter(Boolean);
     const head = segments.shift() ?? "";
-    const actionMatch = /^(delete|remove|clearfacts|clear\s+facts|clear|set|update|add\s+fact|addfact|relation|show)\s*:?\s*(.*)$/i.exec(head);
+    const actionMatch = /^(delete|remove|clearfacts|clear\s+facts|clear|set|update|add\s+fact|addfact|relation\s+event|relationship\s+event|relationship|relation|behavior\s+score|behavior|mood|show)\s*:?\s*(.*)$/i.exec(head);
 
     if (actionMatch == null) {
         return null;
@@ -1595,8 +1636,16 @@ function parseNpcMemoryCommandBody(rawBody: string): NpcMemoryCommand | null {
         action = "clearfacts";
     } else if (actionWord === "addfact") {
         action = "addfact";
-    } else if (actionWord === "relation") {
-        action = "relation";
+    } else if (actionWord === "relation" || actionWord === "relationship") {
+        action = "relationship";
+    } else if (actionWord === "relationevent" || actionWord === "relationshipevent") {
+        action = "relationevent";
+    } else if (actionWord === "mood") {
+        action = "mood";
+    } else if (actionWord === "behavior") {
+        action = "behavior";
+    } else if (actionWord === "behaviorscore") {
+        action = "behaviorscore";
     } else if (actionWord === "show") {
         action = "show";
     } else {
@@ -1620,8 +1669,16 @@ function parseNpcMemoryCommandBody(rawBody: string): NpcMemoryCommand | null {
 function parseNpcMemoryCommandUpdates(segments: string[]): Partial<NpcMemoryCommandUpdates> {
     const updates: Partial<NpcMemoryCommandUpdates> = {};
     const addFacts: string[] = [];
+    const behaviorScoreDeltas: Record<string, number> = {};
+    const relationshipEvents: string[] = [];
 
     for (const segment of segments) {
+        const scoreDelta = parseBehaviorScoreDelta(segment);
+        if (scoreDelta != null) {
+            behaviorScoreDeltas[scoreDelta.label] = (behaviorScoreDeltas[scoreDelta.label] ?? 0) + scoreDelta.delta;
+            continue;
+        }
+
         const match = /^([A-Za-z ]+)\s*(?:=|:)\s*(.*)$/i.exec(segment);
         if (match == null) {
             continue;
@@ -1639,21 +1696,42 @@ function parseNpcMemoryCommandUpdates(segments: string[]): Partial<NpcMemoryComm
             updates.roleTitle = cleanMemoryField(value, "Unknown role/title");
         } else if (key === "race" || key === "racial") {
             updates.race = cleanMemoryField(value, "Unknown");
-        } else if (key === "relationship" || key === "relation") {
-            updates.relationship = cleanMemoryField(value, "Unknown");
+        } else if (key === "relationship" || key === "relation" || key === "relationshipwithuser") {
+            updates.relationshipWithUser = normalizeRelationshipList(value);
         } else if (key === "behavior" || key === "behaviour") {
-            updates.behavior = cleanMemoryField(value, "Unknown");
+            updates.behaviorTowardUser = normalizeMemoryLabelList(value, []);
+        } else if (key === "mood" || key === "currentmood") {
+            updates.currentMood = cleanMemoryLabel(value, "unknown");
+        } else if (key === "tone" || key === "lastinteractiontone") {
+            updates.lastInteractionTone = cleanMemoryLabel(value, "neutral");
         } else if (key === "physical" || key === "physicalextra") {
             updates.physicalExtra = cleanMemoryField(value, "none");
+        } else if (key === "event" || key === "relationevent" || key === "relationshipevent") {
+            relationshipEvents.push(...splitRelationshipEvents(value));
         } else if (key === "onlyknows" || key === "knownfacts" || key === "facts") {
             updates.onlyKnows = splitNpcMemoryFacts(value);
         } else if (key === "fact" || key === "knownfact" || key === "addfact") {
             addFacts.push(...splitNpcMemoryFacts(value));
+        } else if (key === "behaviorscore" || key === "score") {
+            for (const scorePart of splitMemoryFields(value)) {
+                const parsed = parseBehaviorScoreDelta(scorePart);
+                if (parsed != null) {
+                    behaviorScoreDeltas[parsed.label] = (behaviorScoreDeltas[parsed.label] ?? 0) + parsed.delta;
+                }
+            }
+        } else if (key === "behaviorscores" || key === "scores") {
+            updates.behaviorScores = parseBehaviorScoreMap(value);
         }
     }
 
     if (addFacts.length > 0) {
         updates.addFacts = addFacts;
+    }
+    if (relationshipEvents.length > 0) {
+        updates.relationshipEvents = relationshipEvents;
+    }
+    if (Object.keys(behaviorScoreDeltas).length > 0) {
+        updates.behaviorScoreDeltas = behaviorScoreDeltas;
     }
 
     return updates;
@@ -1697,16 +1775,69 @@ function applyNpcMemoryCommand(memory: NpcMemoryStore, command: NpcMemoryCommand
         return {memory: next, message: `NPC memory command: added fact(s) to ${next[key].name}.`};
     }
 
-    if (command.action === "relation") {
+    if (command.action === "relationship") {
         if (key == null) {
             return {memory: next, message: `NPC memory command: no stored memory found for ${command.target}.`};
         }
 
         next[key] = {
             ...next[key],
-            relationship: cleanMemoryField(command.updates.relationship, "Unknown"),
+            relationshipWithUser: normalizeRelationshipList(command.updates.relationshipWithUser ?? next[key].relationshipWithUser),
         };
         return {memory: next, message: `NPC memory command: updated relationship for ${next[key].name}.`};
+    }
+
+    if (command.action === "relationevent") {
+        if (key == null) {
+            return {memory: next, message: `NPC memory command: no stored memory found for ${command.target}.`};
+        }
+
+        next[key] = {
+            ...next[key],
+            relationshipEvents: mergeRelationshipEvents(next[key].relationshipEvents, command.updates.relationshipEvents ?? []),
+        };
+        return {memory: next, message: `NPC memory command: added relationship event(s) for ${next[key].name}.`};
+    }
+
+    if (command.action === "mood") {
+        if (key == null) {
+            return {memory: next, message: `NPC memory command: no stored memory found for ${command.target}.`};
+        }
+
+        next[key] = {
+            ...next[key],
+            currentMood: cleanMemoryLabel(command.updates.currentMood, next[key].currentMood),
+            lastInteractionTone: command.updates.lastInteractionTone ?? next[key].lastInteractionTone,
+        };
+        return {memory: next, message: `NPC memory command: updated mood for ${next[key].name}.`};
+    }
+
+    if (command.action === "behavior") {
+        if (key == null) {
+            return {memory: next, message: `NPC memory command: no stored memory found for ${command.target}.`};
+        }
+
+        const behaviorTowardUser = normalizeMemoryLabelList(command.updates.behaviorTowardUser, next[key].behaviorTowardUser);
+        next[key] = {
+            ...next[key],
+            behaviorTowardUser,
+            behaviorScores: ensureBehaviorScoresForStableLabels(next[key].behaviorScores, behaviorTowardUser),
+        };
+        return {memory: next, message: `NPC memory command: updated behavior for ${next[key].name}.`};
+    }
+
+    if (command.action === "behaviorscore") {
+        if (key == null) {
+            return {memory: next, message: `NPC memory command: no stored memory found for ${command.target}.`};
+        }
+
+        const behaviorScores = applyBehaviorScoreDeltas(next[key].behaviorScores, command.updates.behaviorScoreDeltas ?? {});
+        next[key] = {
+            ...next[key],
+            behaviorScores,
+            behaviorTowardUser: stableBehaviorLabels(next[key].behaviorTowardUser, behaviorScores),
+        };
+        return {memory: next, message: `NPC memory command: updated behavior score for ${next[key].name}.`};
     }
 
     if (command.action === "show") {
@@ -1722,8 +1853,12 @@ function applyNpcMemoryCommand(memory: NpcMemoryStore, command: NpcMemoryCommand
                 `Role/Title: ${exists.roleTitle}`,
                 `Race: ${exists.race}`,
                 `Physical Extra: ${exists.physicalExtra}`,
-                `Relationship with {{user}}: ${exists.relationship}`,
-                `Behavior toward {{user}}: ${exists.behavior}`,
+                `Current Mood: ${exists.currentMood}`,
+                `Last Interaction Tone: ${exists.lastInteractionTone ?? "unknown"}`,
+                `Behavior toward {{user}}: ${formatMemoryLabels(exists.behaviorTowardUser, "None stable yet")}`,
+                `Behavior Scores: ${formatBehaviorScores(exists.behaviorScores)}`,
+                `Relationship with {{user}}: ${formatMemoryLabels(exists.relationshipWithUser, "stranger")}`,
+                `Relationship Events: ${exists.relationshipEvents.length > 0 ? exists.relationshipEvents.join(" ; ") : "None recorded"}`,
                 `OnlyKnows: ${exists.onlyKnows.length > 0 ? exists.onlyKnows.join(" ; ") : "None recorded"}`,
             ].join("\n"),
         };
@@ -1736,13 +1871,23 @@ function applyNpcMemoryCommand(memory: NpcMemoryStore, command: NpcMemoryCommand
         name,
         roleTitle: cleanMemoryField(command.updates.roleTitle ?? previous?.roleTitle, "Unknown role/title"),
         race: cleanMemoryField(command.updates.race ?? previous?.race, "Unknown"),
-        relationship: cleanMemoryField(command.updates.relationship ?? previous?.relationship, "Unknown"),
-        behavior: cleanMemoryField(command.updates.behavior ?? previous?.behavior, "Unknown"),
         physicalExtra: cleanMemoryField(command.updates.physicalExtra ?? previous?.physicalExtra, "none"),
+        currentMood: cleanMemoryLabel(command.updates.currentMood ?? previous?.currentMood, "unknown"),
+        lastInteractionTone: command.updates.lastInteractionTone ?? previous?.lastInteractionTone,
+        behaviorTowardUser: normalizeMemoryLabelList(command.updates.behaviorTowardUser ?? previous?.behaviorTowardUser, []),
+        behaviorScores: command.updates.behaviorScores != null
+            ? ensureBehaviorScoresForStableLabels(command.updates.behaviorScores, normalizeMemoryLabelList(command.updates.behaviorTowardUser ?? previous?.behaviorTowardUser, []))
+            : applyBehaviorScoreDeltas(
+                ensureBehaviorScoresForStableLabels(previous?.behaviorScores ?? {}, normalizeMemoryLabelList(command.updates.behaviorTowardUser ?? previous?.behaviorTowardUser, [])),
+                command.updates.behaviorScoreDeltas ?? {},
+            ),
+        relationshipWithUser: normalizeRelationshipList(command.updates.relationshipWithUser ?? previous?.relationshipWithUser),
+        relationshipEvents: mergeRelationshipEvents(previous?.relationshipEvents ?? [], command.updates.relationshipEvents ?? []),
         onlyKnows: command.updates.onlyKnows != null
             ? mergeKnownFacts([], command.updates.onlyKnows)
             : mergeKnownFacts(previous?.onlyKnows ?? [], command.updates.addFacts ?? []),
     };
+    entry.behaviorTowardUser = stableBehaviorLabels(entry.behaviorTowardUser, entry.behaviorScores);
 
     if (key != null && key !== nextKey) {
         delete next[key];
@@ -1761,6 +1906,235 @@ function splitNpcMemoryFacts(value: string): string[] {
         .split(/\s*;\s*/g)
         .map(cleanFactText)
         .filter(Boolean);
+}
+
+function splitRelationshipEvents(value: string): string[] {
+    return value
+        .split(/\s*;\s*/g)
+        .map(cleanFactText)
+        .filter(Boolean);
+}
+
+function splitMemoryFields(value: string): string[] {
+    return cleanFragment(value)
+        .split(/\s*[,;]\s*/g)
+        .map(cleanFragment)
+        .filter(Boolean);
+}
+
+function parseBehaviorScoreDelta(value: string): {label: string; delta: number} | null {
+    const match = /^([A-Za-z][A-Za-z -]{1,40})\s*([+-]\d+)$/i.exec(cleanFragment(value));
+    if (match == null) {
+        return null;
+    }
+
+    const label = cleanMemoryLabel(match[1], "");
+    const delta = Number.parseInt(match[2], 10);
+    return label.length > 0 && Number.isFinite(delta) ? {label, delta} : null;
+}
+
+function parseBehaviorScoreMap(value: string): Record<string, number> {
+    const scores: Record<string, number> = {};
+    for (const part of splitMemoryFields(value)) {
+        const match = /^([A-Za-z][A-Za-z -]{1,40})\s*(?:=|:|\s)\s*([+-]?\d+)$/i.exec(part);
+        if (match == null) {
+            continue;
+        }
+
+        const label = cleanMemoryLabel(match[1], "");
+        const score = Number.parseInt(match[2], 10);
+        if (label.length > 0 && Number.isFinite(score)) {
+            scores[label] = clampBehaviorScore(score);
+        }
+    }
+    return scores;
+}
+
+function normalizeMemoryLabelList(value: unknown, fallback: string[] = []): string[] {
+    if (Array.isArray(value)) {
+        return mergeUniqueList(value.filter((item): item is string => typeof item === "string").map((item) => cleanMemoryLabel(item, "")).filter(Boolean), 8);
+    }
+
+    if (typeof value === "string") {
+        const clean = cleanFragment(value);
+        if (clean.length === 0 || /^(unknown|none|none stable yet)$/i.test(clean)) {
+            return fallback;
+        }
+
+        return mergeUniqueList(splitMemoryFields(clean).flatMap((part) => part.split(/\s*\/\s*/g)).map((item) => cleanMemoryLabel(item, "")).filter(Boolean), 8);
+    }
+
+    return fallback;
+}
+
+function normalizeMemoryTextList(value: unknown, maxItems: number): string[] {
+    if (Array.isArray(value)) {
+        return mergeUniqueList(value.filter((item): item is string => typeof item === "string").map(cleanFactText).filter(Boolean), maxItems);
+    }
+
+    if (typeof value === "string") {
+        return mergeUniqueList(splitRelationshipEvents(value), maxItems);
+    }
+
+    return [];
+}
+
+function normalizeRelationshipList(value: unknown): string[] {
+    const labels = normalizeMemoryLabelList(value, []);
+    const meaningful = labels.filter((label) => !/^(unknown|none)$/i.test(label));
+    return meaningful.length > 0 ? mergeUniqueList(meaningful, 6) : ["stranger"];
+}
+
+function normalizeBehaviorScores(value: unknown, stableLabels: string[]): Record<string, number> {
+    const scores: Record<string, number> = ensureBehaviorScoresForStableLabels({}, stableLabels);
+
+    if (value != null && typeof value === "object" && !Array.isArray(value)) {
+        for (const [key, rawScore] of Object.entries(value as Record<string, unknown>)) {
+            const label = cleanMemoryLabel(key, "");
+            const score = typeof rawScore === "number" ? rawScore : Number(rawScore);
+            if (label.length > 0 && Number.isFinite(score)) {
+                scores[label] = clampBehaviorScore(score);
+            }
+        }
+    }
+
+    return scores;
+}
+
+function ensureBehaviorScoresForStableLabels(scores: Record<string, number>, stableLabels: string[]): Record<string, number> {
+    const next: Record<string, number> = {};
+    for (const [label, score] of Object.entries(scores)) {
+        const clean = cleanMemoryLabel(label, "");
+        if (clean.length > 0 && Number.isFinite(score)) {
+            next[clean] = clampBehaviorScore(score);
+        }
+    }
+
+    for (const label of stableLabels) {
+        const clean = cleanMemoryLabel(label, "");
+        if (clean.length > 0) {
+            next[clean] = Math.max(next[clean] ?? 0, 3);
+        }
+    }
+
+    return next;
+}
+
+function applyBehaviorScoreDeltas(scores: Record<string, number>, deltas: Record<string, number>): Record<string, number> {
+    const next = normalizeBehaviorScores(scores, []);
+    for (const [label, delta] of Object.entries(deltas)) {
+        const clean = cleanMemoryLabel(label, "");
+        if (clean.length > 0 && Number.isFinite(delta)) {
+            next[clean] = clampBehaviorScore((next[clean] ?? 0) + delta);
+        }
+    }
+    return next;
+}
+
+function clampBehaviorScore(value: number): number {
+    return Math.max(0, Math.min(9, Math.round(value)));
+}
+
+function mergeBehaviorEvidence(evidence: BehaviorEvidence[]): BehaviorEvidence[] {
+    const merged = new Map<string, number>();
+    for (const item of evidence) {
+        const label = cleanMemoryLabel(item.label, "");
+        if (label.length === 0) {
+            continue;
+        }
+        merged.set(label, Math.min(3, (merged.get(label) ?? 0) + item.weight));
+    }
+
+    return Array.from(merged.entries()).map(([label, weight]) => ({label, weight}));
+}
+
+function mergeRelationshipEvents(previous: string[], incoming: string[]): string[] {
+    const combined = previous.concat(incoming).map(cleanFactText).filter(Boolean);
+    const result: string[] = [];
+
+    for (let index = combined.length - 1; index >= 0; index -= 1) {
+        const event = combined[index];
+        if (result.some((entry) => sameText(entry, event))) {
+            continue;
+        }
+        result.unshift(event);
+        if (result.length >= 10) {
+            break;
+        }
+    }
+
+    return result;
+}
+
+function applyRelationshipLabels(previous: string[], incoming: string[]): string[] {
+    let labels = normalizeRelationshipList(previous);
+    const next = normalizeRelationshipList(incoming);
+
+    if (next.some((label) => label !== "stranger")) {
+        labels = labels.filter((label) => label !== "stranger");
+    }
+    if (next.includes("enemy")) {
+        labels = labels.filter((label) => !["ally", "friend", "lover", "romantic interest", "romantic tension", "subordinate"].includes(label));
+    }
+    if (next.includes("lover")) {
+        labels = labels.filter((label) => !["stranger", "romantic interest", "romantic tension"].includes(label));
+    }
+    if (next.includes("friend") || next.includes("ally") || next.includes("subordinate") || next.includes("acquaintance")) {
+        labels = labels.filter((label) => label !== "stranger");
+    }
+
+    return normalizeRelationshipList(mergeUniqueList(labels.concat(next), 6));
+}
+
+function addRelationshipModifier(previous: string[], modifier: string): string[] {
+    const labels = normalizeRelationshipList(previous).filter((label) => label !== "stranger" || modifier === "stranger");
+    return normalizeRelationshipList(mergeUniqueList(labels.concat(cleanMemoryLabel(modifier, "")), 6));
+}
+
+function applyStableRelationshipModifiers(labels: string[], stableBehavior: string[]): string[] {
+    let next = normalizeRelationshipList(labels);
+    const stable = new Set(stableBehavior);
+
+    if ((next.includes("ally") || next.includes("acquaintance")) && stable.has("suspicious")) {
+        next = addRelationshipModifier(next, "suspicious");
+    }
+    if (next.includes("acquaintance") && stable.has("formal")) {
+        next = addRelationshipModifier(next, "formal");
+    }
+
+    return next;
+}
+
+function npcSocialContext(headerEntry: NpcHeaderMemoryEntry, context: string): string {
+    const nearby = nearNpcContext(headerEntry.name, context);
+    return [headerEntry.status, nearby].filter((part) => part.length > 0).join("\n");
+}
+
+function cleanMemoryLabel(value: unknown, fallback: string): string {
+    if (typeof value !== "string") {
+        return fallback;
+    }
+
+    const clean = cleanFragment(value)
+        .toLowerCase()
+        .replace(/[_/]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    return clean.length > 0 ? clean : fallback;
+}
+
+function formatMemoryLabels(values: string[], fallback: string): string {
+    const labels = values.map((value) => cleanMemoryLabel(value, "")).filter(Boolean);
+    return labels.length > 0 ? labels.join(", ") : fallback;
+}
+
+function formatBehaviorScores(scores: Record<string, number>): string {
+    const entries = Object.entries(scores)
+        .filter(([_label, score]) => score > 0)
+        .sort((left, right) => right[1] - left[1])
+        .slice(0, 8);
+
+    return entries.length > 0 ? entries.map(([label, score]) => `${label}:${score}`).join(", ") : "none";
 }
 
 function stripNpcMemoryCommands(userMessage: string): string {
@@ -1848,151 +2222,163 @@ function inferNpcPhysicalExtra(headerEntry: NpcHeaderMemoryEntry, previous: NpcM
     return merged.length > 0 ? merged.join("; ") : previous?.physicalExtra || "none";
 }
 
-function inferNpcRelationship(headerEntry: NpcHeaderMemoryEntry, previous: NpcMemoryEntry | null, context: string): string {
-    const searchable = nearNpcContext(headerEntry.name, context).toLowerCase();
-    const labels: string[] = [];
-
-    // Romantic/Spousal
-    if (/\b(husband|wife|spouse)\b/.test(searchable) && /\b(married|marry|marriage)\b/i.test(searchable)) {
-        if (/\bhusband\b/.test(searchable)) labels.push("Husband");
-        else if (/\bwife\b/.test(searchable)) labels.push("Wife");
-        else labels.push("Spouse");
-    }
-    if (/\b(fiancé|fiancée|betrothed|engaged)\b/.test(searchable) && labels.length === 0) {
-        labels.push("Fiancé");
-    }
-    if (/\b(lover|beloved|paramour)\b/.test(searchable) && labels.length === 0) {
-        labels.push("Lover");
-    }
-    if (/\b(boyfriend|girlfriend)\b/.test(searchable) && labels.length === 0) {
-        labels.push("Lover");
-    }
-
-    // Family — only if explicitly linked to {{user}} (possessive/relational)
-    // Exclude "want to become" patterns (e.g. "make me a mother" ≠ Parent)
-    const becomingFamily = /\b(?:jadikan|menjadi|ingin\s+(?:menjadi|jadi)|make\s+(?:me|us|her|him)\s+(?:a\s+)?|wants?\s+to\s+be)\b/i;
-    if (!becomingFamily.test(searchable) && (
-        /\{\{user\}\}\s*(?:'s|s|)\s*(?:mother|father|parent|mom|dad|mama|papa)\b/i.test(searchable) ||
-        /\b(?:mother|father|parent|mom|dad|mama|papa)\s+(?:of|to)\s+\{\{user\}\}\b/i.test(searchable) ||
-        /\b(?:ibumu|ayahmu|mamahmu|papahmu)\b/i.test(searchable)
-    )) {
-        labels.push("Parent");
-    }
-    if (!becomingFamily.test(searchable) && (
-        /\{\{user\}\}\s*(?:'s|s|)\s*(?:daughter|son|child|kid)\b/i.test(searchable) ||
-        /\b(?:daughter|son|child|kid)\s+(?:of|to)\s+\{\{user\}\}\b/i.test(searchable) ||
-        /\b(?:putrimu|putramu|anakmu)\b/i.test(searchable)
-    )) {
-        labels.push("Child");
-    }
-    if (
-        /\{\{user\}\}\s*(?:'s|s|)\s*(?:brother|sister|sibling)\b/i.test(searchable) ||
-        /\b(?:brother|sister|sibling)\s+(?:of|to)\s+\{\{user\}\}\b/i.test(searchable) ||
-        /\b(?:kakakmu|adikmu|saudaramu)\b/i.test(searchable)
-    ) {
-        labels.push("Sibling");
-    }
-
-    // Close bonds
-    if (/\b(best friend|bestfriend)\b/.test(searchable)) {
-        labels.push("Best Friend");
-    }
-    if (/\b(friend|companion|comrade|buddy)\b/.test(searchable) && labels.length === 0) {
-        labels.push("Friend");
-    }
-    if (/\b(ally|allied)\b/.test(searchable) && labels.length === 0) {
-        labels.push("Ally");
-    }
-
-    // Adversarial
-    if (/\b(sworn enemy|nemesis|archrival|arch-enemy)\b/.test(searchable)) {
-        labels.push("Sworn Enemy");
-    }
-    if (/\b(enemy|foe)\b/.test(searchable) && labels.length === 0) {
-        labels.push("Enemy");
-    }
-    if (/\b(rival)\b/.test(searchable) && labels.length === 0) {
-        labels.push("Rival");
-    }
-
-    // Hierarchical
-    if (/\b(master|mistress|owner)\b/.test(searchable)) {
-        labels.push("Master");
-    }
-    if (/\b(servant|slave|maid|butler|retainer)\b/.test(searchable)) {
-        labels.push("Servant");
-    }
-    if (/\b(mentor|teacher|instructor|sensei|tutor)\b/.test(searchable)) {
-        labels.push("Mentor");
-    }
-    if (/\b(student|apprentice|pupil|protégé|protege)\b/.test(searchable)) {
-        labels.push("Student");
-    }
-    if (/\b(guardian|protector)\b/.test(searchable)) {
-        labels.push("Guardian");
-    }
-
-    // Distant
-    if (/\b(acquaintance)\b/.test(searchable)) {
-        labels.push("Acquaintance");
-    }
-    if (/\b(stranger)\b/.test(searchable)) {
-        labels.push("Stranger");
-    }
-
-    // Professional
-    if (/\b(business partner|colleague|associate)\b/.test(searchable)) {
-        labels.push("Associate");
-    }
-
-    return labels.length > 0 ? mergeUniqueList(labels, 2).join(" / ") : cleanMemoryField(previous?.relationship, "Unknown");
+interface MoodInference {
+    currentMood: string;
+    lastInteractionTone?: string;
 }
 
-function inferNpcBehavior(context: string): string {
-    const searchable = context.toLowerCase();
-    const labels: string[] = [];
+interface BehaviorEvidence {
+    label: string;
+    weight: number;
+}
 
-    if (/\b(arrogant|aloof|condescending|cold|proud)\b/.test(searchable)) {
-        labels.push("arrogant");
-    }
-    if (/\b(suspicious|wary|guarded|distrust|cautious)\b/.test(searchable)) {
-        labels.push("suspicious");
-    }
-    if (/\b(protective|guarding|defending|defensive)\b/.test(searchable)) {
-        labels.push("protective");
-    }
-    if (/\b(possessive|jealous|clinging)\b/.test(searchable)) {
-        labels.push("possessive");
-    }
-    if (/\b(playful|teasing|mischievous|cheerful)\b/.test(searchable)) {
-        labels.push("playful");
-    }
-    if (/\b(formal|polite|court|protocol|respectful)\b/.test(searchable)) {
-        labels.push("formal");
-    }
-    if (/\b(cold|distant|aloof|unfriendly)\b/.test(searchable)) {
-        labels.push("cold");
-    }
-    if (/\b(loyal|devoted|faithful|steadfast)\b/.test(searchable)) {
-        labels.push("loyal");
-    }
-    if (/\b(fearful|afraid|scared|nervous|anxious)\b/.test(searchable)) {
-        labels.push("fearful");
-    }
-    if (/\b(friendly|trust|trusted|kind|cordial)\b/.test(searchable)) {
-        labels.push("friendly");
-    }
-    if (/\b(hostile|angry|threatened|threat|fight|attacked)\b/.test(searchable)) {
-        labels.push("hostile");
-    }
-    if (/\b(intimate|flirt|flirtatious|kiss|kissing|cuddling|seductive)\b/.test(searchable)) {
-        labels.push("intimate");
-    }
-    if (/\b(loving|affectionate|caring|gentle|warm)\b/.test(searchable)) {
-        labels.push("loving");
+interface RelationshipUpdate {
+    relationshipWithUser: string[];
+    events: string[];
+}
+
+function inferNpcMood(headerEntry: NpcHeaderMemoryEntry, previous: NpcMemoryEntry | null, context: string): MoodInference {
+    const searchable = npcSocialContext(headerEntry, context).toLowerCase();
+    const moodChecks: Array<[string, RegExp, string]> = [
+        ["angry", /\b(angry|furious|rage|enraged|mad|irate|glares?|snaps?)\b/, "tense"],
+        ["annoyed", /\b(annoyed|irritated|exasperated|huffs?|scoffs?)\b/, "tense"],
+        ["sad", /\b(sad|sorrowful|grief|mournful|tearful|heartbroken)\b/, "soft"],
+        ["afraid", /\b(afraid|scared|fearful|terrified|frightened|panicked)\b/, "tense"],
+        ["curious", /\b(curious|intrigued|interested|studying|examining)\b/, "curious"],
+        ["embarrassed", /\b(embarrassed|flustered|blush(?:es|ing)?|bashful)\b/, "soft"],
+        ["tense", /\b(tense|strained|uneasy|on edge|stiffens?)\b/, "tense"],
+        ["amused", /\b(amused|laughs?|chuckles?|smirks?|playful smile)\b/, "playful"],
+        ["cold", /\b(cold|distant|icy|flatly|expressionless)\b/, "cold"],
+        ["relieved", /\b(relieved|relaxes?|softens?|exhales?)\b/, "warm"],
+        ["jealous", /\b(jealous|possessive|envy|envious)\b/, "tense"],
+        ["confused", /\b(confused|puzzled|uncertain|bewildered)\b/, "uncertain"],
+        ["calm", /\b(calm|composed|steady|serene)\b/, "calm"],
+    ];
+
+    for (const [mood, pattern, tone] of moodChecks) {
+        if (pattern.test(searchable)) {
+            return {currentMood: mood, lastInteractionTone: tone};
+        }
     }
 
-    return labels.length > 0 ? mergeUniqueList(labels, 3).join(" / ") : "";
+    return {
+        currentMood: previous?.currentMood ?? "unknown",
+        lastInteractionTone: previous?.lastInteractionTone,
+    };
+}
+
+function inferNpcBehaviorEvidence(headerEntry: NpcHeaderMemoryEntry, context: string): BehaviorEvidence[] {
+    const searchable = npcSocialContext(headerEntry, context).toLowerCase();
+    const evidence: BehaviorEvidence[] = [];
+    const add = (label: string, pattern: RegExp, weight = 1): void => {
+        if (pattern.test(searchable)) {
+            evidence.push({label, weight});
+        }
+    };
+
+    add("protective", /\b(protects?|protected|guarding|guards?|defends?|defended|shields?|stands? between|places? (?:himself|herself|themself) between)\b/, 2);
+    add("possessive", /\b(possessive|mine|my husband|my wife|belongs to me|claim(?:s|ed)? you|jealous)\b/);
+    add("playful", /\b(playful|teasing|mischievous|jokes?|banters?|winks?)\b/);
+    add("formal", /\b(formal|protocol|courteous|proper|courtly|professional)\b/);
+    add("respectful", /\b(respectful|bows?|deferential|honors?|honour)\b/);
+    add("suspicious", /\b(suspicious|wary|guarded|distrust|cautious|skeptical|narrowed eyes)\b/);
+    add("arrogant", /\b(arrogant|aloof|condescending|proud|smug|superior)\b/);
+    add("cold", /\b(cold|distant|icy|unfriendly|detached)\b/);
+    add("loyal", /\b(loyal|devoted|faithful|steadfast|stands with|remains by your side)\b/, 2);
+    add("fearful", /\b(fearful|afraid|scared|nervous|anxious|trembling)\b/);
+    add("hostile", /\b(hostile|attacks?|attacked|threatens?|threatened|betrays?|betrayed|tries? to kill|orders? (?:your|their) capture)\b/, 2);
+    add("obedient", /\b(obeys?|obedient|follows your order|accepts your command|kneels? and awaits)\b/);
+    add("affectionate", /\b(affectionate|gentle|warm|tender|caresses?|hugs?|kisses?|loving)\b/);
+    add("manipulative", /\b(manipulative|calculating|deceptive|uses? you|strings? you along|plays? you)\b/);
+
+    return mergeBehaviorEvidence(evidence);
+}
+
+function updateBehaviorScores(previousScores: Record<string, number>, evidence: BehaviorEvidence[]): Record<string, number> {
+    const next: Record<string, number> = {};
+
+    for (const [label, score] of Object.entries(previousScores)) {
+        const clean = cleanMemoryLabel(label, "");
+        if (clean.length > 0 && Number.isFinite(score)) {
+            next[clean] = clampBehaviorScore(score);
+        }
+    }
+
+    for (const item of evidence) {
+        const label = cleanMemoryLabel(item.label, "");
+        if (label.length === 0) {
+            continue;
+        }
+
+        next[label] = clampBehaviorScore((next[label] ?? 0) + item.weight);
+    }
+
+    return next;
+}
+
+function stableBehaviorLabels(previousStable: string[], scores: Record<string, number>): string[] {
+    const stableFromScores = Object.entries(scores)
+        .filter(([_label, score]) => score >= 3)
+        .sort((left, right) => right[1] - left[1])
+        .map(([label]) => label);
+
+    return mergeUniqueList(previousStable.concat(stableFromScores).map((label) => cleanMemoryLabel(label, "")).filter(Boolean), 6);
+}
+
+function inferNpcRelationshipUpdate(
+    headerEntry: NpcHeaderMemoryEntry,
+    previous: NpcMemoryEntry | null,
+    context: string,
+    stableBehavior: string[],
+): RelationshipUpdate {
+    const searchable = npcSocialContext(headerEntry, context);
+    let labels = previous?.relationshipWithUser?.length ? previous.relationshipWithUser : ["stranger"];
+    const events: string[] = [];
+    const addEvent = (nextLabels: string[], event: string): void => {
+        labels = applyRelationshipLabels(labels, nextLabels);
+        events.push(cleanFactText(event));
+    };
+
+    if (/\b(?:my name is|call me|i am called|i'm called|my name's)\b/i.test(searchable) && labels.includes("stranger")) {
+        addEvent(["acquaintance", "formal"], `${headerEntry.firstName} learned {{user}}'s name or basic identity.`);
+    }
+
+    if (/\b(?:alliance formed|formed an alliance|temporary alliance|work together|working together|cooperate|cooperation|join forces|same goal|contract signed|accepted the contract)\b/i.test(searchable)) {
+        addEvent(["ally"], `${headerEntry.firstName} formed cooperation or an alliance with {{user}}.`);
+    }
+
+    if (/\b(?:true friend|trusted friend|friendship|declares? (?:you|{{user}}) (?:as )?(?:a )?friend|calls? (?:you|{{user}}) (?:a )?friend)\b/i.test(searchable)
+        && /\b(?:trust|trusted|saved|helped|protected|continued traveling|stood by|sincere|genuine)\b/i.test(searchable)) {
+        addEvent(["friend"], `${headerEntry.firstName} accepted a supported friendship with {{user}}.`);
+    }
+
+    if (/\b(?:i love you|love you too|loves? you too|accepted (?:your|{{user}}'s) confession|confession accepted|accepted (?:your|{{user}}'s) proposal|marriage accepted|proposal accepted)\b/i.test(searchable)
+        && /\b(?:i love you too|love you too|returns? (?:your|{{user}}'s) love|accepted (?:your|{{user}}'s) confession|confession accepted|marriage accepted|proposal accepted)\b/i.test(searchable)
+        && !/\b(?:joking|pretending|acting|lying|mind control|forced|coerced)\b/i.test(searchable)) {
+        addEvent(["lover"], `${headerEntry.firstName} mutually confirmed romantic love with {{user}}.`);
+    } else if (/\b(?:confesses? love|i love you|romantic tension|flirts?|blush(?:es|ing)?|desire|attraction)\b/i.test(searchable)
+        && !/\b(?:i love you too|love you too|accepted (?:your|{{user}}'s) confession)\b/i.test(searchable)) {
+        labels = addRelationshipModifier(labels, "romantic tension");
+    }
+
+    if (/\b(?:swears? loyalty|oath sworn|pledges? (?:loyalty|service)|becomes? (?:your|{{user}}'s) servant|officially works? for (?:you|{{user}})|formal employment|accepts? (?:your|{{user}}'s) command structure|surrenders? as (?:your|{{user}}'s) subordinate)\b/i.test(searchable)) {
+        addEvent(["subordinate"], `${headerEntry.firstName} entered a clear subordinate structure under {{user}}.`);
+    }
+
+    if (/\b(?:declares? (?:you|{{user}}) (?:an )?enemy|enemy declared|betrays?|betrayal|attacks? (?:you|{{user}})|orders? (?:your|{{user}}'s) capture|tries? to kill (?:you|{{user}})|sworn enemy)\b/i.test(searchable)) {
+        addEvent(["enemy"], `${headerEntry.firstName} entered open hostility with {{user}}.`);
+    }
+
+    if (/\b(?:rival|rivalry)\b/i.test(searchable)) {
+        addEvent(["rival"], `${headerEntry.firstName} established a rivalry with {{user}}.`);
+    }
+
+    labels = applyStableRelationshipModifiers(labels, stableBehavior);
+
+    return {
+        relationshipWithUser: labels,
+        events,
+    };
 }
 
 function inferNpcOnlyKnows(headerEntry: NpcHeaderMemoryEntry, context: string): string[] {

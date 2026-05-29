@@ -225,9 +225,15 @@ interface NpcMemoryEntry {
     name: string;           // Full name (min 2 words ideal)
     roleTitle: string;      // Role/jabatan penting
     race: string;           // Race NPC
-    relationship: string;   // Relationship with {{user}}
-    behavior: string;       // Behavior toward {{user}}
     physicalExtra: string;  // Fitur fisik tambahan
+
+    currentMood: string;                // Emosi sementara scene sekarang
+    lastInteractionTone?: string;       // Tone interaksi terakhir
+    behaviorTowardUser: string[];       // Behavior stabil terhadap {{user}}
+    behaviorScores: Record<string, number>; // Score evidence behavior
+    relationshipWithUser: string[];     // Status hubungan besar / social bond
+    relationshipEvents: string[];       // Event besar penyebab relationship berubah
+
     onlyKnows: string[];    // Fakta yang hanya diketahui NPC ini
 }
 ```
@@ -240,21 +246,24 @@ interface NpcMemoryEntry {
    - **Role/Title**: Infer dari konteks sekitar nama NPC (pattern title before/after name).
    - **Race**: Pertahankan dari state lama jika tidak ada data baru.
    - **Physical Extra**: Deteksi dari status/konteks: `nine tails`, `animal ears`, dll.
-   - **Relationship**: Infer dari kata kunci konteks long-term relationship:
-     - **Romantic**: `husband`/`wife`/`spouse` → Husband/Wife/Spouse, `lover`/`beloved` → Lover, `fiancé` → Fiancé
-     - **Family** (hanya jika possessive ke `{{user}}`, contoh: `{{user}}'s mother`, `ibumu`; **tidak** match jika "become" pattern seperti `jadikan aku seorang ibu`): Parent / Child / Sibling
-     - **Close bonds**: Friend, Best Friend, Ally
-     - **Adversarial**: Sworn Enemy, Enemy, Rival
-     - **Hierarchical**: Master, Servant, Mentor, Student, Guardian
-     - **Distant**: Acquaintance, Stranger
-     - **Professional**: Associate
-     Bersifat jangka panjang dan persisten (fallback ke nilai sebelumnya jika tidak ada data baru).
-   - **Behavior**: Infer dari kata kunci konteks: `arrogant`, `protective`, `possessive`, `playful`, `loyal`, `loving`, `friendly`, `hostile`, `intimate`, dll. Attitude/behavior saat ini (temporal, berubah sesuai scene).
+   - **Current Mood**: Boleh berubah tiap response (`angry`, `annoyed`, `calm`, `tense`, `embarrassed`, dll). Mood tidak mengubah relationship.
+   - **Behavior Scores**: Evidence behavior dinaikkan pelan (`+1`, atau `+2` untuk event kuat seperti protect/hostile/oath). Behavior stabil baru muncul jika score minimal 3.
+   - **Behavior Toward {{user}}**: Label stabil dari score, misalnya `protective`, `suspicious`, `formal`, `playful`, `hostile`. Tidak dioverwrite oleh mood sesaat.
+   - **Relationship With {{user}}**: Array label konservatif (`stranger`, `acquaintance`, `formal`, `ally`, `friend`, `enemy`, `rival`, `subordinate`, `lover`, `romantic tension`). Hanya berubah lewat event besar.
+   - **Relationship Events**: Event penting saja, maksimal 10, misalnya confession accepted, alliance formed, betrayal, oath sworn, formal employment.
   - **OnlyKnows**: Extract fakta dari konteks sekitar nama NPC (mention `{{user}} told`, `{{user}} gave`, `{{user}} threatened`, dll).
 
+Boundary penting:
+- NPC marah tidak otomatis menjadi `enemy`.
+- NPC sopan/formal tidak otomatis menjadi `subordinate`.
+- NPC flirting/blush tidak otomatis menjadi `lover`.
+- Kata `friend` sekali tidak otomatis menjadi `friend` tanpa konteks trust/aksi pendukung.
+- Kerja sama bisa menjadi `ally`, tapi `friend` butuh kedekatan personal.
+- `relationshipWithUser` boleh punya lebih dari satu label, contoh `ally, suspicious`.
+
 ### Injection Rules (`buildNpcMemoryDirections`)
-1. **NPC di header aktif** → inject FULL memory: Name, Role/Title, Race, Physical Extra, Relationship, Behavior, OnlyKnows.
-2. **NPC hanya disebut di pesan user** → inject IDENTITY ONLY: Name, Role/Title, Race, Physical Extra. Relationship, Behavior, OnlyKnows TIDAK diinject (knowledge firewall).
+1. **NPC di header aktif** → inject FULL memory: Name, Role/Title, Race, Physical Extra, Current Mood, Behavior, Relationship, OnlyKnows, Important Relationship Events.
+2. **NPC hanya disebut di pesan user** → inject IDENTITY ONLY: Name, Role/Title, Race, Physical Extra. Mood, Relationship, Behavior, OnlyKnows, dan Relationship Events TIDAK diinject (knowledge firewall).
 3. **NPC tidak ada di header dan tidak disebut** → data tetap disimpan, tidak diinject. Injection dibatasi 4 NPC per kategori.
 
 ### Commands Manual
@@ -263,9 +272,13 @@ Command dideteksi dengan regex `NPC_MEMORY_COMMAND_PATTERN` di mana pun dalam pe
 - `npc memory delete: Name` → hapus seluruh data NPC.
 - `npc memory clearfacts: Name` → kosongkan OnlyKnows.
 - `npc memory add fact: Name | fact=fakta` → tambah fakta ke OnlyKnows.
-- `npc memory relation: Name | relationship=...` → update relationship saja.
+- `npc memory mood: Name | mood=tense | tone=guarded` → set Current Mood dan tone.
+- `npc memory behavior: Name | behavior=protective, suspicious` → set behavior stabil.
+- `npc memory behavior score: Name | protective +1` → tambah/kurangi score behavior.
+- `npc memory relationship: Name | relationship=ally, suspicious` → set relationship list.
+- `npc memory relation event: Name | event=Yume accepted {{user}}'s confession and said she loved him too.` → tambah relationship event.
 - `npc memory show: Name` → tampilkan data sebagai system message.
-- `npc memory set: Name | role=... | race=... | physical=... | relationship=... | behavior=... | onlyKnows=... | fact=...` → set lengkap. Field `fact` append ke OnlyKnows; `onlyKnows` replace.
+- `npc memory set: Name | role=... | race=... | physical=... | mood=... | behavior=... | behaviorScores=protective:5 | relationship=... | event=... | onlyKnows=... | fact=...` → set lengkap. Field `fact` append ke OnlyKnows; `onlyKnows` replace.
 
 Command di-reapply setelah `afterResponse` agar efeknya persist meskipun AI mengubah header.
 
@@ -294,7 +307,7 @@ Stage melakukan format narasi ringan:
 
 ## 10. Debug UI System
 
-Debug UI (di `Stage.tsx` render) saat ini: **Debug UI V1.6**.
+Debug UI (di `Stage.tsx` render) saat ini: **Debug UI V1.7**.
 
 Debug UI menampilkan:
 - Current state: Location, Time, You, NPC, Thread, Wallet, Pending NPC Debug, Pending Memory Command.
@@ -314,7 +327,7 @@ Debug Logs menyimpan maksimal 120 event terbaru. Tombol **Clear Logs** di header
 
 Debug UI juga bisa mengatur NPC Memory:
 - **Create NPC Memory**: membuat memory NPC baru dari form.
-- **Edit**: mengubah Name, Role/Title, Race, Physical Extra, Relationship, Behavior, dan OnlyKnows.
+- **Edit**: mengubah Name, Role/Title, Race, Physical Extra, Current Mood, Last Tone, Relationship, Behavior, Behavior Scores, Relationship Events, dan OnlyKnows.
 - **Clear Facts**: mengosongkan OnlyKnows NPC.
 - **Delete**: menghapus seluruh memory NPC.
 
