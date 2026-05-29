@@ -1852,26 +1852,86 @@ function inferNpcRelationship(headerEntry: NpcHeaderMemoryEntry, previous: NpcMe
     const searchable = nearNpcContext(headerEntry.name, context).toLowerCase();
     const labels: string[] = [];
 
-    if (/\b(arrogant|aloof|condescending|cold|proud)\b/.test(searchable)) {
-        labels.push("arrogant");
+    // Romantic/Spousal
+    if (/\b(husband|wife|spouse)\b/.test(searchable) && /\b(married|marry|marriage)\b/i.test(searchable)) {
+        if (/\bhusband\b/.test(searchable)) labels.push("Husband");
+        else if (/\bwife\b/.test(searchable)) labels.push("Wife");
+        else labels.push("Spouse");
     }
-    if (/\b(suspicious|wary|guarded|distrust|distrustful|cautious|curiga)\b/.test(searchable)) {
-        labels.push("suspicious");
+    if (/\b(fiancé|fiancée|betrothed|engaged)\b/.test(searchable) && labels.length === 0) {
+        labels.push("Fiancé");
     }
-    if (/\b(formal|polite|court|audience|protocol|bow|bowed)\b/.test(searchable)) {
-        labels.push("formal");
+    if (/\b(lover|beloved|paramour)\b/.test(searchable) && labels.length === 0) {
+        labels.push("Lover");
     }
-    if (/\b(friend|friendly|warm|trust|trusted|ally|allied|kind)\b/.test(searchable)) {
-        labels.push("friendly");
-    }
-    if (/\b(hostile|enemy|angry|threatened|threat|fight|attacked)\b/.test(searchable)) {
-        labels.push("hostile");
-    }
-    if (/\b(husband|wife|lover|beloved|intimate|affection|affectionate|flirt|kiss)\b/.test(searchable)) {
-        labels.push("intimate");
+    if (/\b(boyfriend|girlfriend)\b/.test(searchable) && labels.length === 0) {
+        labels.push("Lover");
     }
 
-    return labels.length > 0 ? mergeUniqueList(labels, 3).join(" / ") : cleanMemoryField(previous?.relationship, "Unknown");
+    // Family
+    if (/\b(father|mother|parent|stepfather|stepmother)\b/.test(searchable)) {
+        labels.push("Parent");
+    }
+    if (/\b(daughter|son|child)\b/.test(searchable)) {
+        labels.push("Child");
+    }
+    if (/\b(brother|sister|sibling|stepbrother|stepsister)\b/.test(searchable)) {
+        labels.push("Sibling");
+    }
+
+    // Close bonds
+    if (/\b(best friend|bestfriend)\b/.test(searchable)) {
+        labels.push("Best Friend");
+    }
+    if (/\b(friend|companion|comrade|buddy)\b/.test(searchable) && labels.length === 0) {
+        labels.push("Friend");
+    }
+    if (/\b(ally|allied)\b/.test(searchable) && labels.length === 0) {
+        labels.push("Ally");
+    }
+
+    // Adversarial
+    if (/\b(sworn enemy|nemesis|archrival|arch-enemy)\b/.test(searchable)) {
+        labels.push("Sworn Enemy");
+    }
+    if (/\b(enemy|foe)\b/.test(searchable) && labels.length === 0) {
+        labels.push("Enemy");
+    }
+    if (/\b(rival)\b/.test(searchable) && labels.length === 0) {
+        labels.push("Rival");
+    }
+
+    // Hierarchical
+    if (/\b(master|mistress|owner)\b/.test(searchable)) {
+        labels.push("Master");
+    }
+    if (/\b(servant|slave|maid|butler|retainer)\b/.test(searchable)) {
+        labels.push("Servant");
+    }
+    if (/\b(mentor|teacher|instructor|sensei|tutor)\b/.test(searchable)) {
+        labels.push("Mentor");
+    }
+    if (/\b(student|apprentice|pupil|protégé|protege)\b/.test(searchable)) {
+        labels.push("Student");
+    }
+    if (/\b(guardian|protector)\b/.test(searchable)) {
+        labels.push("Guardian");
+    }
+
+    // Distant
+    if (/\b(acquaintance)\b/.test(searchable)) {
+        labels.push("Acquaintance");
+    }
+    if (/\b(stranger)\b/.test(searchable)) {
+        labels.push("Stranger");
+    }
+
+    // Professional
+    if (/\b(business partner|colleague|associate)\b/.test(searchable)) {
+        labels.push("Associate");
+    }
+
+    return labels.length > 0 ? mergeUniqueList(labels, 2).join(" / ") : cleanMemoryField(previous?.relationship, "Unknown");
 }
 
 function inferNpcBehavior(context: string): string {
@@ -1904,6 +1964,15 @@ function inferNpcBehavior(context: string): string {
     }
     if (/\b(fearful|afraid|scared|nervous|anxious)\b/.test(searchable)) {
         labels.push("fearful");
+    }
+    if (/\b(friendly|trust|trusted|kind|cordial)\b/.test(searchable)) {
+        labels.push("friendly");
+    }
+    if (/\b(hostile|angry|threatened|threat|fight|attacked)\b/.test(searchable)) {
+        labels.push("hostile");
+    }
+    if (/\b(intimate|flirt|flirtatious|kiss|kissing|cuddling|seductive)\b/.test(searchable)) {
+        labels.push("intimate");
     }
     if (/\b(loving|affectionate|caring|gentle|warm)\b/.test(searchable)) {
         labels.push("loving");

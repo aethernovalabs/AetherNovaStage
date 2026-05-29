@@ -1,382 +1,355 @@
-# Aether Nova Stage Reference
+# Aether Nova Stage Reference — Cara Kerja
 
-Dokumen ini adalah catatan kerja untuk stage Aether Nova yang sudah diterapkan di project ini dan sudah disesuaikan dengan prompt header asli character AI.
-Gunakan dokumen ini sebagai pengingat saat mengubah stage berikutnya.
+Dokumen ini menjelaskan cara kerja setiap sistem di Stage Aether Nova berdasarkan implementasi aktual di `src/Stage.tsx` dan `src/aetherNovaHeader.ts`.
 
-Stage ini bukan system prompt untuk Codex dan bukan system prompt character AI.
-Stage ini adalah System teknis Chub Stage untuk pelengkap Chararter Aether Nova
+Stage ini adalah **system teknis Chub Stage** untuk menjaga konsistensi output AI dalam chat RP panjang.
 
-## Status Implementasi
+---
 
-Stage sedang memakai debug UI sementara untuk pengujian.
+## Arsitektur Stage
 
-File utama:
+Stage adalah React component (`Stage.tsx`) yang mengimplementasikan `StageBase` dari `@chub-ai/stages-ts`. Empat lifecycle hook utama:
 
-- `src/Stage.tsx`: wrapper Chub Stage, hook `load`, `beforePrompt`, `afterResponse`, dan debug UI sementara.
-- `src/aetherNovaHeader.ts`: logic parsing, normalisasi, koreksi header, dan update state.
-- `public/chub_meta.yaml`: metadata stage, `position: ADJACENT` saat debug UI aktif, dan schema state.
+### constructor()
+- Menerima `InitialData` berisi characters, config, dan messageState dari chat.
+- Memanggil `createInitialHeaderState()` yang meneruskan ke `coerceHeaderState()` untuk menormalkan state masuk atau membuat default.
+- Jika ada character aktif, stage menginfer race dari `character.description/personality/scenario/first_message` dan memakainya sebagai NPC default.
+- State default: `DEFAULT_STATE` — lokasi "Unknown Region", waktu "Morning | 09:00", You "Unknown - Human", NPC "None", Thread "None", Wallet "0G ; 0S ; 0C", walletInitialized false, npcMemory {}.
 
-Stage berjalan dengan:
+### load()
+- Mengembalikan `success: true` dan `messageState` saat ini.
+- Tidak membuat state baru.
 
-```yaml
-position: ADJACENT
-```
+### beforePrompt(userMessage)
+1. Mendeteksi `[debug: npc Name]` dalam pesan user (disimpan ke localStorage).
+2. `prepareAetherNovaStateForPrompt()`: update npcMemory dari header NPC terakhir.
+3. `applyNpcMemoryCommands()`: parsing dan eksekusi command `npc memory ...`, membersihkan command dari pesan user.
+4. `buildStageDirections()`: menyusun string stageDirections yang inject state terakhir + NPC memory context ke prompt.
+5. Kembali: `stageDirections`, `messageState`, `modifiedMessage` (jika ada command memory), `systemMessage` (jika command `show`).
 
-Artinya stage menampilkan panel debug di samping chat selama pengujian. Setelah stage sampai tahap final, kembalikan ke `position: NONE` agar stage kembali berjalan tanpa UI
+### afterResponse(botMessage)
+1. `normalizeAetherNovaResponse()`: fungsi inti yang melakukan:
+   - `extractHeader(content)`: mendeteksi header dalam response AI.
+   - `normalizeLocationTimeLine()`: koreksi location & time.
+   - `normalizeWalletLine()`: koreksi wallet.
+   - `normalizeYouLine()`: koreksi line You.
+   - `normalizeNpcLine()`: koreksi line NPC.
+   - `normalizeThreadLine()`: koreksi Thread.
+   - `updateNpcMemory()`: update memory NPC dari header.
+   - `formatResponse()`: menggabungkan header terkoreksi + narasi yang diformat.
+2. Re-apply NPC memory commands (untuk persist efek command).
+3. Kembali: `modifiedMessage`, `messageState`, `systemMessage`.
 
-## Format Header Saat Ini
+### setState(state)
+- Dipanggil saat user swipe/jump ke message lain.
+- `coerceHeaderState()`: restore state sesuai message yang dituju.
 
-Output AI ditargetkan menjadi:
+---
 
-```md
-**Main Location - Sub Location - Detailed Area | Time of Day | HH:MM**
-**You: Gender - Apparent Race (Clothes/disguise; Position; body detail)**
-**NPC: Full Name - Race (Clothes; Position; body/racial detail), Full Name - Race (Clothes; Position; body/racial detail)**
-**Thread: Main mission/status ; Major obstacle/status**
-**Wallet: XG ; XS ; XC**
-***
+## 1. Header Extraction (`extractHeader`)
 
-Narrative continues here...
-```
+Stage mendeteksi header dalam response AI dengan `readHeaderBlock()`:
 
-Contoh:
+- Scan 40 baris pertama response untuk menemukan block header.
+- Mencari line yang mengandung `|` + clock pattern (Location/Time line).
+- Mencari line `You:`, `NPC:`, `Thread:`, `Wallet:` (case-insensitive).
+- Block header harus memiliki minimal 1 line location + setidaknya 1 line lainnya.
+- Blank lines di dalam header ditoleransi hingga 4 baris.
+- Divider `***` atau `___` dianggap penutup header.
+- Teks sebelum header dipindahkan ke setelah header (tidak dihilangkan).
+- Jika tidak ada header terdeteksi, stage membuat header dari state sebelumnya.
 
-```md
-**Valerest Kingdom - Royal Palace - Guest Chamber | Night | 22:10**
-**You: Male - Human (Regular shirt; Standing near window; arms crossed)**
-**NPC: Yume Nozomikara - Kitsune (Kimono; Standing before {{user}}; tails still, ears forward, violet-gold eyes bright)**
-**Thread: Prospective meeting with King Halvair (on pause) ; Yume and {{user}} at odds**
-**Wallet: 12G ; 35S ; 8C**
-***
-```
+---
 
-## State Yang Disimpan
+## 2. Location System (`normalizeLocation`)
 
-State message-level menyimpan header terakhir:
+### Format: `Main Location - Sub Location - Detailed Area`
+
+Cara kerja:
+- Parsing segments dipisah ` - `, minimal 1 segment.
+- Jika < 3 segment, diisi dari state sebelumnya atau fallback "Active Area".
+- **Location change hanya diterima jika:**
+  - Sama persis dengan lokasi sebelumnya → diterima.
+  - Lokasi sebelumnya default/unknown → diterima.
+  - Main & Sub location sama (hanya detailed area berubah) → diterima.
+  - Ada **LOCATION_TRANSITION_CUES** dalam konteks: `move`, `travel`, `arrive`, `enter`, `leave`, `combat`, `teleport`, `time skip`, `scene transition`, `meanwhile`, `later`, `afterward`.
+  - Ada **LOCATION_SCENE_ANCHOR_CUES** dalam narasi yang cocok dengan lokasi kandidat: `inside`, `within`, `room`, `chamber`, `doorway`, `counter`, `table`, dll.
+  - Kandidat location disebut dalam narasi terbaru + ada anchor cue.
+  - Kandidat location pernah disebut di lokasi sebelumnya (nearby target).
+- Perubahan location tanpa cue di atas akan ditolak (kembali ke state sebelumnya).
+
+---
+
+## 3. Time System (`normalizeClock` + `timeOfDayForClock`)
+
+### Format: `Time of Day | HH:MM`
+
+Cara kerja:
+- Ekstrak `HH:MM` dari location line menggunakan regex `CLOCK_PATTERN`.
+- **Time of Day dikoreksi OTOMATIS** berdasarkan jam:
+  - `05:00-11:59` → Morning
+  - `12:00-16:59` → Afternoon
+  - `17:00-20:59` → Evening
+  - `21:00-04:59` → Night
+- Jika AI menulis `Evening | 23:10`, stage paksa jadi `Night | 23:10`.
+- Jika tidak ada clock dalam response, stage pakai clock dari state sebelumnya.
+
+---
+
+## 4. You System (`normalizeYouLine`)
+
+### Format: `Gender - Apparent Race (Clothes/disguise; Position; body detail)`
+
+Cara kerja:
+1. **Identity**: Parse `Gender - Race` dari line, pakai fallback state sebelumnya jika placeholder.
+2. **Race**: Tolak `Anomaly` kecuali sudah revealed/confirmed di konteks.
+3. **Status** (`Clothes; Position; body detail`):
+   - Parse status dengan `splitStatusByFormat()` → split by `;`.
+   - Gunakan `orderStatusParts()` untuk memastikan urutan: **Clothes → Position → Detail**.
+   - Clothing slot dideteksi dengan `CLOTHING_SLOT_PATTERN` (nama garment) dan `CLOTHING_DAMAGE_WORDS`.
+   - Position slot dideteksi dengan `POSITION_CHANGE_CUES` dan `POSITION_SPATIAL_CUES`.
+
+**Clothes change logic:**
+- Perubahan pakaian hanya diterima jika ada EVIDENCE dari narasi NON-dialog:
+  - `CLOTHING_CHANGE_CUES`: `change clothes`, `wear`, `put on`, `dressed in`, `clad in`, `dons`, dll.
+  - `CLOTHING_REMOVAL_CUES`: `remove`, `take off`, `strip`, `undress`, `naked`, dll.
+  - `CLOTHING_DAMAGE_CUES`: `burned`, `torn`, `ripped`, `shredded`, `scorched`, dll.
+- Evidence dari dialog (dalam tanda kutip) diabaikan via `stripDoubleQuotedText()`.
+- Jika tidak ada evidence, stage pakai clothing dari state sebelumnya.
+- **Inferensi langsung dari konteks:** Stage bisa detect `"naked"`, `"shirtless"`, `"without armor"`, `"only pants"` langsung dari konteks non-dialog.
+
+**Position change logic:**
+- Perubahan posisi diterima jika ada cue `walk`, `stand`, `sit`, `kneel`, `lean`, `turn`, `step`, `approach`, dll.
+- Posisi dengan spatial relation (`left of`, `beside`, `before`, `behind`, `facing`) butuh evidence di narasi.
+- Posisi generik seperti `"scene"` di-strip (menjadi fallback).
+- Bahasa dramatis di-strip dari posisi.
+
+**Body detail logic:**
+- `TRANSIENT_YOU_DETAIL_PATTERN`: detail sementara seperti `holding`, `touching`, `stroking`, `tilted`, `resting`.
+- Detail transien diganti jika:
+  - Scene berpindah.
+  - Posisi berubah.
+  - Tidak ada evidence lanjutan di narasi terbaru.
+- Detail kontak objek (`holding cup`, `pulling blanket`) diganti ke detail settled (`hands on lap`, `hands lowered`) jika narasi tidak lagi mendukung kontak.
+- Detail kontak fisik (`stroking head`) bisa diganti ke detail pasif saat movement terjadi.
+- Detail interaksi visible (`cleaning`, `wiping`, `brushing`) dipertahankan selama narasi terbaru mendukung.
+
+---
+
+## 5. NPC System (`normalizeNpcLine`)
+
+### Format: `Full Name - Race (Clothes; Position; body/racial detail), Full Name - Race (Clothes; Position; body/racial detail)`
+
+Cara kerja:
+- `splitTopLevel(value, ",")`: parse multiple NPC dengan koma (hanya di level atas, bukan di dalam parentheses).
+- Setiap NPC dicocokkan dengan fallback berdasarkan nama (`npcIdentityKey`).
+- NPC yang sama dari state sebelumnya: status dipertahankan (clothes, position) kecuali ada evidence perubahan.
+- NPC baru: stage infer clothing dari konteks (`inferNpcClothingFromContext` → Simple/Travel/Ordinary clothing) atau pakai default per race.
+- `defaultNpcStatusForRace()`: fallback default berdasarkan race:
+  - Kitsune: `"Regular clothing; Standing nearby; tails still, ears attentive"`
+  - Catkin: `"Regular clothing; Standing nearby; ears attentive, tail still"`
+  - Dragonkin: `"Regular clothing; Standing nearby; wings settled, tail still, horns visible"`
+  - Angel: `"Regular clothing; Standing nearby; wings settled, halo visible"`
+  - Demon: `"Regular clothing; Standing nearby; horns visible, tail still, eyes alert"`
+  - Vampire: `"Regular clothing; Standing nearby; fangs hidden, eyes alert"`
+  - Pixie/Fey: `"Regular clothing; Standing nearby; wings still, faint glow visible"`
+  - Human/default: `"Regular clothing; Standing nearby; posture attentive"`
+- Position NPC berubah lebih permisif daripada You (lebih banyak cue diterima).
+- Clothing NPC bisa berubah dengan `CLOTHING_ADJUSTMENT_CUES` (fix, adjust, straighten, fasten, smooth).
+
+---
+
+## 6. Thread System (`normalizeThreadLine`)
+
+### Format: `Main mission/status ; Major obstacle/status`
+
+Cara kerja:
+1. **Jika thread placeholder/None** → coba infer dari narasi dengan `inferThreadFromNarrative()`:
+   - Cari kalimat mengandung `THREAD_INFERENCE_CUES`: mission, quest, objective, task, contract, appointment, promise, deadline, hunt, dll.
+   - Extract: mission/quest/objective, appointment, promise, travel goal, major obstacle.
+   - Hanya ambil frasa yang benar-benar tertulis di narasi (tidak kreatif).
+2. **Linked subgoal detection**:
+   - Jika user menyebut rencana meet/speak/ask NPC tertentu tentang target yang ada di thread lama.
+   - Contoh: "meet Kaelen first to ask her about Debi" → `Meet Kaelen to ask about Debi (Ongoing)`.
+3. **Perubahan thread hanya diterima jika:**
+   - Ada overlap meaningful tokens ≥22% antara thread baru dan lama.
+   - Atau ada `THREAD_TRANSITION_CUES`: arrive, leave, resolved, mission, quest, travel, etc.
+4. **Thread cleanup otomatis:**
+   - Item dengan status `resolved`, `completed`, `done`, `finished`, `concluded`, `refused`, `failed`, `abandoned`, `expired`, `cancelled` → dihapus.
+   - Minor thread pattern: `normal topic`, `casual question`, `temporary mood`, `small suspicion`, `minor jealousy`, `small talk` → dihapus.
+5. **Thread inference merge:**
+   - Jika AI mengulang thread lama yang generik, stage merge dengan hasil inferensi dari narasi.
+   - Item lama ditandai `(Pending)` jika ada subgoal baru yang `(Ongoing)`.
+
+---
+
+## 7. Wallet System (`normalizeWalletLine`)
+
+### Format: `XG ; XS ; XC` (Gold; Silver; Copper)
+
+Konversi: `1G = 100S`, `1S = 100C`.
+
+Cara kerja:
+- `parseWalletAmounts()`: extract angka + unit (G/gold, S/silver, C/copper) dari string.
+- `normalizeWalletValue()`: format ulang ke `XG ; XS ; XC`.
+
+**Initialisasi:**
+- Wallet pertama yang valid dari header AI dipakai sebagai nilai awal (tidak dipaksa 0).
+- Flag `walletInitialized` membedakan wallet yang sudah tersimpan dari fallback kosong.
+
+**Perubahan wallet hanya diterima jika:**
+1. Ada EVIDENCE transaksi dari narasi NON-dialog (dialog dalam kutip diabaikan).
+2. `WALLET_TRANSACTION_CUES`: pay, spend, buy, purchase, cost, fee, reward, earn, loot, sell, receive, gift, bounty, refund, lost, stolen, robbed, confiscated.
+3. Evidence harus berupa aksi visible (`*{{user}} places 10 Gold on the counter.*`), bukan ucapan.
+4. **Price discussion diabaikan:** `worth`, `valued at`, `asking price`, `trade information for information` tidak cukup.
+
+**Inferensi wallet (`inferWalletFromContext`):**
+- Stage bisa menghitung perubahan wallet dari narasi jika ada angka yang jelas.
+- Contoh: `"{{user}} hands over fifty silver"` → wallet berkurang 50S.
+- Contoh: `"{{user}} receives 10 gold reward"` → wallet bertambah 10G.
+- Number words juga diparse: `fifty` → 50.
+
+**Pelarangan:**
+- Diskusi harga/valuasi/penawaran yang belum selesai tidak mengubah wallet.
+- Ucapan dalam dialog (`"I paid fifty silver"`) tidak dianggap transaksi.
+- Stage mengembalikan wallet ke state sebelumnya jika AI mengubah tanpa evidence.
+
+---
+
+## 8. NPC Memory System (`npcMemory`)
+
+### Data Structure per NPC
 
 ```ts
-{
-  location: string;
-  timeOfDay: "Morning" | "Afternoon" | "Evening" | "Night";
-  clock: string;
-  you: string;
-  npc: string;
-  thread: string;
-  wallet: string;
-  walletInitialized: boolean;
+interface NpcMemoryEntry {
+    name: string;           // Full name (min 2 words ideal)
+    roleTitle: string;      // Role/jabatan penting
+    race: string;           // Race NPC
+    relationship: string;   // Relationship with {{user}}
+    behavior: string;       // Behavior toward {{user}}
+    physicalExtra: string;  // Fitur fisik tambahan
+    onlyKnows: string[];    // Fakta yang hanya diketahui NPC ini
 }
 ```
 
-`walletInitialized` adalah flag internal stage untuk membedakan wallet yang benar-benar sudah tersimpan dari fallback kosong `0G ; 0S ; 0C`.
-State ini dipakai ulang saat AI lupa menulis header, menulis field kosong, atau menulis field yang tidak bisa dipercaya.
+### Update Memory (`updateNpcMemory`)
+- Dipanggil setiap `afterResponse` dan `prepareAetherNovaStateForPrompt`.
+- Parse NPC dari header line, cocokkan dengan memory yang ada.
+- Untuk setiap NPC di header:
+  - **Name**: Jika hanya first name, cocokkan ke memory lama (pakai full name tersimpan).
+  - **Role/Title**: Infer dari konteks sekitar nama NPC (pattern title before/after name).
+   - **Race**: Pertahankan dari state lama jika tidak ada data baru.
+   - **Physical Extra**: Deteksi dari status/konteks: `nine tails`, `animal ears`, dll.
+   - **Relationship**: Infer dari kata kunci konteks long-term relationship: `husband`/`wife`/`spouse` → Husband/Wife/Spouse, `lover`/`beloved` → Lover, `friend`/`companion` → Friend, `enemy`/`foe` → Enemy, `master`/`servant` → Master/Servant, `mentor`/`student` → Mentor/Student, `parent`/`child`/`sibling` → Parent/Child/Sibling, `ally` → Ally, `rival` → Rival, `guardian` → Guardian, `acquaintance` → Acquaintance, `stranger` → Stranger, `associate`/`colleague` → Associate, dll. Bersifat jangka panjang dan persisten.
+   - **Behavior**: Infer dari kata kunci konteks: `arrogant`, `protective`, `possessive`, `playful`, `loyal`, `loving`, `friendly`, `hostile`, `intimate`, dll. Attitude/behavior saat ini (temporal).
+  - **OnlyKnows**: Extract fakta dari konteks sekitar nama NPC (mention `{{user}} told`, `{{user}} gave`, `{{user}} threatened`, dll).
 
-## Cara Kerja
+### Injection Rules (`buildNpcMemoryDirections`)
+1. **NPC di header aktif** → inject FULL memory: Name, Role/Title, Race, Physical Extra, Relationship, Behavior, OnlyKnows.
+2. **NPC hanya disebut di pesan user** → inject IDENTITY ONLY: Name, Role/Title, Race, Physical Extra. Relationship, Behavior, OnlyKnows TIDAK diinject (knowledge firewall).
+3. **NPC tidak ada di header dan tidak disebut** → data tetap disimpan, tidak diinject. Injection dibatasi 4 NPC per kategori.
 
-### Constructor dan Load
+### Commands Manual
+Command dideteksi dengan regex `NPC_MEMORY_COMMAND_PATTERN` di mana pun dalam pesan user, lalu dihapus sebelum dikirim ke LLM.
 
-Saat stage dimulai:
+- `npc memory delete: Name` → hapus seluruh data NPC.
+- `npc memory clearfacts: Name` → kosongkan OnlyKnows.
+- `npc memory add fact: Name | fact=fakta` → tambah fakta ke OnlyKnows.
+- `npc memory relation: Name | relationship=...` → update relationship saja.
+- `npc memory show: Name` → tampilkan data sebagai system message.
+- `npc memory set: Name | role=... | race=... | physical=... | relationship=... | behavior=... | onlyKnows=... | fact=...` → set lengkap. Field `fact` append ke OnlyKnows; `onlyKnows` replace.
 
-1. Stage membaca `messageState` terakhir dari Chub.
-2. Jika state belum ada, stage membuat fallback default.
-3. Jika ada character aktif, stage mencoba memakai nama character sebagai NPC default.
-4. `load()` mengembalikan `success: true` dan state saat ini.
+Command di-reapply setelah `afterResponse` agar efeknya persist meskipun AI mengubah header.
 
-### beforePrompt
+---
 
-Sebelum prompt dikirim ke AI, stage menyimpan pesan user terakhir secara internal dan mengirim `stageDirections` yang compact.
+## 9. Narrative Format (`normalizeNarrativeFormat`)
 
-Reminder ini tidak muncul sebagai UI dan tidak mengganti pesan user.
-Isi reminder membawa state terakhir:
+Stage melakukan format narasi ringan:
 
-```text
-Location: ...
-Time: ...
-You: ...
-NPC: ...
-Thread: ...
-Wallet: ...
+### Aturan:
+1. **Paragraf narasi** → dibungkus `*...*` (single italic).
+2. **Dialog dengan speaker** → `Speaker: "..."` atau `**Speaker:** "..."`.
+3. **Dialog tanpa speaker** → infer dari NPC header atau recent speaker.
+4. **Action beat dalam dialog** → `*...*` bukan `'...'`.
+5. **Inline emphasis** `*word*` dalam narasi/dialog → `'word'` (agar tidak tabrakan dengan wrapper italic).
+6. **Action beat sebelum dialog tanpa wrapper** → dibungkus `*...*`.
+7. **Misquoted action beat** (action beat dalam quote dialog pembuka) → dikeluarkan sebagai italic.
+8. **Entire line salah italic** → diperbaiki: wrapper italic pindah ke action beat saja.
+9. **Bare dialogue line** tanpa speaker → tambah speaker dari narasi sebelumnya jika bisa diinfer.
+
+### Tidak melakukan:
+- Tidak mengubah isi kalimat, pilihan kata, atau urutan narasi/dialog.
+- Tidak rewrite kreatif.
+
+---
+
+## 10. Debug UI System
+
+Debug UI (di `Stage.tsx` render) menampilkan:
+- Current state: Location, Time, You, NPC, Thread, Wallet, Pending NPC Debug, Pending Memory Command.
+- NPC Memory cards: semua NPC yang tersimpan dengan detail lengkap.
+- Stage Activity log: 30 event terakhir dengan timestamp.
+- Stage Directions: isi `stageDirections` yang diinject ke prompt.
+- System Debug Message: system message terakhir.
+- Latest User Message: pesan user terbaru (setelah command dihapus).
+
+Debug diaktifkan dengan `position: ADJACENT` di `chub_meta.yaml`.
+Untuk production, ubah ke `position: NONE`.
+
+### NPC Debug Query
+User bisa mengetik `[debug: npc Name]` dalam pesan → stage inject data NPC sebagai stageDirections, lalu tampilkan sebagai system message footer setelah response.
+
+---
+
+## 11. Scene Transition Detection
+
+Stage menggunakan dua set cues untuk mendeteksi perpindahan scene:
+
+**LOCATION_TRANSITION_CUES:** move, travel, arrive, enter, leave, combat, teleport, time skip, scene transition, meanwhile, later, afterward.
+
+**LOCATION_SCENE_ANCHOR_CUES:** inside, within, room, chamber, doorway, counter, table, booth, bartender, patron, dll.
+
+Location berubah jika:
+1. Ada cue transisi eksplisit dalam konteks.
+2. Atau kandidat location disebut + ada anchor cue (scene sudah pindah walau tanpa kata transisi eksplisit).
+3. Perubahan hanya di detailed area (main & sub location sama).
+
+---
+
+## 12. State Persistence
+
+### Message State (disimpan per message)
+```ts
+{
+    location: string;
+    timeOfDay: "Morning" | "Afternoon" | "Evening" | "Night";
+    clock: string;
+    you: string;
+    npc: string;
+    thread: string;
+    wallet: string;
+    walletInitialized: boolean;
+    npcMemory: Record<string, NpcMemoryEntry>;
+    pendingNpcDebugQuery: string | null;
+    pendingNpcMemoryCommand: string | null;
+}
 ```
 
-Reminder juga menekankan divider `***`, format status `Clothes/disguise; Position; optional body/racial detail`, pemisah thread ` ; `, dan wallet yang hanya boleh berubah dengan evidence transaksi/reward/loss di narasi.
-Tujuannya agar AI mencoba menjaga format header sejak awal, sebelum `afterResponse` perlu memperbaiki.
-
-### afterResponse
-
-Setelah AI membalas, stage:
-
-1. Membaca isi response AI.
-2. Mendeteksi header di beberapa baris awal response, termasuk jika ada teks pendek sebelum header atau jika field header terpisah blank line.
-3. Jika header hilang, membuat header dari state terakhir.
-4. Jika header ada tetapi salah, mengoreksi formatnya.
-5. Menormalisasi location, time, `You`, `NPC`, divider `***`, `Thread`, dan `Wallet`.
-6. Menyimpan state baru.
-7. Mengembalikan `modifiedMessage` berisi response yang sudah dikoreksi.
-
-Narasi setelah header tetap dipertahankan.
-Jika AI menulis teks sebelum header, teks itu dipindahkan ke bawah header normal agar tidak menghasilkan dua header.
-Jika AI menulis header dengan blank line di antara `Location`, `You`, `NPC`, `Thread`, dan `***`, stage tetap menganggapnya sebagai satu header lalu mengeluarkannya lagi dalam format compact tanpa blank line.
-Setelah header selesai, stage juga menjalankan formatter narasi ringan: paragraf narasi dibungkus `*...*`, baris dialog speaker dijaga sebagai `Name: "..."` atau `**Name:** "..."`, dan inline emphasis kecil seperti `*word*` diganti menjadi `'word'`.
-
-## Rules Normalisasi Saat Ini
-
-### Location
-
-Location ditargetkan menjadi 3 tier:
-
-```text
-Main Location - Sub Location - Detailed Area
-```
-
-Jika location kurang dari 3 tier, stage mengisi bagian yang hilang memakai state lama atau fallback aman.
-Jika location berubah jauh dari state sebelumnya, stage hanya menerima perubahan saat konteks user atau narasi bot memuat cue perpindahan, seperti move, travel, arrive, enter, leave, combat, teleport, time skip, atau scene transition.
-Stage juga menerima perubahan location tanpa kata arrival eksplisit jika narasi terbaru jelas sudah meng-anchor tempat baru, misalnya `inside`, `within`, `common room`, `counter`, `doorway`, atau detail interior lain yang cocok dengan kandidat location.
-Perubahan exact area di main location dan sub location yang sama masih diterima.
-
-### Time
-
-Stage mengoreksi `Time of Day` berdasarkan `HH:MM`.
-
-```text
-Morning: 05:00-11:59
-Afternoon: 12:00-16:59
-Evening: 17:00-20:59
-Night: 21:00-04:59
-```
-
-Contoh: `Evening | 23:10` dikoreksi menjadi `Night | 23:10`.
-
-### You
-
-`You` dibuat simple dan stabil.
-
-Format target:
-
-```md
-**You: Gender - Apparent Race (Clothes/disguise; Position; body detail)**
-```
-
-Stage mencoba menghapus bahasa yang terlalu dramatis dan mempertahankan status fisik yang jelas.
-Stage menolak `Anomaly` sebagai apparent race kecuali sudah revealed atau confirmed di konteks.
-Stage juga menyaring thoughts, feelings, expression, dialogue, actions, movement, transformation, consent, dan choices dari line `You`.
-Clothes/disguise, position, dan body detail memakai state lama kecuali konteks user atau narasi AI terbaru memberi bukti perubahan.
-Perubahan pakaian didukung oleh evidence berbahasa Inggris seperti change/wear/remove, put on, dressed in, clad in, changes into, atau damage naratif seperti burned/torn/scorched/damaged. Untuk line `You`, evidence pakaian harus datang dari narasi/aksi visible; kata seperti `naked`, `remove clothes`, atau `undress` yang hanya muncul di dialog bertanda kutip tidak boleh mengubah clothing slot.
-Slot pertama dalam status selalu diperlakukan sebagai clothing/disguise slot. Nama pakaian unik seperti ceremonial mantle, moon-silk kimono, battle robe, academy uniform, haori, robe, armor, cloak, atau disguise bisa diterima sebagai pakaian, terutama saat state sebelumnya masih `Regular clothing` atau pakaian itu disebut lagi di narasi terbaru.
-Jika AI menulis urutan status salah, stage mendeteksi isi slot lalu mengembalikannya ke urutan `Clothes/disguise; Position; body/racial detail`. Contoh `standing beside Yume; eyes lowered; kimono` menjadi `kimono; standing beside Yume; eyes lowered`. Jika tidak ada slot yang mengacu pada pakaian/naked, stage mempertahankan pakaian dari state sebelumnya.
-Clothing slot boleh berisi kondisi pakaian yang relevan, seperti naked, fully naked, loose shirt, baggy pants, pants only, shirt caught on a fence, left sleeve torn, cloak burned, atau armor cracked. Stage tidak memotong detail clothing hanya karena ada `and`, `with`, atau comma selama masih berada di slot pakaian.
-Perubahan posisi didukung oleh cue seperti walk/stop/arrive/sit/stand/reach/collapse, dan juga bisa diterima saat location sudah terbukti berpindah scene.
-Position slot boleh mencantumkan scene blocking dengan nama NPC atau `{{user}}`, arah, dan jarak, seperti `Standing left of Yume`, `Sitting to the right of {{user}}`, `Standing six steps before {{user}}`, atau `Standing beside Yume near the door`.
-Detail seperti eyes/gaze/tail/ears/wings/horns/hands/posture tidak boleh tinggal di slot position jika bisa dipisahkan; stage memindahkannya ke body/racial detail.
-Kata generik seperti `scene` tidak boleh masuk position; `Standing in scene` dinormalisasi menjadi `Standing`, dan posisi lama seperti `Lying on futon` tetap dipertahankan jika narasi baru hanya menyebut detail kecil seperti closing eyes.
-Body detail yang bersifat kontak sementara, seperti hand resting on a tail, holding, touching, leaning, atau pressing against something, tidak dipertahankan saat posisi atau scene berubah kecuali narasi terbaru masih memberi evidence kontak itu.
-Body detail juga boleh mencatat interaksi tangan yang terlihat dan sementara, seperti `hand cleaning Yume's face`, `wiping Yume's cheek`, atau `brushing hair aside`, selama narasi terbaru memang menyebut aksi visible itu.
-Kontak sementara lama seperti `stroking Yume's head` boleh diganti oleh detail baru yang aman seperti `hands visible` atau interaksi objek seperti `pulling cup` / `pulling blanket` jika narasi terbaru tidak lagi mendukung kontak lama, meskipun lokasi masih sama.
-Interaksi objek sesaat seperti `hand releasing wine glass onto desk`, `placing cup on table`, atau `sliding coin across desk` boleh diganti oleh posture tangan yang sudah settled seperti `hands resting on thighs`, `hands on lap`, atau `hand beside waist` jika konteks terbaru tidak lagi mendukung aksi objek lama.
-Kontak sementara lama seperti `hands on head` juga boleh diganti oleh posture pasif yang masuk akal saat bergerak, seperti `hands lowered`, `hands down`, atau `arms at sides`, jika narasi terbaru menunjukkan movement/position change.
-Pose sementara lama seperti `head tilted` boleh diganti oleh detail posture baru seperti `facing him`, `body turned toward him`, atau `head level` jika narasi terbaru menyebut pull back, turn, face, atau straighten.
-Jika format `You` kacau, stage mengambil bagian yang hilang dari state sebelumnya.
-
-### NPC
-
-`NPC` boleh lebih detail daripada `You`.
-
-Format target:
-
-```md
-**NPC: Full Name - Race (Clothes; Position; body/racial detail)**
-```
-
-Stage mendukung lebih dari satu NPC dengan pemisah koma di level atas.
-Stage juga menerima `NPC: None` saat tidak ada NPC di sekitar `{{user}}`.
-Position dan clothes NPC memakai state lama kecuali ada cue visible move, follow, scene change, clothing change, atau armor removal.
-Position NPC juga boleh memakai scene blocking relatif ke nama character atau `{{user}}`, termasuk left/right/front/behind, beside, facing, dan jarak beberapa steps/paces.
-NPC lama dicocokkan berdasarkan nama, bukan urutan. NPC baru tidak boleh mewarisi pakaian NPC lama; jika clothing slot NPC baru memuat item pakaian jelas seperti kimono/robe/under-robe/over-robe/uniform/armor atau kondisi pakaian seperti sleeve torn / clothes caught / cloak burned, stage boleh menerimanya, kalau tidak gunakan fallback aman seperti `Regular clothing` atau inferensi sederhana seperti `Simple clothing`.
-Untuk NPC yang sudah ada, clothing boleh berubah dari state lama saat narasi terbaru jelas menunjukkan pakaian sedang diperbaiki, disesuaikan, di-fastened, atau layer pakaian dirapikan, misalnya dari `white under-robe slipped off one shoulder` menjadi `violet silk over-robe` setelah narasi menyebut fixing clothes, smoothing double layer, atau outer robe being put back in place.
-Detail race-specific tetap dijaga sebagai detail fisik/visible, seperti hands, wings, tail, ears, horns, eyes, claws, weapon, posture, atau anatomy relevan.
-
-### Thread
-
-`Thread` dijaga agar tidak berubah sembarangan dan output dipaksa memakai pemisah ` ; `.
-
-Jika AI mengganti thread secara tiba-tiba tanpa dukungan narasi, stage mempertahankan thread sebelumnya.
-Perubahan thread lebih mungkin diterima jika ada overlap kata penting atau narasi mengandung cue transisi seperti arrival, travel, resolved, mission, quest, objective, atau time skip.
-Jika header `Thread` kosong, `None`, placeholder, atau masih mengulang thread lama, stage boleh membaca narasi terbaru untuk menangkap thread penting yang eksplisit seperti mission, quest, objective, task, appointment, promise, hunt/quest, deadline, order, contract, travel goal, major obstacle, atau major unresolved conflict.
-Deteksi dari narasi harus konservatif: stage hanya mengambil frasa yang benar-benar tertulis di narasi, memberi status sederhana seperti `(Ongoing)` atau `(Pending)`, dan tidak membuat tujuan baru secara kreatif.
-Stage juga boleh membuat sub-goal yang terhubung dengan thread lama jika konteks terbaru menyebut rencana jelas untuk bertemu/berbicara/bertanya kepada NPC tertentu tentang target yang sudah ada di thread lama, misalnya `meet Kaelen first to ask her about Debi`. Dalam kasus seperti ini, misi utama boleh ditandai `(Pending)` dan sub-goal baru ditandai `(Ongoing)` jika user sudah mulai bergerak atau menyuruh NPC memimpin jalan.
-Stage menghapus item thread yang resolved, complete/completed, done, finished, concluded, refused, declined, rejected, failed, abandoned, expired, irrelevant, canceled/cancelled, atau minor/placeholder seperti current scene, current topic, normal topic, casual question, temporary mood, small suspicion, minor jealousy, dan small talk.
-
-### Wallet
-
-`Wallet` menyimpan uang milik `{{user}}`.
-
-Format target:
-
-```md
-**Wallet: 12G ; 35S ; 8C**
-```
-
-Stage menormalisasi format menjadi `XG ; XS ; XC`.
-Wallet memakai state lama kecuali narasi terbaru memuat evidence ekonomi yang jelas seperti payment, buy, cost, fee, reward, earn, loot, bounty, gift, refund, lost, stolen, robbed, atau confiscated. Evidence wallet harus berupa transaksi/aksi visible di luar dialog; ucapan di dalam tanda kutip seperti `"I paid fifty silver"` hanya dianggap cerita/percakapan dan tidak boleh mengubah wallet.
-Jika AI mengubah angka wallet tanpa transaksi/reward/loss yang dijelaskan dalam cerita, stage mengembalikan wallet ke state sebelumnya.
-Jika AI lupa mengubah wallet tetapi konteks terbaru memuat pembayaran/reward yang eksplisit dan nominal uang jelas, stage boleh menghitung perubahan dari state lama, termasuk angka tertulis seperti `fifty silver`. Jika header AI mengubah wallet dengan arah yang salah tetapi inferensi transaksi jelas, stage memilih hasil hitungan inferensi dari narasi/aksi non-dialog.
-Diskusi harga, valuasi, appraisal, atau penawaran yang belum selesai tidak mengubah wallet. Contoh seperti `worth a hundred gold to the right buyer`, `price is fifty silver`, `costs fifty silver`, atau `trade information for information` hanya dianggap pembahasan nilai sampai ada aksi pembayaran/penerimaan/loss yang eksplisit.
-Untuk penghitungan lintas pecahan, stage memakai konversi internal `1G = 100S` dan `1S = 100C`.
-Jika belum ada wallet yang pernah tersimpan, wallet valid pertama dari header dipakai sebagai nilai awal, termasuk first message atau alternate first message; stage tidak memaksa angka awal menjadi `0G ; 0S ; 0C`.
-Stage tidak mengizinkan NPC atau narasi membaca wallet sebagai info in-character kecuali uang itu memang diketahui lewat cerita.
-
-### NPC Memory
-
-Stage menyimpan perkembangan NPC yang pernah muncul di header ke state internal `npcMemory`.
-
-Data yang disimpan:
-
-```md
-Name: Full NPC Name
-Role/Title: role/title penting
-Race: race NPC
-Physical Extra: fitur fisik tambahan (contoh: nine tails, animal ears)
-Relationship with {{user}}: relasi/sikap terbaru
-Behavior toward {{user}}: sifat/kebiasaan NPC terhadap user
-OnlyKnows: fakta yang hanya diketahui NPC itu
-```
-
-Name sebaiknya memakai nama lengkap minimal dua kata jika sudah pernah diketahui, misalnya `Halvair Montreval`. Jika header berikutnya hanya memakai first name seperti `Halvair`, stage mencocokkan ke memory lama dan tetap memakai nama lengkap yang tersimpan.
-Role/Title dan Race dipakai untuk mencegah AI melupakan identitas penting NPC saat data lengkap tidak selalu muncul di header.
-Physical Extra mencatat fitur fisik tambahan dari race tertentu, seperti `nine tails`, `dragon wings`, `horns`, atau `none` jika tidak ada.
-Relationship boleh berubah mengikuti perkembangan cerita, misalnya dari suspicious/formal menjadi friendly/trusted atau hostile.
-Behavior mencatat kebiasaan/sikap NPC terhadap user, seperti arrogant, suspicious, protective, possessive, playful, formal, cold, loyal, fearful, respectful, atau loving.
-OnlyKnows berisi fakta yang hanya diketahui NPC itu, seperti `{{user}} told Halvair their name`, `{{user}} told Yume about memory loss`, atau `{{user}} threatened Halvair`. Setiap NPC memiliki knowledge firewall terpisah — OnlyKnows NPC A tidak otomatis diketahui NPC B.
-Pengambilan role/title harus dekat dengan nama NPC itu atau berasal dari command manual. Jangan mengambil role/title dari topik obrolan yang membahas NPC lain. Contoh: saat Debi hadir tetapi narasi membahas King Solmeryn, Debi tidak boleh menjadi `King of Solmeryn`.
-
-Injection ke prompt bersifat selektif:
-
-- Jika NPC tertulis di header aktif, stage menginject full memory: Name, Role/Title, Race, Physical Extra, Relationship, Behavior, dan OnlyKnows.
-- Jika NPC hanya disebut oleh user dalam pesan, stage hanya menginject identitas dasar: Name, Role/Title, Race, dan Physical Extra. Relationship, Behavior, dan OnlyKnows tidak ikut diinject sampai NPC itu masuk header/scene (knowledge firewall).
-- Jika NPC tidak ada di header dan tidak disebut user, data tetap disimpan tetapi tidak diinject.
-
-Debug UI sementara:
-
-Saat `position: ADJACENT` dan config `debugUi` aktif, stage menampilkan panel debug yang hanya terlihat oleh user. Panel ini memperlihatkan header state terakhir, jumlah dan isi `npcMemory`, command guide, pending memory command, activity log dari `load`, `setState`, `beforePrompt`, dan `afterResponse`, `stageDirections` terakhir, `systemMessage` debug terakhir, serta pesan user terakhir yang sedang diproses. Data panel tidak dikirim ke LLM kecuali bagian `stageDirections` yang memang dikirim oleh `beforePrompt`. Versi debug UI saat ini: `V1.3`.
-
-Command memory manual:
-
-Command ditulis langsung dalam teks tanpa delimiter khusus dan dihapus dari pesan sebelum dikirim ke LLM. Command juga diterapkan ulang setelah `afterResponse`, agar `delete`, `clearfacts`, `set`, `add fact`, `relation`, atau `show` tidak langsung tertimpa lagi saat NPC masih muncul di header response berikutnya.
-
-```text
-npc memory delete: Debi
-npc memory clearfacts: Debi
-npc memory add fact: Debi | fact={{user}} paid Kaelen to find Debi
-npc memory relation: Debi | relationship=friendly
-npc memory show: Debi
-npc memory set: Debi | role=Market broker | race=Human | physical=none | relationship=guarded | behavior=guarded | onlyKnows={{user}} paid Kaelen to find Debi
-```
-
-`set` boleh memakai field `name`, `role`, `race`, `physical`, `relationship`, `behavior`, `fact`, atau `onlyKnows`. Field `fact` menambah fakta ke OnlyKnows lama; `onlyKnows` mengganti daftar OnlyKnows dengan isi baru yang dipisahkan `;`.
-`add fact` menambah satu atau lebih fakta ke OnlyKnows NPC yang sudah ada.
-`relation` hanya mengubah relationship NPC tanpa mengubah field lain.
-`show` menampilkan data NPC memory sebagai system message.
-
-Command dikenali di mana pun dalam teks pesan {{user}} dan akan dihapus dari pesan sebelum dikirim ke LLM. Batas akhir command adalah tanda baca kalimat (`.`, `!`, `?`), baris baru, atau akhir string.
-
-### Narrative Format
-
-Stage menjaga format narasi tanpa rewrite besar.
-Paragraf narasi biasa dibungkus single italic:
-
-```md
-*Narrative text.*
-```
-
-Dialog speaker dijaga sebagai:
-
-```md
-Yume: "Dialogue text."
-**Yume:** "Dialogue text."
-```
-
-Inline emphasis kecil di dalam narasi/dialog seperti `*want*` diganti menjadi `'want'` agar tidak bertabrakan dengan wrapper narasi.
-Jika baris dialog mencampur dialog dan action beat dalam single quote, stage mengubah action beat itu menjadi italic tanpa memecah dialog, misalnya `Yume: "Good." 'Her lips curve.' "And..."` menjadi `Yume: "Good." *Her lips curve.* "And..."`.
-Jika action beat keliru ditaruh di dalam quote dialog pembuka, stage mengeluarkannya sebagai italic lalu mempertahankan sisa dialog dalam quote, misalnya `Borin: "'catching the coin.' Safe travels."` menjadi `Borin: *catching the coin.* "Safe travels."`.
-Jika action beat memakai `*...*` di dalam quote dialog pembuka dan dialog asli sudah punya quote sendiri, stage tidak menambah quote kedua, misalnya `Kaelen: "*Leans forward.* "Information.""` menjadi `Kaelen: *Leans forward.* "Information."`.
-Jika seluruh speaker line keliru dibungkus italic sebagai narasi, stage tetap harus mengenali speaker dan memindahkan wrapper italic ke action beat saja, misalnya `*Debi Marquetta: 'softly, her voice close' "Fifty silver..."*` menjadi `Debi Marquetta: *softly, her voice close* "Fifty silver..."`.
-Jika action beat polos berada di antara dua dialog dalam satu speaker line, stage membungkus action beat itu dengan italic, misalnya `Yume: "Good." She lowers her voice. "Listen."` menjadi `Yume: "Good." *She lowers her voice.* "Listen."`.
-Jika baris dialog tidak punya speaker tetapi narasi tepat sebelumnya atau action beat dialog cukup jelas menunjuk NPC tertentu, stage boleh menambahkan speaker dari header NPC, misalnya narasi menyebut `Yume hums` lalu baris `"The smooth ones," *she says...*` menjadi `Yume: "The smooth ones," *she says...*`.
-Stage tidak mengubah isi kalimat, pilihan kata, atau urutan narasi/dialog.
-
-
-## Catatan Penyesuaian Stage
-
-Stage sudah disesuaikan dengan rencana di Aether_Nova_Stage_Plan.md.
-
-Penyesuaian yang sudah diterapkan:
-
-1. npcMemory field structure diubah agar sesuai plan: `Racial` → `Race`, `KnownFacts` → `OnlyKnows`, ditambah field `PhysicalExtra` dan `Behavior`.
-2. Injection untuk mentioned-only NPC dibatasi ke identitas dasar saja (Name, Role/Title, Race, PhysicalExtra) — Relationship, Behavior, dan OnlyKnows tidak ikut diinject sampai NPC masuk header/scene.
-3. Command npcMemory ditambah: `add fact`, `relation`, `show`.
-4. Debug UI diperbarui menampilkan field baru (Race, Physical Extra, Behavior, OnlyKnows).
-
-5. `inferNpcOnlyKnows` diperluas: stage sekarang mengekstrak fakta dari narasi saat `{{user}}` bersama NPC — bukan hanya saat `{{user}}` secara eksplisit "told" NPC. Pola baru: `{{user}} and NPC [aktivitas]`, `{{user}} gave/showed NPC [sesuatu]`, `{{user}} told/asked NPC about [topik]`, `{{user}} helped/saved/protected NPC`, `{{user}} traveled/went with NPC`.
-
-Jika prompt header asli nanti diubah lagi:
-
-1. Baca file Guide.Consepts.stage.md dan Guide.State.md untuk refensi
-2. Build ulang dengan `npm run build`.
-
-## Bug Fix: State Restoration Stripping Clothing Value
-
-### Masalah
-
-Saat state di-restore melalui `coerceHeaderState` (constructor, branch/swipe restore), fungsi `normalizeYouLine` dipanggil **tanpa context** (kosong). Akibatnya semua guard clothing (`statusChangeIsSupported` → `youClothingChangeIsSupported`) berjalan dengan `context = ""` — tidak ada evidence naratif.
-
-Ketika incoming state (`raw.you`) menyimpan nilai spesifik seperti `"Naked"` tetapi fallback (`DEFAULT_STATE` atau current state) berisi `"Regular clothing"`, guard menolak perubahan karena tidak ada cue di context kosong, lalu mengembalikan `fallbackClothing` = `"Regular clothing"`.
-
-Ini menyebabkan:
-- State `you` yang tadinya `"Naked"` berubah menjadi `"Regular clothing"` saat state di-restore.
-- "Stuck data" — stage menyimpan `"Regular clothing"` sebagai fallback, jadi di turn berikutnya `previousYou` sudah `"Regular clothing"` dan LLM yang benar output `"Naked"` tetap dikoreksi karena sebelumnya sudah corrupt.
-
-### Fix
-
-1. **`NormalizeStatusOptions`**: tambah field `trustRawStatus?: boolean`.
-2. **`normalizeStatus`**: saat `options.trustRawStatus === true`, skip clothing guard (`statusChangeIsSupported`) dan position guard — langsung pakai `rawClothing` / `rawPosition`.
-3. **`coerceHeaderState`**: panggil `normalizeYouLine(raw.you ?? "", fallback.you, "", {trustRawStatus: true})` agar state restore tidak terpotong oleh kurangnya evidence naratif.
-
-### Perubahan file
-- `src/aetherNovaHeader.ts`: `NormalizeStatusOptions` (line 79), `normalizeStatus` (line 3172-3181), `coerceHeaderState` (line 1160).
-
-Verifikasi:
-
-## Bug Fix: Action Beat Wrapped in Single Quotes Instead of Asterisks
-
-### Masalah
-
-Action beat dalam dialogue line (setelah `Speaker:`) dibungkus single quotes `'...'` bukan asterisks `*...*` dan teks dialogue ditambah kutip ekstra.
-
-Contoh salah:
-```
-Debi: "'whispered, vulnerable' "...Say it again...""
-```
-
-Seharusnya:
-```
-Debi: *whispered, vulnerable* "...Say it again..."
-```
-
-### Penyebab
-
-`replaceInlineEmphasis` dipanggil di DALAM `normalizeDialogueText`. Fungsi ini mengonversi SEMUA `*...*` menjadi `'...'` untuk mencegah konflik dengan outer wrapper `*...*` di paragraf narasi.
-
-Namun, dialogue line TIDAK punya outer wrapper `*...*` — hanya paragraf narasi biasa yang dibungkus. Jadi konversi di dialogue line tidak perlu dan merusak:
-
-1. `*whispered, vulnerable*` → `'whispered, vulnerable'` (salah, seharusnya tetap `*...*`)
-2. `formatInlineNarrationInDialogue` gagal mengembalikan karena `looksLikeInlineNarrationBeat("whispered, vulnerable")` → false (2 kata, tanpa keyword)
-3. `normalizeDialogueText` melihat teks mulai dengan `'`, bukan `"` atau `*` → bungkus seluruh teks dengan `"..."` — hasilnya `"'whispered, vulnerable' "..."`
-
-### Fix
-
-Hapus `replaceInlineEmphasis` dari `normalizeDialogueText`. Fungsi ini tetap ada di `normalizeNarrativeLine` (line 4373) untuk paragraf narasi yang benar-benar dibungkus `*...*`.
-
-### Perubahan file
-- `src/aetherNovaHeader.ts`: `normalizeDialogueText` (line 4510) — hapus panggilan `replaceInlineEmphasis`.
-
-Verifikasi:
-
-- `npm run build` berhasil.
+### State Flow
+1. **constructor/load**: State di-restore dari messageState chat. Jika null, buat default.
+2. **beforePrompt**: State dikirim + diupdate dengan NPC memory.
+3. **afterResponse**: State diupdate dari hasil normalisasi.
+4. **setState (swipe)**: State di-coerce dari messageState tujuan.
+
+### State Coercion (`coerceHeaderState`)
+Saat restore state (swipe/jump), stage menormalkan semua field:
+- Location: `normalizeLocation()` → 3-tier format.
+- Clock: `normalizeClock()` → `HH:MM`.
+- TimeOfDay: `timeOfDayForClock()` → koreksi otomatis.
+- You: `normalizeYouLine()` dengan `trustRawStatus: true`.
+- NPC: `normalizeNpcLine()`.
+- Thread: `normalizeThreadLine()`.
+- Wallet: `coerceWalletState()` → parse amounts + format.
+- NPC Memory: `coerceNpcMemory()` → normalisasi entries.
+- Pending fields: dipertahankan/null sesuai kondisi.
