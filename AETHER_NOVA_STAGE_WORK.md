@@ -237,11 +237,19 @@ interface NpcMemoryEntry {
 - Parse NPC dari header line, cocokkan dengan memory yang ada.
 - Untuk setiap NPC di header:
   - **Name**: Jika hanya first name, cocokkan ke memory lama (pakai full name tersimpan).
-  - **Role/Title**: Infer dari konteks sekitar nama NPC (pattern title before/after name).
+   - **Role/Title**: Infer dari konteks sekitar nama NPC (pattern title before/after name).
    - **Race**: Pertahankan dari state lama jika tidak ada data baru.
    - **Physical Extra**: Deteksi dari status/konteks: `nine tails`, `animal ears`, dll.
-   - **Relationship**: Infer dari kata kunci konteks long-term relationship: `husband`/`wife`/`spouse` → Husband/Wife/Spouse, `lover`/`beloved` → Lover, `friend`/`companion` → Friend, `enemy`/`foe` → Enemy, `master`/`servant` → Master/Servant, `mentor`/`student` → Mentor/Student, `parent`/`child`/`sibling` → Parent/Child/Sibling, `ally` → Ally, `rival` → Rival, `guardian` → Guardian, `acquaintance` → Acquaintance, `stranger` → Stranger, `associate`/`colleague` → Associate, dll. Bersifat jangka panjang dan persisten.
-   - **Behavior**: Infer dari kata kunci konteks: `arrogant`, `protective`, `possessive`, `playful`, `loyal`, `loving`, `friendly`, `hostile`, `intimate`, dll. Attitude/behavior saat ini (temporal).
+   - **Relationship**: Infer dari kata kunci konteks long-term relationship:
+     - **Romantic**: `husband`/`wife`/`spouse` → Husband/Wife/Spouse, `lover`/`beloved` → Lover, `fiancé` → Fiancé
+     - **Family** (hanya jika possessive ke `{{user}}`, contoh: `{{user}}'s mother`, `ibumu`; **tidak** match jika "become" pattern seperti `jadikan aku seorang ibu`): Parent / Child / Sibling
+     - **Close bonds**: Friend, Best Friend, Ally
+     - **Adversarial**: Sworn Enemy, Enemy, Rival
+     - **Hierarchical**: Master, Servant, Mentor, Student, Guardian
+     - **Distant**: Acquaintance, Stranger
+     - **Professional**: Associate
+     Bersifat jangka panjang dan persisten (fallback ke nilai sebelumnya jika tidak ada data baru).
+   - **Behavior**: Infer dari kata kunci konteks: `arrogant`, `protective`, `possessive`, `playful`, `loyal`, `loving`, `friendly`, `hostile`, `intimate`, dll. Attitude/behavior saat ini (temporal, berubah sesuai scene).
   - **OnlyKnows**: Extract fakta dari konteks sekitar nama NPC (mention `{{user}} told`, `{{user}} gave`, `{{user}} threatened`, dll).
 
 ### Injection Rules (`buildNpcMemoryDirections`)

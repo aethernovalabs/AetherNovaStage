@@ -1868,14 +1868,28 @@ function inferNpcRelationship(headerEntry: NpcHeaderMemoryEntry, previous: NpcMe
         labels.push("Lover");
     }
 
-    // Family
-    if (/\b(father|mother|parent|stepfather|stepmother)\b/.test(searchable)) {
+    // Family — only if explicitly linked to {{user}} (possessive/relational)
+    // Exclude "want to become" patterns (e.g. "make me a mother" ≠ Parent)
+    const becomingFamily = /\b(?:jadikan|menjadi|ingin\s+(?:menjadi|jadi)|make\s+(?:me|us|her|him)\s+(?:a\s+)?|wants?\s+to\s+be)\b/i;
+    if (!becomingFamily.test(searchable) && (
+        /\{\{user\}\}\s*(?:'s|s|)\s*(?:mother|father|parent|mom|dad|mama|papa)\b/i.test(searchable) ||
+        /\b(?:mother|father|parent|mom|dad|mama|papa)\s+(?:of|to)\s+\{\{user\}\}\b/i.test(searchable) ||
+        /\b(?:ibumu|ayahmu|mamahmu|papahmu)\b/i.test(searchable)
+    )) {
         labels.push("Parent");
     }
-    if (/\b(daughter|son|child)\b/.test(searchable)) {
+    if (!becomingFamily.test(searchable) && (
+        /\{\{user\}\}\s*(?:'s|s|)\s*(?:daughter|son|child|kid)\b/i.test(searchable) ||
+        /\b(?:daughter|son|child|kid)\s+(?:of|to)\s+\{\{user\}\}\b/i.test(searchable) ||
+        /\b(?:putrimu|putramu|anakmu)\b/i.test(searchable)
+    )) {
         labels.push("Child");
     }
-    if (/\b(brother|sister|sibling|stepbrother|stepsister)\b/.test(searchable)) {
+    if (
+        /\{\{user\}\}\s*(?:'s|s|)\s*(?:brother|sister|sibling)\b/i.test(searchable) ||
+        /\b(?:brother|sister|sibling)\s+(?:of|to)\s+\{\{user\}\}\b/i.test(searchable) ||
+        /\b(?:kakakmu|adikmu|saudaramu)\b/i.test(searchable)
+    ) {
         labels.push("Sibling");
     }
 
