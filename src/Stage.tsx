@@ -21,7 +21,7 @@ type ChatStateType = Record<string, never>;
 const DEBUG_STORAGE_KEY = "aether-nova-stage.pendingNpcDebugQuery";
 const DEBUG_UI_VERSION = "V1.7";
 
-type DebugCategory = "lifecycle" | "npcMemory" | "headerFormat" | "narrativeFormat" | "walletThread" | "system";
+type DebugCategory = "lifecycle" | "npcMemory" | "headerFormat" | "narrativeFormat" | "walletThread" | "system" | "injection";
 
 const DEBUG_LOG_GROUPS: Array<{category: DebugCategory; title: string; emptyText: string; defaultOpen?: boolean}> = [
     {category: "npcMemory", title: "NPC Memory Log", emptyText: "No NPC memory activity yet.", defaultOpen: true},
@@ -30,6 +30,7 @@ const DEBUG_LOG_GROUPS: Array<{category: DebugCategory; title: string; emptyText
     {category: "walletThread", title: "Wallet / Thread Log", emptyText: "No wallet or thread activity yet."},
     {category: "lifecycle", title: "Lifecycle Log", emptyText: "No lifecycle activity yet."},
     {category: "system", title: "System Message Log", emptyText: "No system messages captured yet."},
+    {category: "injection", title: "Stage Injection Log", emptyText: "No stage injection captured yet.", defaultOpen: true},
 ];
 
 interface DebugEvent {
@@ -141,6 +142,11 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             "beforePrompt",
             `directions injected (${this.lastStageDirections.length} chars); debug request: ${debugQuery ?? "none"}; memory command: ${pendingMemoryCommand != null ? "pending" : "none"}`,
         );
+        if (this.lastStageDirections.length > 0) {
+            const injectionLines = this.lastStageDirections.split("\n");
+            const summary = injectionLines.length > 0 ? injectionLines[0] : "";
+            this.pushDebugEvent("injection", "stageDirections", `${injectionLines.length} lines, ${this.lastStageDirections.length} chars`, [this.lastStageDirections]);
+        }
         this.pushDebugEvent(
             "npcMemory",
             "beforePrompt",
@@ -225,6 +231,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         );
         if (this.lastSystemMessage.length > 0) {
             this.pushDebugEvent("system", "afterResponse", "systemMessage returned after response", [this.lastSystemMessage]);
+            this.pushDebugEvent("injection", "systemMessage", `${this.lastSystemMessage.length} chars`, [this.lastSystemMessage]);
         }
         this.latestUserMessage = "";
         this.latestNpcMemoryCommandMessage = "";
