@@ -57,6 +57,7 @@ Stage mendeteksi header dalam response AI dengan `readHeaderBlock()`:
 - Blank lines di dalam header ditoleransi hingga 4 baris.
 - Divider `***` atau `___` dianggap penutup header.
 - Teks sebelum header dipindahkan ke setelah header (tidak dihilangkan).
+- Setiap line header yang terdeteksi dibersihkan: label prefix (`Location:`, `Time:`, `You:`, `NPC:`, `Thread:`, `Wallet:`) di-strip sebelum parsing, agar stage tidak menyimpan label prefix ke state.
 - Jika tidak ada header terdeteksi, stage membuat header dari state sebelumnya.
 
 ---
@@ -66,6 +67,7 @@ Stage mendeteksi header dalam response AI dengan `readHeaderBlock()`:
 ### Format: `Main Location - Sub Location - Detailed Area`
 
 Cara kerja:
+- Sebelum parsing, label prefix `Location:` atau `Time:` di-strip dari raw line.
 - Parsing segments dipisah ` - `, minimal 1 segment.
 - Jika < 3 segment, diisi dari state sebelumnya atau fallback "Active Area".
 - **Location change hanya diterima jika:**
@@ -85,6 +87,8 @@ Cara kerja:
 ### Format: `Time of Day | HH:MM`
 
 Cara kerja:
+- `normalizeLocationTimeLine()` memisahkan raw line berdasarkan `|` menjadi segments: location, time of day, clock.
+- Label prefix `Time:` atau `Location:` di-strip dari raw line sebelum dipisah.
 - Ekstrak `HH:MM` dari location line menggunakan regex `CLOCK_PATTERN`.
 - **Time of Day dikoreksi OTOMATIS** berdasarkan jam:
   - `05:00-11:59` → Morning

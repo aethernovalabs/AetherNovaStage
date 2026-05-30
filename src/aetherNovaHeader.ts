@@ -2732,7 +2732,7 @@ function normalizeLocationTimeLine(
         };
     }
 
-    const clean = cleanHeaderText(rawLine).replace(/^location\s*:\s*/i, "");
+    const clean = cleanHeaderText(rawLine).replace(/^(?:location|time)\s*:\s*/i, "");
     const segments = clean.split("|").map(cleanFragment).filter((segment) => segment.length > 0);
     const clockSource = segments.find((segment) => CLOCK_PATTERN.test(segment)) ?? clean;
     const clock = normalizeClock(clockSource, previousState.clock);
@@ -2746,7 +2746,7 @@ function normalizeLocationTimeLine(
 }
 
 function normalizeLocation(rawLocation: string, previousLocation: string, context: string = ""): string {
-    const clean = cleanHeaderText(rawLocation).replace(/^location\s*:\s*/i, "");
+    const clean = cleanHeaderText(rawLocation).replace(/^(?:location|time)\s*:\s*/i, "");
     const previous = previousLocation || DEFAULT_STATE.location;
 
     if (isPlaceholder(clean) || clean.toLowerCase().includes("main location")) {
