@@ -222,6 +222,54 @@ Cara kerja:
 
 ## 8. NPC Memory System (`npcMemory`)
 
+### NPC Canon Lock
+
+Stage sekarang memakai **NPC_CANON_REGISTRY** untuk mengunci data identitas NPC canon:
+
+- `name` — full canonical name
+- `roleTitle` — canonical role/jabatan
+- `race` — canonical race
+- `physicalExtra` — canonical physical features
+
+**Cara kerja:**
+- Saat `updateNpcMemory()` memproses NPC dari header, ia memanggil `findNpcCanonByNameOrAlias()`.
+- Jika NPC cocok dengan canon registry (via full name atau alias), data canon selalu menang.
+- Data dynamic (`currentMood`, `lastInteractionTone`, `behaviorTowardUser`, `behaviorScores`, `relationshipWithUser`, `relationshipEvents`, `onlyKnows`) tetap dipertahankan — tidak di-reset.
+- Jika NPC tidak ada di canon registry, inference lama tetap dipakai.
+
+**Alias resolution:** `Aveline`, `Princess Aveline`, `Crown Princess Aveline`, `Aveline Montreval` semua resolve ke `Aveline Montreval`.
+
+**PhysicalExtra lock:** Untuk NPC canon dengan `physicalExtra: "none"` (seperti Human/Elf/Dwarf), AI tidak bisa menambahkan tail/wings/horns. Data canon menang dari hasil tebakan.
+
+**Header correction:** `normalizeNpcEntry()` mengoreksi race di header NPC line berdasarkan canon jika diperlukan.
+
+**Prioritas sumber data:**
+1. NPC Canon Registry
+2. Existing npcMemory
+3. Header/context inference
+4. Fallback unknown/default
+
+**Interface:**
+```ts
+interface NpcCanonEntry {
+  name: string;
+  aliases: string[];
+  roleTitle: string;
+  race: string;
+  physicalExtra: string;
+}
+```
+
+**Data canon yang terdaftar:**
+- Montreval dynasty: Meridiane, Aveline, Halvair (Human, Solmeryn)
+- Aerendil dynasty: Elyria, Aelindra, Faelar (Elf/High Elf, Sylvaris)
+- Valeris dynasty: Lyra, Niana, Garrick (Half-Catkin/Catkin/Lionkin, Valerest)
+- Vermithor dynasty: Elara, Talia, Aelius, Maya (Dragonkin, Draconis)
+- Ironfist dynasty: Thora, Kelda, Magni (Dwarf, Khazad Grim)
+- Independen: Debi Marquetta, Vera Nightshade, Seraphina Duskryn, Gara Stonemaw, Zora Bloodtusk, Mira Vespera, Sereza Malvora, Rina Ashthorn, Valla Noctis, Elys Seraphelion, Hana Celestine, Nara Sylverroot, Yume Nozomikara, Lulu Faeheart, Kira Moonpetal
+
+---
+
 ### Data Structure per NPC
 
 ```ts
@@ -253,10 +301,10 @@ interface NpcMemoryEntry {
 - Dipanggil setiap `afterResponse` dan `prepareAetherNovaStateForPrompt`.
 - Parse NPC dari header line, cocokkan dengan memory yang ada.
 - Untuk setiap NPC di header:
-  - **Name**: Jika hanya first name, cocokkan ke memory lama (pakai full name tersimpan).
-  - **Role/Title**: Infer dari konteks sekitar nama NPC (pattern title before/after name).
-  - **Race**: Pertahankan dari state lama jika tidak ada data baru.
-  - **Physical Extra**: Deteksi dari status/konteks: `nine tails`, `animal ears`, dll.
+  - **Name**: Jika NPC ada di canon registry, pakai full canonical name. Jika hanya first name, cocokkan ke memory lama atau canon alias.
+  - **Role/Title**: Jika NPC ada di canon registry, pakai canonical role. Jika tidak, infer dari konteks sekitar nama NPC (pattern title before/after name).
+  - **Race**: Jika NPC ada di canon registry, pakai canonical race. Jika tidak, pertahankan dari state lama jika tidak ada data baru.
+  - **Physical Extra**: Jika NPC ada di canon registry, pakai canonical physicalExtra (AI tidak bisa overwrite). Jika tidak, deteksi dari status/konteks: `nine tails`, `animal ears`, dll.
    - **Current Mood**: Boleh berisi beberapa tag sementara dalam satu string (comma-separated, maksimal 6 label). Contoh: `"tense, defensive, suspicious"`. Mood bisa mencatat mood (sad, happy, angry) dan temporary attitude (possessive, defensive, shy, jealous, suspicious, envious, proud, wise, teasing). Mood tidak mengubah relationship atau behavior. Deteksi menggunakan `extractTraitsFromText()` yang membaca seluruh konteks naratif + status header dengan negation guard.
    - **Behavior Scores** (`updateBehaviorScores`):
      - **Tidak ada global decay**. Score tidak berubah jika tidak ada evidence baru.
