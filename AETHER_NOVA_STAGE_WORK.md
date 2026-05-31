@@ -308,15 +308,21 @@ interface NpcMemoryEntry {
    - **Current Mood**: Boleh berisi beberapa tag sementara dalam satu string (comma-separated, maksimal 6 label). Contoh: `"tense, defensive, suspicious"`. Mood bisa mencatat mood (sad, happy, angry) dan temporary attitude (possessive, defensive, shy, jealous, suspicious, envious, proud, wise, teasing). Mood tidak mengubah relationship atau behavior. Deteksi menggunakan `extractTraitsFromText()` yang membaca seluruh konteks naratif + status header dengan negation guard.
    - **Behavior Scores** (`updateBehaviorScores`):
      - **Tidak ada global decay**. Score tidak berubah jika tidak ada evidence baru.
-     - Score naik jika ada evidence behavior sesuai bobot (minor +1, clear +1, strong +2, major +3).
+     - Score naik jika ada evidence behavior sesuai evidence weight baru (weak +0.1, medium +0.5, strong +1).
+     - Dalam satu response, hanya evidence terkuat per label yang dipakai (`mergeBehaviorEvidence` mengambil max weight, bukan menjumlah).
+     - Max gain per label per response = +1 (strong cue).
      - Score turun **hanya** jika ada evidence berlawanan (opposite behavior) atau melalui opposite reduction.
-     - Evidence per response di-cap 3 per label (`mergeBehaviorEvidence`).
-     - Score maksimal 9, minimal 0.
+     - Evidence weights baru:
+       - Weight 1 (weak cue) → +0.1
+       - Weight 2 (medium cue) → +0.5
+       - Weight 3 (strong cue) → +1
+     - Score maksimal 9, minimal 0. Score bisa berupa angka desimal (float).
      - NPC yang tidak hadir di header tidak mengalami perubahan score.
+     - Jika suspicious atau cautious score >= 4, weak affectionate cue (+0.1) diabaikan.
    - **Trait/Opposite Score System**:
      - Stage menggunakan `OPPOSITE_TRAIT_PAIRS` (Record<string, string[]>) untuk pasangan trait yang saling menyeimbangkan.
      - Pasangan utama: `happy↔sad`, `calm↔angry/tense`, `trusting↔suspicious`, `affectionate↔cold/distant`, `playful/teasing↔serious/formal`, `protective↔hostile`, `respectful↔arrogant`, `loyal↔defiant/rebellious`, `obedient↔defiant`, `brave↔fearful`, `possessive↔detached`, `jealous↔secure`, `proud↔humble`, `wise↔reckless`, `defensive↔relaxed/open`.
-     - Jika trait A naik, opposite trait B turun dengan bobot: minor +1 → opposite -1, clear +1 → opposite -1, strong +2 → opposite -1, major +3 → opposite -2.
+     - Jika trait A naik, opposite trait B turun dengan bobot sesuai evidence weight: weak (+0.1) → opposite -0, medium (+0.5) → opposite -0.25, strong (+1) → opposite -0.5.
      - Clamp score: minimal 0, maksimal 9.
      - Score tidak turun tanpa evidence berlawanan yang jelas.
    - **Negation/Contrast Guard** (`detectNegation`):

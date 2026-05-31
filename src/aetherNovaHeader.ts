@@ -2270,7 +2270,7 @@ function applyBehaviorScoreDeltas(scores: Record<string, number>, deltas: Record
 }
 
 function clampBehaviorScore(value: number): number {
-    return Math.max(0, Math.min(9, Math.round(value)));
+    return Math.max(0, Math.min(9, value));
 }
 
 const OPPOSITE_TRAIT_PAIRS: Record<string, string[]> = {
@@ -2311,9 +2311,8 @@ const OPPOSITE_TRAIT_PAIRS: Record<string, string[]> = {
 };
 
 function getOppositeReduction(evidenceWeight: number): number {
-    if (evidenceWeight >= 3) return 2;
-    if (evidenceWeight >= 2) return 1;
-    if (evidenceWeight >= 1) return 1;
+    if (evidenceWeight >= 1) return 0.5;
+    if (evidenceWeight >= 0.5) return 0.25;
     return 0;
 }
 
@@ -2390,10 +2389,14 @@ function mergeBehaviorEvidence(evidence: BehaviorEvidence[]): BehaviorEvidence[]
         if (label.length === 0) {
             continue;
         }
-        merged.set(label, Math.min(3, (merged.get(label) ?? 0) + item.weight));
+        const current = merged.get(label) ?? 0;
+        merged.set(label, Math.max(current, item.weight));
     }
 
-    return Array.from(merged.entries()).map(([label, weight]) => ({label, weight}));
+    return Array.from(merged.entries()).map(([label, weight]) => ({
+        label,
+        weight: weight >= 3 ? 1 : weight >= 2 ? 0.5 : 0.1,
+    }));
 }
 
 function detectNegation(text: string, traitLabel: string): boolean {
@@ -2854,9 +2857,15 @@ function updateBehaviorScores(previousScores: Record<string, number>, evidence: 
         }
     }
 
+    const highSuspicion = (next["suspicious"] ?? 0) >= 4 || (next["cautious"] ?? 0) >= 4;
+
     for (const item of evidence) {
         const label = cleanMemoryLabel(item.label, "");
         if (label.length === 0) {
+            continue;
+        }
+
+        if (label === "affectionate" && highSuspicion && item.weight <= 0.1) {
             continue;
         }
 
