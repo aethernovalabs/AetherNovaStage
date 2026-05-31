@@ -2042,7 +2042,7 @@ function mergeBehaviorEvidence(evidence: BehaviorEvidence[]): BehaviorEvidence[]
         if (label.length === 0) {
             continue;
         }
-        merged.set(label, Math.min(3, (merged.get(label) ?? 0) + item.weight));
+        merged.set(label, Math.min(2, (merged.get(label) ?? 0) + item.weight));
     }
 
     return Array.from(merged.entries()).map(([label, weight]) => ({label, weight}));
@@ -2239,30 +2239,41 @@ interface RelationshipUpdate {
 
 function inferNpcMood(headerEntry: NpcHeaderMemoryEntry, previous: NpcMemoryEntry | null, context: string): MoodInference {
     const searchable = npcSocialContext(headerEntry, context).toLowerCase();
+    const fullContext = context.toLowerCase();
+    const statusText = (headerEntry.status ?? "").toLowerCase();
+
     const moodChecks: Array<[string, RegExp, string]> = [
-        ["angry", /\b(angry|furious|rage|enraged|mad|irate|glares?|snaps?)\b/, "tense"],
-        ["annoyed", /\b(annoyed|irritated|exasperated|huffs?|scoffs?)\b/, "tense"],
-        ["sad", /\b(sad|sorrowful|grief|mournful|tearful|heartbroken)\b/, "soft"],
-        ["afraid", /\b(afraid|scared|fearful|terrified|frightened|panicked)\b/, "tense"],
-        ["curious", /\b(curious|intrigued|interested|studying|examining)\b/, "curious"],
-        ["embarrassed", /\b(embarrassed|flustered|blush(?:es|ing)?|bashful)\b/, "soft"],
-        ["tense", /\b(tense|strained|uneasy|on edge|stiffens?)\b/, "tense"],
-        ["amused", /\b(amused|laughs?|chuckles?|smirks?|playful smile)\b/, "playful"],
-        ["cold", /\b(cold|distant|icy|flatly|expressionless)\b/, "cold"],
-        ["relieved", /\b(relieved|relaxes?|softens?|exhales?)\b/, "warm"],
-        ["jealous", /\b(jealous|possessive|envy|envious)\b/, "tense"],
-        ["confused", /\b(confused|puzzled|uncertain|bewildered)\b/, "uncertain"],
-        ["calm", /\b(calm|composed|steady|serene)\b/, "calm"],
+        ["angry", /\b(angry|furious|rage|enraged|mad|irate|glares?|snaps?|growls?|snarls?)\b/, "tense"],
+        ["annoyed", /\b(annoyed|irritated|exasperated|huffs?|scoffs?|rolls? eyes|sighs?)\b/, "tense"],
+        ["sad", /\b(sad|sorrowful|grief|mournful|tearful|heartbroken|weeps?|cries?|crying|sobs?)\b/, "soft"],
+        ["afraid", /\b(afraid|scared|fearful|terrified|frightened|panicked|shaken|flinches?)\b/, "tense"],
+        ["curious", /\b(curious|intrigued|interested|studying|examining|peers?|leans? closer)\b/, "curious"],
+        ["embarrassed", /\b(embarrassed|flustered|blush(?:es|ing)?|bashful|shy|flustered)\b/, "soft"],
+        ["tense", /\b(tense|strained|uneasy|on edge|stiffens?|rigid|clenched)\b/, "tense"],
+        ["amused", /\b(amused|laughs?|chuckles?|smirks?|playful smile|grins?|teasing)\b/, "playful"],
+        ["cold", /\b(cold|distant|icy|flatly|expressionless|curt|abrupt)\b/, "cold"],
+        ["relieved", /\b(relieved|relaxes?|softens?|exhales?|sags? with relief)\b/, "warm"],
+        ["jealous", /\b(jealous|possessive|envy|envious|protective)\b/, "tense"],
+        ["confused", /\b(confused|puzzled|uncertain|bewildered|tilts? head|frowns?)\b/, "uncertain"],
+        ["calm", /\b(calm|composed|steady|serene|peaceful|collected)\b/, "calm"],
+        ["excited", /\b(excited|eager|enthusiastic|animated|beams?|brightens?)\b/, "warm"],
+        ["solemn", /\b(solemn|grave|serious|somber|pensive|contemplative)\b/, "serious"],
+        ["playful", /\b(playful|mischievous|whimsical|lighthearted|banters?)\b/, "playful"],
     ];
 
     for (const [mood, pattern, tone] of moodChecks) {
-        if (pattern.test(searchable)) {
+        if (pattern.test(searchable) || pattern.test(fullContext)) {
             return {currentMood: mood, lastInteractionTone: tone};
         }
     }
 
+    const statusMoodMatch = /\b(angry|annoyed|sad|happy|calm|curious|nervous|excited|bored|tired|confused|worried|relaxed|serious|playful|shy|cold|distant)\b/i.exec(statusText);
+    if (statusMoodMatch != null) {
+        return {currentMood: statusMoodMatch[1].toLowerCase(), lastInteractionTone: "neutral"};
+    }
+
     return {
-        currentMood: previous?.currentMood ?? "unknown",
+        currentMood: previous?.currentMood ?? "neutral",
         lastInteractionTone: previous?.lastInteractionTone,
     };
 }
@@ -2300,7 +2311,7 @@ function updateBehaviorScores(previousScores: Record<string, number>, evidence: 
     for (const [label, score] of Object.entries(previousScores)) {
         const clean = cleanMemoryLabel(label, "");
         if (clean.length > 0 && Number.isFinite(score)) {
-            next[clean] = clampBehaviorScore(score);
+            next[clean] = clampBehaviorScore(score - 1);
         }
     }
 
@@ -2316,13 +2327,12 @@ function updateBehaviorScores(previousScores: Record<string, number>, evidence: 
     return next;
 }
 
-function stableBehaviorLabels(previousStable: string[], scores: Record<string, number>): string[] {
-    const stableFromScores = Object.entries(scores)
-        .filter(([_label, score]) => score >= 3)
+function stableBehaviorLabels(_previousStable: string[], scores: Record<string, number>): string[] {
+    return Object.entries(scores)
+        .filter(([_label, score]) => score >= 4)
         .sort((left, right) => right[1] - left[1])
-        .map(([label]) => label);
-
-    return mergeUniqueList(previousStable.concat(stableFromScores).map((label) => cleanMemoryLabel(label, "")).filter(Boolean), 6);
+        .map(([label]) => label)
+        .slice(0, 6);
 }
 
 function inferNpcRelationshipUpdate(

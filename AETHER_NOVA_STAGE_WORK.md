@@ -250,9 +250,9 @@ interface NpcMemoryEntry {
    - **Role/Title**: Infer dari konteks sekitar nama NPC (pattern title before/after name).
    - **Race**: Pertahankan dari state lama jika tidak ada data baru.
    - **Physical Extra**: Deteksi dari status/konteks: `nine tails`, `animal ears`, dll.
-   - **Current Mood**: Boleh berubah tiap response (`angry`, `annoyed`, `calm`, `tense`, `embarrassed`, dll). Mood tidak mengubah relationship.
-   - **Behavior Scores**: Evidence behavior dinaikkan pelan (`+1`, atau `+2` untuk event kuat seperti protect/hostile/oath). Behavior stabil baru muncul jika score minimal 3.
-   - **Behavior Toward {{user}}**: Label stabil dari score, misalnya `protective`, `suspicious`, `formal`, `playful`, `hostile`. Tidak dioverwrite oleh mood sesaat.
+    - **Current Mood**: Boleh berubah tiap response (`angry`, `annoyed`, `calm`, `tense`, `embarrassed`, dll). Mood tidak mengubah relationship. Deteksi dari full konteks naratif (bukan hanya NPC-adjacent), plus fallback ke status header jika ada.
+    - **Behavior Scores**: Evidence behavior ditambahkan per response, tetapi semua score otomatis decay -1 tiap siklus (`updateBehaviorScores`). Evidence per response di-cap 2 per label (`mergeBehaviorEvidence`). Behavior stabil baru muncul jika score minimal 4 (butuh ~3-4 interaksi konsisten). Score maksimal 9.
+    - **Behavior Toward {{user}}**: Label stabil murni dari score (>= 4), tidak ada concatenation previous — label otomatis hilang jika score decay di bawah threshold. Contoh: `protective`, `suspicious`, `formal`, `playful`, `hostile`.
    - **Relationship With {{user}}**: Array label konservatif (`stranger`, `acquaintance`, `formal`, `ally`, `friend`, `enemy`, `rival`, `subordinate`, `lover`, `romantic tension`). Hanya berubah lewat event besar.
    - **Relationship Events**: Event penting saja, maksimal 10, misalnya confession accepted, alliance formed, betrayal, oath sworn, formal employment.
   - **OnlyKnows**: Extract fakta dari konteks sekitar nama NPC (mention `{{user}} told`, `{{user}} gave`, `{{user}} threatened`, dll).
