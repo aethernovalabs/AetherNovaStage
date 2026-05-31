@@ -1,6 +1,6 @@
 import {Stage} from "./Stage";
 import {useEffect, useState} from "react";
-import {DEFAULT_INITIAL, StageBase, InitialData} from "@chub-ai/stages-ts";
+import {DEFAULT_INITIAL, DEFAULT_MESSAGE, StageBase, InitialData} from "@chub-ai/stages-ts";
 
 // Modify this JSON to include whatever character/user information you want to test.
 import InitData from './assets/test-init.json';
@@ -37,50 +37,41 @@ export const TestStageRunner = <StageType extends StageBase<InitStateType, ChatS
      This is the main thing you'll want to modify.
      ***/
     async function runTests() {
-        /*
-        await stage.setState({someKey: 'A new value, even!'});
+        await stage.setState({location: "Solmeryn Kingdom - The Lamplighter's Nest - Hidden Chamber", timeOfDay: "Afternoon", clock: "13:12", you: "Unknown - Human (Regular clothing; Standing; hands visible)", npc: "None", thread: "None", wallet: "0G ; 0S ; 0C", walletInitialized: false, npcMemory: {}, pendingNpcDebugQuery: null, pendingNpcMemoryCommand: null});
         refresh();
 
-        const beforePromptResponse: Partial<StageResponse<ChatStateType, MessageStateType>> = await stage.beforePrompt({
+        const beforePromptResponse = await stage.beforePrompt({
             ...DEFAULT_MESSAGE, ...{
                 anonymizedId: "0",
-                content: "Hello, this is what happens when a human sends a message, but before it's sent to the model.",
+                content: "Hello, I'm looking around the hidden chamber.",
                 isBot: false
             }
         });
         console.assert(beforePromptResponse.error == null);
         refresh();
-        */
-        /***
-         "What is all of this nonsense with 'DEFAULT_MESSAGE'?" you may well ask.
-         The purpose of this is to future-proof your test runner.
-         The stage interface is designed to be forwards-compatible,
-            so that a stage with a certain library version will continue to work
-            even if new fields are added to any of the call/response objects.
-         But when new fields are added to the input objects, the code calling an
-            stage needs to be updated. Using DEFAULT_MESSAGE,
-            DEFAULT_INITIAL, DEFAULT_CHARACTER, DEFAULT_USER,
-            DEFAULT_LOAD_RESPONSE, and DEFAULT_RESPONSE
-            where relevant in your tests prevents a version bump
-            from breaking your test runner in many cases.
-         ***/
-        /*
-        const afterPromptResponse: Partial<StageResponse<ChatStateType, MessageStateType>> = await stage.afterResponse({
+
+        const afterPromptResponse = await stage.afterResponse({
             ...DEFAULT_MESSAGE, ...{
             promptForId: null,
             anonymizedId: "2",
-            content: "Why yes hello, and this is what happens when a bot sends a response.",
+            content: `**Solmeryn Kingdom - The Lamplighter's Nest - Hidden Chamber | Afternoon | 13:12**
+**You: Male - Human (Regular clothing; Standing; hands visible)**
+**NPC: None**
+**Thread: None**
+**Wallet: 0G ; 0S ; 0C**
+***
+
+*The hidden chamber is dimly lit, with old tomes lining the walls.*`,
             isBot: true}});
         console.assert(afterPromptResponse.error == null);
         refresh();
 
-        const afterDelayedThing: Partial<StageResponse<ChatStateType, MessageStateType>> = await delayedTest(() => stage.beforePrompt({
+        const secondPrompt = await stage.beforePrompt({
             ...DEFAULT_MESSAGE, ...{
-            anonymizedId: "0", content: "Hello, and now the human is prompting again.", isBot: false, promptForId: null
-        }}), 5);
-        console.assert(afterDelayedThing.error == null);
+            anonymizedId: "0", content: "I examine the books on the shelf.", isBot: false, promptForId: null
+        }});
+        console.assert(secondPrompt.error == null);
         refresh();
-        */
     }
 
     useEffect(() => {
