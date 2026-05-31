@@ -1190,29 +1190,19 @@ export function buildStageDirections(state: AetherNovaMessageState, userMessage:
         ...state,
         pendingNpcDebugQuery: state.pendingNpcDebugQuery ?? debugNpcQuery(userMessage),
     };
-    const directions = [
-        "Maintain Aether Nova header format. Start with exactly five bold header lines followed by *** before narration.",
-        `Location: ${effectiveState.location}`,
-        `Time: ${effectiveState.timeOfDay} | ${effectiveState.clock}`,
-        `You: ${effectiveState.you}`,
-        `NPC: ${effectiveState.npc}`,
-        `Thread: ${effectiveState.thread}`,
-        `Wallet: ${effectiveState.wallet}`,
-        "Status format: Clothes/disguise; Position; optional body/racial detail. Keep clothes/position from last state unless the scene clearly changes. Use Thread items separated by \" ; \". Wallet changes only with clear in-story transaction/reward/loss evidence.",
-        "NPC memory social rule: Current Mood is temporary; Behavior is stable pattern; Relationship changes only after clear major events such as alliance, betrayal, oath, accepted confession, formal employment, or open hostility.",
-    ];
+    const parts: string[] = [];
     const npcMemoryContext = buildNpcMemoryDirections(effectiveState, userMessage);
 
     if (npcMemoryContext.length > 0) {
-        directions.push(npcMemoryContext);
+        parts.push(npcMemoryContext);
     }
 
     const debugContext = buildNpcDebugDirections(effectiveState.pendingNpcDebugQuery, effectiveState.npcMemory);
     if (debugContext.length > 0) {
-        directions.push(debugContext);
+        parts.push(debugContext);
     }
 
-    return directions.join("\n");
+    return parts.join("\n");
 }
 
 export function normalizeAetherNovaResponse(

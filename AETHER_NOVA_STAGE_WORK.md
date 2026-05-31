@@ -24,7 +24,7 @@ Stage adalah React component (`Stage.tsx`) yang mengimplementasikan `StageBase` 
 1. Mendeteksi `[debug: npc Name]` dalam pesan user (disimpan ke localStorage).
 2. `prepareAetherNovaStateForPrompt()`: update npcMemory dari header NPC terakhir.
 3. `applyNpcMemoryCommands()`: parsing dan eksekusi command `npc memory ...`, membersihkan command dari pesan user.
-4. `buildStageDirections()`: menyusun string stageDirections yang inject state terakhir + NPC memory context ke prompt.
+4. `buildStageDirections()`: menyusun string stageDirections yang hanya berisi NPC memory context + debug (jika ada) — header state tidak diinject ke prompt, hanya digunakan internal untuk koreksi respons LLM.
 5. Kembali: `stageDirections`, `messageState`, `modifiedMessage` (jika ada command memory), `systemMessage` (jika command `show`).
 
 ### afterResponse(botMessage)
@@ -266,6 +266,7 @@ Boundary penting:
 - `relationshipWithUser` boleh punya lebih dari satu label, contoh `ally, suspicious`.
 
 ### Injection Rules (`buildNpcMemoryDirections`)
+Hanya NPC memory context yang diinject ke prompt LLM. Header state (`Location`, `Time`, `You`, `NPC`, `Thread`, `Wallet`) tidak diinject — hanya disimpan internal stage untuk koreksi header respons LLM.
 1. **NPC di header aktif** → inject FULL memory: Name, Role/Title, Race, Physical Extra, Current Mood, Behavior, Relationship, OnlyKnows, Important Relationship Events.
 2. **NPC hanya disebut di pesan user** → inject IDENTITY ONLY: Name, Role/Title, Race, Physical Extra. Mood, Relationship, Behavior, OnlyKnows, dan Relationship Events TIDAK diinject (knowledge firewall).
 3. **NPC tidak ada di header dan tidak disebut** → data tetap disimpan, tidak diinject. Injection dibatasi 4 NPC per kategori.
