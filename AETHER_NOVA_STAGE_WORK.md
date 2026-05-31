@@ -247,23 +247,44 @@ interface NpcMemoryEntry {
 - Parse NPC dari header line, cocokkan dengan memory yang ada.
 - Untuk setiap NPC di header:
   - **Name**: Jika hanya first name, cocokkan ke memory lama (pakai full name tersimpan).
-   - **Role/Title**: Infer dari konteks sekitar nama NPC (pattern title before/after name).
-   - **Race**: Pertahankan dari state lama jika tidak ada data baru.
-   - **Physical Extra**: Deteksi dari status/konteks: `nine tails`, `animal ears`, dll.
-    - **Current Mood**: Boleh berubah tiap response (`angry`, `annoyed`, `calm`, `tense`, `embarrassed`, dll). Mood tidak mengubah relationship. Deteksi dari full konteks naratif (bukan hanya NPC-adjacent), plus fallback ke status header jika ada.
-    - **Behavior Scores**: Evidence behavior ditambahkan per response, tetapi semua score otomatis decay -1 tiap siklus (`updateBehaviorScores`). Evidence per response di-cap 2 per label (`mergeBehaviorEvidence`). Behavior stabil baru muncul jika score minimal 4 (butuh ~3-4 interaksi konsisten). Score maksimal 9.
-    - **Behavior Toward {{user}}**: Label stabil murni dari score (>= 4), tidak ada concatenation previous — label otomatis hilang jika score decay di bawah threshold. Contoh: `protective`, `suspicious`, `formal`, `playful`, `hostile`.
-   - **Relationship With {{user}}**: Array label konservatif (`stranger`, `acquaintance`, `formal`, `ally`, `friend`, `enemy`, `rival`, `subordinate`, `lover`, `romantic tension`). Hanya berubah lewat event besar.
-   - **Relationship Events**: Event penting saja, maksimal 10, misalnya confession accepted, alliance formed, betrayal, oath sworn, formal employment.
+  - **Role/Title**: Infer dari konteks sekitar nama NPC (pattern title before/after name).
+  - **Race**: Pertahankan dari state lama jika tidak ada data baru.
+  - **Physical Extra**: Deteksi dari status/konteks: `nine tails`, `animal ears`, dll.
+  - **Current Mood**: Boleh berubah tiap response (`angry`, `annoyed`, `calm`, `tense`, `embarrassed`, dll). Mood tidak mengubah relationship atau behavior. Deteksi dari full konteks naratif (bukan hanya NPC-adjacent), plus fallback ke status header jika ada.
+  - **Behavior Scores** (`updateBehaviorScores`):
+    - **Tidak ada global decay**. Score tidak berubah jika tidak ada evidence baru.
+    - Score naik jika ada evidence behavior sesuai bobot (minor +1, clear +1, strong +2, major +3).
+    - Score turun **hanya** jika ada evidence berlawanan (opposite behavior).
+    - Evidence per response di-cap 3 per label (`mergeBehaviorEvidence`).
+    - Score maksimal 9, minimal 0.
+    - NPC yang tidak hadir di header tidak mengalami perubahan score.
+  - **Behavior Toward {{user}}** (`stableBehaviorLabels`):
+    - Label stabil menggunakan **hysteresis** dua threshold:
+      - **Aktif** jika score >= 4.
+      - **Tetap aktif** jika score >= 2 (label yang sebelumnya aktif dipertahankan).
+      - **Hilang** jika score <= 1.
+    - Tidak ada rebuild mentah dari score — label yang sudah aktif tidak flicker.
+    - Contoh: `protective`, `suspicious`, `formal`, `playful`, `hostile`.
+  - **Opposite Behavior Reduction**:
+    - Evidence `hostile` menurunkan score `protective`, dan sebaliknya.
+    - Evidence `cold` menurunkan score `playful`, dan sebaliknya.
+    - Evidence `arrogant` menurunkan score `respectful`, dan sebaliknya.
+    - Pasangan lain: `trusting↔suspicious`, `affectionate↔dismissive`, `loyal↔rebellious/defiant`, `obedient↔defiant`.
+  - **Relationship With {{user}}**: Array label konservatif (`stranger`, `acquaintance`, `formal`, `ally`, `friend`, `enemy`, `rival`, `subordinate`, `lover`, `romantic tension`). Hanya berubah lewat event besar.
+  - **Relationship Events**: Event penting saja, maksimal 10, misalnya confession accepted, alliance formed, betrayal, oath sworn, formal employment.
   - **OnlyKnows**: Extract fakta dari konteks sekitar nama NPC (mention `{{user}} told`, `{{user}} gave`, `{{user}} threatened`, dll).
 
 Boundary penting:
+- `currentMood` boleh berubah setiap response, tapi **tidak otomatis mengubah behavior atau relationship**.
+- `behaviorTowardUser` stabil dan tidak flicker karena hysteresis.
+- `relationshipWithUser` hanya berubah lewat event besar (bukan mood, bukan sekali interaksi).
 - NPC marah tidak otomatis menjadi `enemy`.
 - NPC sopan/formal tidak otomatis menjadi `subordinate`.
 - NPC flirting/blush tidak otomatis menjadi `lover`.
 - Kata `friend` sekali tidak otomatis menjadi `friend` tanpa konteks trust/aksi pendukung.
 - Kerja sama bisa menjadi `ally`, tapi `friend` butuh kedekatan personal.
 - `relationshipWithUser` boleh punya lebih dari satu label, contoh `ally, suspicious`.
+- NPC tidak hadir di header → behaviorScores dan behaviorTowardUser tidak berubah.
 
 ### Injection Rules (`buildNpcMemoryDirections`)
 Hanya NPC memory context yang diinject ke prompt LLM. Header state (`Location`, `Time`, `You`, `NPC`, `Thread`, `Wallet`) tidak diinject — hanya disimpan internal stage untuk koreksi header respons LLM.

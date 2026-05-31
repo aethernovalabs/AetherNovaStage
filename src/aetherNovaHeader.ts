@@ -2025,6 +2025,17 @@ function clampBehaviorScore(value: number): number {
     return Math.max(0, Math.min(9, Math.round(value)));
 }
 
+const OPPOSITE_BEHAVIOR_PAIRS: Array<[string, string]> = [
+    ["protective", "hostile"],
+    ["trusting", "suspicious"],
+    ["playful", "cold"],
+    ["affectionate", "dismissive"],
+    ["loyal", "rebellious"],
+    ["loyal", "defiant"],
+    ["respectful", "arrogant"],
+    ["obedient", "defiant"],
+];
+
 function mergeBehaviorEvidence(evidence: BehaviorEvidence[]): BehaviorEvidence[] {
     const merged = new Map<string, number>();
     for (const item of evidence) {
@@ -2032,7 +2043,7 @@ function mergeBehaviorEvidence(evidence: BehaviorEvidence[]): BehaviorEvidence[]
         if (label.length === 0) {
             continue;
         }
-        merged.set(label, Math.min(2, (merged.get(label) ?? 0) + item.weight));
+        merged.set(label, Math.min(3, (merged.get(label) ?? 0) + item.weight));
     }
 
     return Array.from(merged.entries()).map(([label, weight]) => ({label, weight}));
@@ -2289,7 +2300,7 @@ function inferNpcBehaviorEvidence(headerEntry: NpcHeaderMemoryEntry, context: st
     add("fearful", /\b(fearful|afraid|scared|nervous|anxious|trembling)\b/);
     add("hostile", /\b(hostile|attacks?|attacked|threatens?|threatened|betrays?|betrayed|tries? to kill|orders? (?:your|their) capture)\b/, 2);
     add("obedient", /\b(obeys?|obedient|follows your order|accepts your command|kneels? and awaits)\b/);
-    add("affectionate", /\b(affectionate|gentle|warm|tender|caresses?|hugs?|kisses?|loving)\b/);
+    add("affectionate", /\b(affectionate|gentle|warm|tender|caresses?|hugs?|kisses?|loving)\b/, 2);
     add("manipulative", /\b(manipulative|calculating|deceptive|uses? you|strings? you along|plays? you)\b/);
 
     return mergeBehaviorEvidence(evidence);
@@ -2301,7 +2312,7 @@ function updateBehaviorScores(previousScores: Record<string, number>, evidence: 
     for (const [label, score] of Object.entries(previousScores)) {
         const clean = cleanMemoryLabel(label, "");
         if (clean.length > 0 && Number.isFinite(score)) {
-            next[clean] = clampBehaviorScore(score - 1);
+            next[clean] = clampBehaviorScore(score);
         }
     }
 
@@ -2314,15 +2325,46 @@ function updateBehaviorScores(previousScores: Record<string, number>, evidence: 
         next[label] = clampBehaviorScore((next[label] ?? 0) + item.weight);
     }
 
+    for (const item of evidence) {
+        const label = cleanMemoryLabel(item.label, "");
+        if (label.length === 0) {
+            continue;
+        }
+
+        const reduction = Math.min(item.weight, 2);
+        for (const [behaviorA, behaviorB] of OPPOSITE_BEHAVIOR_PAIRS) {
+            const cleanA = cleanMemoryLabel(behaviorA, "");
+            const cleanB = cleanMemoryLabel(behaviorB, "");
+            if (label === cleanA && next[cleanB] != null && next[cleanB] > 0) {
+                next[cleanB] = clampBehaviorScore(next[cleanB] - reduction);
+            }
+            if (label === cleanB && next[cleanA] != null && next[cleanA] > 0) {
+                next[cleanA] = clampBehaviorScore(next[cleanA] - reduction);
+            }
+        }
+    }
+
     return next;
 }
 
-function stableBehaviorLabels(_previousStable: string[], scores: Record<string, number>): string[] {
-    return Object.entries(scores)
-        .filter(([_label, score]) => score >= 4)
-        .sort((left, right) => right[1] - left[1])
-        .map(([label]) => label)
-        .slice(0, 6);
+function stableBehaviorLabels(previousStable: string[], scores: Record<string, number>): string[] {
+    const previousSet = new Set(previousStable.map((label) => cleanMemoryLabel(label, "")).filter(Boolean));
+    const result: string[] = [];
+
+    for (const [label, score] of Object.entries(scores)) {
+        const clean = cleanMemoryLabel(label, "");
+        if (clean.length === 0) {
+            continue;
+        }
+        if (score >= 4) {
+            result.push(clean);
+        } else if (score >= 2 && previousSet.has(clean)) {
+            result.push(clean);
+        }
+    }
+
+    result.sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0));
+    return result.slice(0, 6);
 }
 
 function inferNpcRelationshipUpdate(
