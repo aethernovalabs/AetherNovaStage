@@ -3915,43 +3915,32 @@ function normalizeWalletLine(
     previousInitialized: boolean,
 ): NormalizedWallet {
     const previous = normalizeWalletValue(previousWallet) ?? DEFAULT_STATE.wallet;
-    const rawCandidate = cleanLabeledValue(rawLine, "Wallet");
-    const candidate = normalizeWalletValue(rawCandidate);
-    const walletContext = walletTransactionEvidenceContext(context);
-    const inferred = previousInitialized ? inferWalletFromContext(previous, walletContext) : null;
 
-    if (candidate == null) {
-        return {
-            value: inferred ?? previous,
-            initialized: previousInitialized,
-        };
-    }
-
+    // === INITIALIZATION (first time wallet is seen) ===
+    // Bootstrap from the LLM's header wallet line so the wallet gets an initial value.
     if (!previousInitialized) {
-        return {
-            value: candidate,
-            initialized: true,
-        };
+        const rawCandidate = cleanLabeledValue(rawLine, "Wallet");
+        const candidate = normalizeWalletValue(rawCandidate);
+        if (candidate != null) {
+            return { value: candidate, initialized: true };
+        }
+        return { value: previous, initialized: false };
     }
 
-    if (sameText(candidate, previous)) {
-        return {
-            value: inferred ?? previous,
-            initialized: true,
-        };
+    // === AFTER INITIALIZATION ===
+    // The LLM's wallet line in the header is treated as display only — NOT a
+    // transaction source.  Wallet changes are detected exclusively from body/
+    // narrative context (dialogue-stripped).  Header correction alone never
+    // changes the wallet.
+    const walletContext = walletTransactionEvidenceContext(context);
+    const inferred = inferWalletFromContext(previous, walletContext);
+
+    if (inferred != null) {
+        return { value: inferred, initialized: true };
     }
 
-    if (walletChangeIsSupported(candidate, previous, walletContext)) {
-        return {
-            value: inferred != null && !sameText(candidate, inferred) ? inferred : candidate,
-            initialized: true,
-        };
-    }
-
-    return {
-        value: inferred ?? previous,
-        initialized: true,
-    };
+    // No valid transaction in the body — wallet stays exactly as before.
+    return { value: previous, initialized: true };
 }
 
 function normalizeWalletValue(value: string): string | null {

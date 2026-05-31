@@ -31,7 +31,7 @@ Stage adalah React component (`Stage.tsx`) yang mengimplementasikan `StageBase` 
 1. `normalizeAetherNovaResponse()`: fungsi inti yang melakukan:
    - `extractHeader(content)`: mendeteksi header dalam response AI.
    - `normalizeLocationTimeLine()`: koreksi location & time.
-   - `normalizeWalletLine()`: koreksi wallet.
+   - `normalizeWalletLine()`: koreksi wallet — **hanya dari transaksi di body narrative**, bukan dari header LLM.
    - `normalizeYouLine()`: koreksi line You.
    - `normalizeNpcLine()`: koreksi line NPC.
    - `normalizeThreadLine()`: koreksi Thread.
@@ -39,6 +39,8 @@ Stage adalah React component (`Stage.tsx`) yang mengimplementasikan `StageBase` 
    - `formatResponse()`: menggabungkan header terkoreksi + narasi yang diformat.
 2. Re-apply NPC memory commands (untuk persist efek command).
 3. Kembali: `modifiedMessage`, `messageState`, `systemMessage`.
+
+**Wallet mutation hanya terjadi di `afterResponse`.** `prepareAetherNovaStateForPrompt` dan `beforePrompt` tidak mengubah wallet.
 
 ### setState(state)
 - Dipanggil saat user swipe/jump ke message lain.
@@ -193,30 +195,83 @@ Cara kerja:
 
 Konversi: `1G = 100S`, `1S = 100C`.
 
-Cara kerja:
-- `parseWalletAmounts()`: extract angka + unit (G/gold, S/silver, C/copper) dari string.
-- `normalizeWalletValue()`: format ulang ke `XG ; XS ; XC`.
+### Prinsip Utama: Header Correction Bukan Wallet Transaction
 
-**Initialisasi:**
-- Wallet pertama yang valid dari header AI dipakai sebagai nilai awal (tidak dipaksa 0).
-- Flag `walletInitialized` membedakan wallet yang sudah tersimpan dari fallback kosong.
+Wallet **tidak boleh berubah** hanya karena header LLM rusak, tidak lengkap, atau Stage merekonstruksi header.  
+Wallet **hanya boleh berubah** jika ada transaksi valid dalam narasi/body response.
 
-**Perubahan wallet hanya diterima jika:**
-1. Ada EVIDENCE transaksi dari narasi NON-dialog (dialog dalam kutip diabaikan).
-2. `WALLET_TRANSACTION_CUES`: pay, spend, buy, purchase, cost, fee, reward, earn, loot, sell, receive, gift, bounty, refund, lost, stolen, robbed, confiscated.
-3. Evidence harus berupa aksi visible (`*{{user}} places 10 Gold on the counter.*`), bukan ucapan.
-4. **Price discussion diabaikan:** `worth`, `valued at`, `asking price`, `trade information for information` tidak cukup.
+### Cara Kerja
 
-**Inferensi wallet (`inferWalletFromContext`):**
-- Stage bisa menghitung perubahan wallet dari narasi jika ada angka yang jelas.
-- Contoh: `"{{user}} hands over fifty silver"` → wallet berkurang 50S.
-- Contoh: `"{{user}} receives 10 gold reward"` → wallet bertambah 10G.
-- Number words juga diparse: `fifty` → 50.
+`normalizeWalletLine()` dipanggil dari `normalizeAetherNovaResponse()` dalam lifecycle `afterResponse`.
 
-**Pelarangan:**
-- Diskusi harga/valuasi/penawaran yang belum selesai tidak mengubah wallet.
-- Ucapan dalam dialog (`"I paid fifty silver"`) tidak dianggap transaksi.
-- Stage mengembalikan wallet ke state sebelumnya jika AI mengubah tanpa evidence.
+**Flow:**
+1. **Initialisasi:** Wallet pertama yang valid dari header AI dipakai sebagai nilai awal (untuk bootstrap). Flag `walletInitialized` membedakan wallet yang sudah tersimpan dari fallback kosong.
+2. **Setelah initialisasi:** Wallet line dari LLM header **hanya dianggap tampilan**, bukan transaksi. Wallet ditentukan oleh:
+   - Wallet state sebelumnya (source of truth).
+   - Deteksi transaksi dari body/narrative response saja.
+3. **Tidak ada perubahan wallet** jika tidak ada transaksi valid — wallet tetap persis sama dengan state sebelumnya.
+
+### Transaction Detection (dari Body/Narrative Only)
+
+Wallet transaction hanya dideteksi dari `extracted.narrative` (body response), bukan dari header.
+
+Transaksi valid harus memiliki:
+1. **Amount** — angka yang jelas (numeric atau number words seperti `fifty`).
+2. **Currency** — G/gold, S/silver, C/copper.
+3. **Clear action/event** — aksi visible dalam narasi non-dialog.
+
+**Evidence dari narasi NON-dialog:**
+- `WALLET_PAYMENT_ACTION_CUES`: pay, spend, buy, purchase, hand over, give, place, slide, push, bribe, tip, dll.
+- `WALLET_INCOME_ACTION_CUES`: receive, reward, earn, gain, loot, found, dll.
+- `WALLET_LOSS_CUES`: lose, lost, stolen, robbed, confiscated.
+- `number + currency pattern`: `\d+\s*(g|gold|s|silver|c|copper)`.
+- Dialog dalam kutip diabaikan via `nonDialogueEvidenceContext()`.
+
+**Contoh valid:**
+- `*{{user}} pays 5 Silver for the inn room.*` → -5S
+- `*The guard hands {{user}} 2 Gold as a reward.*` → +2G
+- `*{{user}} steals 3 Gold from the distracted guard.*` → +3G
+- `*{{user}} places 10 Gold on the counter.*` → -10G
+
+**Contoh tidak valid (bukan transaksi):**
+- `Merchant: "That will cost 5 Silver."` — dialog harga, belum ada pembayaran.
+- `**Wallet: 999G ; 999S ; 999C**` — header line, bukan transaksi.
+- `"I paid fifty silver"` — ucapan dalam dialog, bukan aksi.
+- `worth`, `valued at`, `asking price` — diskusi harga/valuasi.
+
+### Header Invalid / Missing Guard
+
+Jika header invalid/missing/incomplete:
+1. Stage tetap boleh memperbaiki/merekonstruksi header.
+2. Stage mengambil Wallet dari **previous state** (bukan dari LLM).
+3. Stage **tidak mengubah Wallet** kecuali body response mengandung transaksi valid.
+4. Jika body response tidak ada transaksi valid, Wallet tetap previous state.
+
+### LLM Wallet Header Manipulation
+
+Jika user/LLM mengubah Wallet line tanpa transaksi valid, Stage mengembalikan ke wallet state benar:
+
+```
+Previous wallet: 12G ; 35S ; 8C
+LLM output: **Wallet: 999G ; 999S ; 999C**
+Body: *Yume says nothing about money.*
+Expected: Wallet tetap 12G ; 35S ; 8C
+```
+
+### Conversion Rules
+
+Jika transaksi valid membuat nilai Copper/Silver melewati batas, konversi diterapkan:
+- `100 Copper = 1 Silver`
+- `100 Silver = 1 Gold`
+
+Konversi **hanya dilakukan setelah transaksi valid**. Tidak ada conversion tanpa transaksi.
+
+### Cegah Double Processing
+
+Satu response hanya diproses **sekali** untuk wallet mutation:
+- `normalizeWalletLine()` hanya dipanggil sekali per `afterResponse`.
+- Header normalization tidak membuat wallet mutation.
+- `prepareAetherNovaStateForPrompt` dan `beforePrompt` **tidak mengubah wallet**.
 
 ---
 
