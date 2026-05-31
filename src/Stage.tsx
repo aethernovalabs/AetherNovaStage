@@ -30,7 +30,7 @@ const DEBUG_LOG_GROUPS: Array<{category: DebugCategory; title: string; emptyText
     {category: "walletThread", title: "Wallet / Thread Log", emptyText: "No wallet or thread activity yet."},
     {category: "lifecycle", title: "Lifecycle Log", emptyText: "No lifecycle activity yet."},
     {category: "system", title: "System Message Log", emptyText: "No system messages captured yet."},
-    {category: "injection", title: "Stage Injection Log", emptyText: "No stage injection captured yet.", defaultOpen: true},
+        {category: "injection", title: "Stage Injection (prompt to LLM) Log", emptyText: "No stage injection captured yet.", defaultOpen: true},
 ];
 
 interface DebugEvent {
@@ -231,7 +231,6 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         );
         if (this.lastSystemMessage.length > 0) {
             this.pushDebugEvent("system", "afterResponse", "systemMessage returned after response", [this.lastSystemMessage]);
-            this.pushDebugEvent("injection", "systemMessage", `${this.lastSystemMessage.length} chars`, [this.lastSystemMessage]);
         }
         this.latestUserMessage = "";
         this.latestNpcMemoryCommandMessage = "";
