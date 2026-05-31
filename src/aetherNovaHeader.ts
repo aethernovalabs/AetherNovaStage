@@ -1382,7 +1382,7 @@ function updateNpcMemory(previousMemory: NpcMemoryStore, npcLine: string, contex
         const race = cleanMemoryField(headerEntry.race || previous?.race, "Unknown");
         const physicalExtra = inferNpcPhysicalExtra(headerEntry, previous, context);
         const mood = inferNpcMood(headerEntry, previous, context);
-        const behaviorScores = updateBehaviorScores(previous?.behaviorScores ?? {}, inferNpcBehaviorEvidence(headerEntry, context));
+        const behaviorScores = updateBehaviorScores(previous?.behaviorScores ?? {}, inferNpcBehaviorEvidence(headerEntry, context, next));
         const behaviorTowardUser = stableBehaviorLabels(previous?.behaviorTowardUser ?? [], behaviorScores);
         const relationshipUpdate = inferNpcRelationshipUpdate(headerEntry, previous, context, behaviorTowardUser);
         const relationshipWithUser = relationshipUpdate.relationshipWithUser;
@@ -2025,16 +2025,115 @@ function clampBehaviorScore(value: number): number {
     return Math.max(0, Math.min(9, Math.round(value)));
 }
 
-const OPPOSITE_BEHAVIOR_PAIRS: Array<[string, string]> = [
-    ["protective", "hostile"],
-    ["trusting", "suspicious"],
-    ["playful", "cold"],
-    ["affectionate", "dismissive"],
-    ["loyal", "rebellious"],
-    ["loyal", "defiant"],
-    ["respectful", "arrogant"],
-    ["obedient", "defiant"],
+const OPPOSITE_TRAIT_PAIRS: Record<string, string[]> = {
+    happy: ["sad"],
+    sad: ["happy"],
+    calm: ["angry", "tense"],
+    angry: ["calm"],
+    tense: ["calm"],
+    trusting: ["suspicious", "distrustful"],
+    suspicious: ["trusting"],
+    affectionate: ["cold", "distant", "detached"],
+    cold: ["affectionate", "warm"],
+    playful: ["serious", "formal"],
+    teasing: ["serious", "formal"],
+    serious: ["playful", "teasing"],
+    formal: ["playful", "teasing"],
+    protective: ["hostile"],
+    hostile: ["protective"],
+    respectful: ["arrogant"],
+    arrogant: ["respectful"],
+    loyal: ["defiant", "rebellious"],
+    defiant: ["loyal", "obedient"],
+    obedient: ["defiant", "rebellious"],
+    rebellious: ["loyal", "obedient"],
+    brave: ["fearful"],
+    fearful: ["brave"],
+    possessive: ["detached"],
+    detached: ["possessive"],
+    jealous: ["secure"],
+    secure: ["jealous"],
+    proud: ["humble"],
+    humble: ["proud"],
+    wise: ["reckless"],
+    reckless: ["wise"],
+    defensive: ["relaxed", "open"],
+    relaxed: ["defensive", "tense"],
+    dismissive: ["affectionate", "attentive"],
+};
+
+function getOppositeReduction(evidenceWeight: number): number {
+    if (evidenceWeight >= 3) return 2;
+    if (evidenceWeight >= 2) return 1;
+    if (evidenceWeight >= 1) return 1;
+    return 0;
+}
+
+const NEGATION_CONTRAST_PATTERNS = [
+    /\bnot\s+\w+[\s,]+(?:but|rather|only|merely|simply)\s+\w+/i,
+    /\bnot\s+out\s+of\s+\w+[\s,]+(?:but|rather|only)\s+\w+/i,
+    /\bnot\s+[\w]+[.;:]\s*(?:rather|instead)\s+\w+/i,
+    /\bwithout\s+(?:any\s+)?\w+/i,
+    /\bno\s+\w+/i,
+    /\bless\s+\w+\s+than\s+\w+/i,
+    /\bmore\s+\w+\s+than\s+\w+/i,
 ];
+
+const MOOD_ONLY_TRAITS = new Set([
+    "happy",
+    "sad",
+    "angry",
+    "calm",
+    "embarrassed",
+    "tense",
+    "afraid",
+    "confused",
+    "relieved",
+    "shy",
+    "proud",
+    "wise",
+    "defensive",
+    "relaxed",
+    "annoyed",
+    "curious",
+    "amused",
+    "excited",
+    "solemn",
+    "bored",
+    "tired",
+    "worried",
+    "nervous",
+]);
+
+const STABLE_BEHAVIOR_CANDIDATES = new Set([
+    "protective",
+    "possessive",
+    "playful",
+    "teasing",
+    "formal",
+    "suspicious",
+    "hostile",
+    "affectionate",
+    "cold",
+    "loyal",
+    "obedient",
+    "defiant",
+    "respectful",
+    "arrogant",
+    "cautious",
+    "manipulative",
+    "jealous",
+    "dismissive",
+    "brave",
+    "fearful",
+    "secure",
+    "humble",
+    "reckless",
+]);
+
+function isMoodOnlyTrait(label: string): boolean {
+    return MOOD_ONLY_TRAITS.has(label);
+}
 
 function mergeBehaviorEvidence(evidence: BehaviorEvidence[]): BehaviorEvidence[] {
     const merged = new Map<string, number>();
@@ -2047,6 +2146,195 @@ function mergeBehaviorEvidence(evidence: BehaviorEvidence[]): BehaviorEvidence[]
     }
 
     return Array.from(merged.entries()).map(([label, weight]) => ({label, weight}));
+}
+
+function detectNegation(text: string, traitLabel: string): boolean {
+    const lowerText = text.toLowerCase();
+    const traitWords = traitLabel.toLowerCase().split(/\s+/);
+
+    for (const pattern of NEGATION_CONTRAST_PATTERNS) {
+        const match = lowerText.match(pattern);
+        if (match == null) {
+            continue;
+        }
+
+        const matchedStr = match[0].toLowerCase();
+        for (const word of traitWords) {
+            if (word.length < 3) continue;
+            if (matchedStr.includes(word) || matchedStr.includes(word.replace(/y$/, "i"))) {
+                return true;
+            }
+        }
+
+        const negatedWord = match[0].split(/\s+/).slice(1, 3).join(" ");
+        for (const word of traitWords) {
+            if (negatedWord.includes(word)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+function determineTraitTarget(
+    sentence: string,
+    traitLabel: string,
+    npcName: string,
+    _memory: NpcMemoryStore,
+): "user" | "other-npc" | "object" | "general" {
+    const lower = sentence.toLowerCase();
+    const userNamePattern = /\{\{user\}\}/i;
+
+    if (userNamePattern.test(lower)) {
+        return "user";
+    }
+
+    const first = firstNameOf(npcName).toLowerCase();
+    const selfPattern = new RegExp(`\\b${npcNameRegexSource(first)}\\b`, "i");
+    const otherNpcNames = Object.values(_memory)
+        .map((entry) => entry.name)
+        .filter((name) => name.toLowerCase() !== npcName.toLowerCase());
+
+    for (const otherName of otherNpcNames) {
+        const otherFirst = firstNameOf(otherName).toLowerCase();
+        if (otherFirst.length > 0 && otherFirst !== first) {
+            const otherPattern = new RegExp(`\\b${npcNameRegexSource(otherFirst)}\\b`, "i");
+            if (otherPattern.test(lower)) {
+                return "other-npc";
+            }
+        }
+        if (otherName.toLowerCase() !== npcName.toLowerCase()) {
+            const otherPattern = new RegExp(`\\b${npcNameRegexSource(otherName)}\\b`, "i");
+            if (otherPattern.test(lower)) {
+                return "other-npc";
+            }
+        }
+    }
+
+    const objectCues = /\b(?:over\s+(?:the|an?|that|this)|toward\s+(?:the|an?|that|this)|at\s+(?:the|an?|that|this)|after\s+(?:the|an?|that|this)|for\s+(?:the|an?|that|this))\s+(?!\w+self\b)(\w+)/i;
+    if (objectCues.test(lower)) {
+        return "object";
+    }
+
+    return "general";
+}
+
+function extractTraitsFromText(
+    npcName: string,
+    context: string,
+    statusText: string,
+    memory: NpcMemoryStore,
+): Array<{label: string; weight: number; target: string}> {
+    const results: Array<{label: string; weight: number; target: string}> = [];
+    const searchable = `${statusText}\n${context}`.toLowerCase();
+    const sentences = searchable.split(/[.!?\n]+/).filter(Boolean);
+
+    const traitPatterns: Array<{label: string; pattern: RegExp; weight: number; requiresUserTarget: boolean}> = [
+        {label: "happy", pattern: /\b(happy|joyful|delighted|cheerful|gleeful|elated|content)\b/, weight: 1, requiresUserTarget: false},
+        {label: "sad", pattern: /\b(sad|sorrowful|grief-stricken|mournful|tearful|heartbroken|weepy|gloomy|melancholy)\b/, weight: 1, requiresUserTarget: false},
+        {label: "angry", pattern: /\b(angry|furious|rage|enraged|irate|livid|seething)\b/, weight: 1, requiresUserTarget: false},
+        {label: "annoyed", pattern: /\b(annoyed|irritated|exasperated|huff|scoff|rolls?\s+eyes|sigh|grumbles?)\b/, weight: 1, requiresUserTarget: false},
+        {label: "calm", pattern: /\b(calm|composed|serene|peaceful|tranquil|collected|unruffled)\b/, weight: 1, requiresUserTarget: false},
+        {label: "tense", pattern: /\b(tense|strained|uneasy|on edge|stiffen|rigid|clenched|taut|wired)\b/, weight: 1, requiresUserTarget: false},
+        {label: "afraid", pattern: /\b(afraid|scared|fearful|terrified|frightened|panicked|shaken|alarmed)\b/, weight: 1, requiresUserTarget: false},
+        {label: "curious", pattern: /\b(curious|intrigued|interested|studying|examining|peers? closer|leans? closer|inquisitive)\b/, weight: 1, requiresUserTarget: false},
+        {label: "embarrassed", pattern: /\b(embarrassed|flustered|blush|bashful|shy|flustered|mortified)\b/, weight: 1, requiresUserTarget: false},
+        {label: "amused", pattern: /\b(amused|laughs?|chuckles?|smirks?|grins?|smiling)\b/, weight: 1, requiresUserTarget: false},
+        {label: "confused", pattern: /\b(confused|puzzled|uncertain|bewildered|tilts? head|frowns?|baffled)\b/, weight: 1, requiresUserTarget: false},
+        {label: "excited", pattern: /\b(excited|eager|enthusiastic|animated|beams?|brightens?|thrilled)\b/, weight: 1, requiresUserTarget: false},
+        {label: "solemn", pattern: /\b(solemn|grave|serious|somber|pensive|contemplative|sober)\b/, weight: 1, requiresUserTarget: false},
+        {label: "relieved", pattern: /\b(relieved|relaxes?|softens?|exhales?|sags?\s+with relief)\b/, weight: 1, requiresUserTarget: false},
+        {label: "bored", pattern: /\b(bored|uninterested|disinterested|listless|apathetic|yawns?)\b/, weight: 1, requiresUserTarget: false},
+        {label: "worried", pattern: /\b(worried|concerned|anxious|apprehensive|troubled|uneasy)\b/, weight: 1, requiresUserTarget: false},
+        {label: "protective", pattern: /\b(protects?|protected|guarding|guards?|defends?|defended|shields?|stands?\s+between|shield|guardian)\b/, weight: 2, requiresUserTarget: false},
+        {label: "possessive", pattern: /\b(possessive|possessively|mine|claim|claims?|claimed|belongs?\s+to\s+me|stak(?:e|es)?\s+claim)\b/, weight: 2, requiresUserTarget: false},
+        {label: "playful", pattern: /\b(playful|mischievous|whimsical|light.?hearted|banter|jest)\b/, weight: 1, requiresUserTarget: false},
+        {label: "teasing", pattern: /\b(teasing|teases?|teased|teasingly|ribbing|chaffing)\b/, weight: 1, requiresUserTarget: false},
+        {label: "formal", pattern: /\b(formal|protocol|courteous|proper|courtly|professional|cordial)\b/, weight: 1, requiresUserTarget: false},
+        {label: "suspicious", pattern: /\b(suspicious|wary|guarded|distrust|cautious|skeptical|narrowed eyes|side-eye)\b/, weight: 1, requiresUserTarget: false},
+        {label: "hostile", pattern: /\b(hostile|attacks?|attacked|threatens?|threatened|betray|orders?\s+(?:your|their)\s+capture|tries?\s+to\s+kill|aggressive)\b/, weight: 2, requiresUserTarget: false},
+        {label: "affectionate", pattern: /\b(affectionate|gentle|warm|tender|caress|hugs?|kisses?|loving|cuddles?)\b/, weight: 2, requiresUserTarget: false},
+        {label: "cold", pattern: /\b(cold|distant|icy|unfriendly|detached|aloof|frosty|chilly)\b/, weight: 1, requiresUserTarget: false},
+        {label: "loyal", pattern: /\b(loyal|devoted|faithful|steadfast|stands?\s+with|remains?\s+by\s+(?:your|{{user}})\s+side)\b/, weight: 2, requiresUserTarget: false},
+        {label: "respectful", pattern: /\b(respectful|deferential|honors?|honour|reverent|obeisance|bows?|curtsey)\b/, weight: 1, requiresUserTarget: false},
+        {label: "arrogant", pattern: /\b(arrogant|condescending|smug|superior|haughty|disdainful|pompous)\b/, weight: 1, requiresUserTarget: false},
+        {label: "obedient", pattern: /\b(obeys?|obedient|follows?\s+(?:your|{{user}}'?s?)\s+order|accepts?\s+(?:your|{{user}}'?s?)\s+command|submissive)\b/, weight: 1, requiresUserTarget: false},
+        {label: "defiant", pattern: /\b(defiant|defies?|rebels?|rebellious|insubordinate|disobedient|challenges?)\b/, weight: 1, requiresUserTarget: false},
+        {label: "fearful", pattern: /\b(fearful|frightened|terrified|trembling|quivering|cowering|timid)\b/, weight: 1, requiresUserTarget: false},
+        {label: "brave", pattern: /\b(brave|courageous|fearless|valiant|undaunted|bold|intrepid)\b/, weight: 1, requiresUserTarget: false},
+        {label: "jealous", pattern: /\b(jealous|envy|envious|green.?eyed)\b/, weight: 1, requiresUserTarget: false},
+        {label: "proud", pattern: /\b(proud|pride|prideful|dignified)\b/, weight: 1, requiresUserTarget: false},
+        {label: "wise", pattern: /\b(wise|sage|knowledgeable|insightful|perceptive|astute)\b/, weight: 1, requiresUserTarget: false},
+        {label: "shy", pattern: /\b(shy|timid|bashful|reserved|withdrawn|reticent)\b/, weight: 1, requiresUserTarget: false},
+        {label: "nervous", pattern: /\b(nervous|anxious|jittery|fidget|restless|uneasy)\b/, weight: 1, requiresUserTarget: false},
+        {label: "manipulative", pattern: /\b(manipulative|calculating|deceptive|scheming|conniving)\b/, weight: 2, requiresUserTarget: false},
+        {label: "cautious", pattern: /\b(cautious|careful|heedful|watchful|vigilant|attentive)\b/, weight: 1, requiresUserTarget: false},
+        {label: "dismissive", pattern: /\b(dismissive|dismisses?|dismissed|brushes?\s+off|waves?\s+off|ignores?|ignored)\b/, weight: 1, requiresUserTarget: false},
+        {label: "defensive", pattern: /\b(defensive|defense|defend|defends?|defended|defending|guard\s+(?:stance|position))\b/, weight: 1, requiresUserTarget: false},
+        {label: "relaxed", pattern: /\b(relaxed|at ease|unwind|loose|unclenched|settling\s+in)\b/, weight: 1, requiresUserTarget: false},
+    ];
+
+    for (const trait of traitPatterns) {
+        const match = searchable.match(trait.pattern);
+        if (match == null) {
+            continue;
+        }
+
+        if (detectNegation(searchable, trait.label)) {
+            continue;
+        }
+
+        const matchSentence = sentences.find((sent) => trait.pattern.test(sent)) ?? searchable;
+        const target = determineTraitTarget(matchSentence, trait.label, npcName, memory);
+        let weight = trait.weight;
+
+        if ((trait.label === "possessive" || trait.label === "protective") && target === "user") {
+            weight = Math.min(weight + 1, 3);
+        }
+
+        if (trait.label === "defensive" || trait.label === "suspicious") {
+            const strongCues = /\b(settl(?:e|es|ing)\s+into|adopt(?:s|ed)?|take\s+(?:up|on)|braces?\s+(?:for|against))/i;
+            if (strongCues.test(matchSentence)) {
+                weight = Math.min(weight + 1, 2);
+            }
+        }
+
+        results.push({label: trait.label, weight: Math.min(weight, 3), target});
+    }
+
+    return results;
+}
+
+function mergeMultiTagMood(previousMood: string, newMoodLabels: string[]): string {
+    if (newMoodLabels.length === 0) {
+        return previousMood;
+    }
+
+    if (previousMood === "unknown" || previousMood === "neutral") {
+        return newMoodLabels.slice(0, 6).join(", ");
+    }
+
+    const previous = previousMood.split(/\s*,\s*/).map((m) => m.toLowerCase().trim()).filter(Boolean);
+    const merged: string[] = [];
+    const seen = new Set<string>();
+
+    for (const label of newMoodLabels) {
+        const clean = cleanMemoryLabel(label, "");
+        if (clean.length > 0 && !seen.has(clean)) {
+            merged.push(clean);
+            seen.add(clean);
+        }
+    }
+
+    for (const label of previous) {
+        if (!seen.has(label)) {
+            merged.push(label);
+            seen.add(label);
+        }
+    }
+
+    return merged.slice(0, 6).join(", ");
 }
 
 function mergeRelationshipEvents(previous: string[], incoming: string[]): string[] {
@@ -2239,38 +2527,42 @@ interface RelationshipUpdate {
 }
 
 function inferNpcMood(headerEntry: NpcHeaderMemoryEntry, previous: NpcMemoryEntry | null, context: string): MoodInference {
-    const searchable = npcSocialContext(headerEntry, context).toLowerCase();
+    const socialContext = npcSocialContext(headerEntry, context);
+    const searchable = socialContext.toLowerCase();
     const fullContext = context.toLowerCase();
     const statusText = (headerEntry.status ?? "").toLowerCase();
 
-    const moodChecks: Array<[string, RegExp, string]> = [
-        ["angry", /\b(angry|furious|rage|enraged|mad|irate|glares?|snaps?|growls?|snarls?)\b/, "tense"],
-        ["annoyed", /\b(annoyed|irritated|exasperated|huffs?|scoffs?|rolls? eyes|sighs?)\b/, "tense"],
-        ["sad", /\b(sad|sorrowful|grief|mournful|tearful|heartbroken|weeps?|cries?|crying|sobs?)\b/, "soft"],
-        ["afraid", /\b(afraid|scared|fearful|terrified|frightened|panicked|shaken|flinches?)\b/, "tense"],
-        ["curious", /\b(curious|intrigued|interested|studying|examining|peers?|leans? closer)\b/, "curious"],
-        ["embarrassed", /\b(embarrassed|flustered|blush(?:es|ing)?|bashful|shy|flustered)\b/, "soft"],
-        ["tense", /\b(tense|strained|uneasy|on edge|stiffens?|rigid|clenched)\b/, "tense"],
-        ["amused", /\b(amused|laughs?|chuckles?|smirks?|playful smile|grins?|teasing)\b/, "playful"],
-        ["cold", /\b(cold|distant|icy|flatly|expressionless|curt|abrupt)\b/, "cold"],
-        ["relieved", /\b(relieved|relaxes?|softens?|exhales?|sags? with relief)\b/, "warm"],
-        ["jealous", /\b(jealous|possessive|envy|envious|protective)\b/, "tense"],
-        ["confused", /\b(confused|puzzled|uncertain|bewildered|tilts? head|frowns?)\b/, "uncertain"],
-        ["calm", /\b(calm|composed|steady|serene|peaceful|collected)\b/, "calm"],
-        ["excited", /\b(excited|eager|enthusiastic|animated|beams?|brightens?)\b/, "warm"],
-        ["solemn", /\b(solemn|grave|serious|somber|pensive|contemplative)\b/, "serious"],
-        ["playful", /\b(playful|mischievous|whimsical|lighthearted|banters?)\b/, "playful"],
-    ];
+    const traits = extractTraitsFromText(headerEntry.name, context, headerEntry.status ?? "", {});
+    const moodLabels = traits
+        .filter((t) => !detectNegation(searchable, t.label))
+        .map((t) => t.label);
 
-    for (const [mood, pattern, tone] of moodChecks) {
-        if (pattern.test(searchable) || pattern.test(fullContext)) {
-            return {currentMood: mood, lastInteractionTone: tone};
-        }
+    let tone = previous?.lastInteractionTone ?? "neutral";
+    const toneMap: Record<string, string> = {
+        angry: "tense", annoyed: "tense", tense: "tense", hostile: "tense",
+        sad: "soft", afraid: "tense", embarrassed: "soft", relieved: "warm",
+        amused: "playful", playful: "playful", teasing: "playful",
+        cold: "cold", formal: "cold",
+        curious: "curious", confused: "uncertain",
+        calm: "calm", relaxed: "calm",
+        excited: "warm", happy: "warm", affectionate: "warm",
+        solemn: "serious", serious: "serious",
+        jealous: "tense", suspicious: "tense", defensive: "tense",
+        protective: "protective", possessive: "protective",
+    };
+
+    if (moodLabels.length > 0) {
+        tone = toneMap[moodLabels[0]] ?? tone;
     }
 
-    const statusMoodMatch = /\b(angry|annoyed|sad|happy|calm|curious|nervous|excited|bored|tired|confused|worried|relaxed|serious|playful|shy|cold|distant)\b/i.exec(statusText);
+    if (moodLabels.length > 0) {
+        const merged = mergeMultiTagMood(previous?.currentMood ?? "unknown", moodLabels);
+        return {currentMood: merged, lastInteractionTone: tone};
+    }
+
+    const statusMoodMatch = /\b(angry|annoyed|sad|happy|calm|curious|nervous|excited|bored|tired|confused|worried|relaxed|serious|playful|shy|cold|distant|possessive|defensive|suspicious|jealous|proud|teasing)\b/i.exec(statusText);
     if (statusMoodMatch != null) {
-        return {currentMood: statusMoodMatch[1].toLowerCase(), lastInteractionTone: "neutral"};
+        return {currentMood: statusMoodMatch[1].toLowerCase(), lastInteractionTone: tone};
     }
 
     return {
@@ -2279,29 +2571,27 @@ function inferNpcMood(headerEntry: NpcHeaderMemoryEntry, previous: NpcMemoryEntr
     };
 }
 
-function inferNpcBehaviorEvidence(headerEntry: NpcHeaderMemoryEntry, context: string): BehaviorEvidence[] {
-    const searchable = npcSocialContext(headerEntry, context).toLowerCase();
+function inferNpcBehaviorEvidence(headerEntry: NpcHeaderMemoryEntry, context: string, memory: NpcMemoryStore = {}): BehaviorEvidence[] {
     const evidence: BehaviorEvidence[] = [];
-    const add = (label: string, pattern: RegExp, weight = 1): void => {
-        if (pattern.test(searchable)) {
-            evidence.push({label, weight});
-        }
-    };
+    const traits = extractTraitsFromText(headerEntry.name, context, headerEntry.status ?? "", memory);
 
-    add("protective", /\b(protects?|protected|guarding|guards?|defends?|defended|shields?|stands? between|places? (?:himself|herself|themself) between)\b/, 2);
-    add("possessive", /\b(possessive|mine|my husband|my wife|belongs to me|claim(?:s|ed)? you|jealous)\b/);
-    add("playful", /\b(playful|teasing|mischievous|jokes?|banters?|winks?)\b/);
-    add("formal", /\b(formal|protocol|courteous|proper|courtly|professional)\b/);
-    add("respectful", /\b(respectful|bows?|deferential|honors?|honour)\b/);
-    add("suspicious", /\b(suspicious|wary|guarded|distrust|cautious|skeptical|narrowed eyes)\b/);
-    add("arrogant", /\b(arrogant|aloof|condescending|proud|smug|superior)\b/);
-    add("cold", /\b(cold|distant|icy|unfriendly|detached)\b/);
-    add("loyal", /\b(loyal|devoted|faithful|steadfast|stands with|remains by your side)\b/, 2);
-    add("fearful", /\b(fearful|afraid|scared|nervous|anxious|trembling)\b/);
-    add("hostile", /\b(hostile|attacks?|attacked|threatens?|threatened|betrays?|betrayed|tries? to kill|orders? (?:your|their) capture)\b/, 2);
-    add("obedient", /\b(obeys?|obedient|follows your order|accepts your command|kneels? and awaits)\b/);
-    add("affectionate", /\b(affectionate|gentle|warm|tender|caresses?|hugs?|kisses?|loving)\b/, 2);
-    add("manipulative", /\b(manipulative|calculating|deceptive|uses? you|strings? you along|plays? you)\b/);
+    for (const trait of traits) {
+        const clean = cleanMemoryLabel(trait.label, "");
+        if (clean.length === 0) {
+            continue;
+        }
+
+        if (isMoodOnlyTrait(clean)) {
+            continue;
+        }
+
+        if (trait.target === "other-npc" || trait.target === "object") {
+            continue;
+        }
+
+        const weight = Math.min(trait.weight, 3);
+        evidence.push({label: clean, weight});
+    }
 
     return mergeBehaviorEvidence(evidence);
 }
@@ -2331,15 +2621,20 @@ function updateBehaviorScores(previousScores: Record<string, number>, evidence: 
             continue;
         }
 
-        const reduction = Math.min(item.weight, 2);
-        for (const [behaviorA, behaviorB] of OPPOSITE_BEHAVIOR_PAIRS) {
-            const cleanA = cleanMemoryLabel(behaviorA, "");
-            const cleanB = cleanMemoryLabel(behaviorB, "");
-            if (label === cleanA && next[cleanB] != null && next[cleanB] > 0) {
-                next[cleanB] = clampBehaviorScore(next[cleanB] - reduction);
-            }
-            if (label === cleanB && next[cleanA] != null && next[cleanA] > 0) {
-                next[cleanA] = clampBehaviorScore(next[cleanA] - reduction);
+        const opposites = OPPOSITE_TRAIT_PAIRS[label];
+        if (opposites == null || opposites.length === 0) {
+            continue;
+        }
+
+        const reduction = getOppositeReduction(item.weight);
+        if (reduction <= 0) {
+            continue;
+        }
+
+        for (const oppositeLabel of opposites) {
+            const cleanOpposite = cleanMemoryLabel(oppositeLabel, "");
+            if (cleanOpposite.length > 0 && next[cleanOpposite] != null && next[cleanOpposite] > 0) {
+                next[cleanOpposite] = clampBehaviorScore(next[cleanOpposite] - reduction);
             }
         }
     }

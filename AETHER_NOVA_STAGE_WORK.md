@@ -231,16 +231,23 @@ interface NpcMemoryEntry {
     race: string;           // Race NPC
     physicalExtra: string;  // Fitur fisik tambahan
 
-    currentMood: string;                // Emosi sementara scene sekarang
+    currentMood: string;                // Multi-tag comma-separated: mood + temporary attitude scene sekarang
     lastInteractionTone?: string;       // Tone interaksi terakhir
     behaviorTowardUser: string[];       // Behavior stabil terhadap {{user}}
-    behaviorScores: Record<string, number>; // Score evidence behavior
+    behaviorScores: Record<string, number>; // Score evidence behavior (trait/opposite pairs)
     relationshipWithUser: string[];     // Status hubungan besar / social bond
     relationshipEvents: string[];       // Event besar penyebab relationship berubah
 
     onlyKnows: string[];    // Fakta yang hanya diketahui NPC ini
 }
 ```
+
+**Catatan:**
+- `currentMood` sekarang multi-tag (comma-separated, maksimal 6 label). Bisa berisi mood AND temporary attitude, contoh: `"tense, defensive, suspicious"` atau `"embarrassed, possessive, jealous"`.
+- `behaviorScores` menggunakan **trait/opposite score system**: jika trait naik, opposite trait turun dengan bobot tertentu. Tidak ada global decay.
+- `behaviorTowardUser` hanya berisi trait dari `STABLE_BEHAVIOR_CANDIDATES`. Mood-only traits tidak masuk.
+- Negation/contrast guard mencegah salah baca seperti `"not malice, but pride"`.
+- Target/context check memastikan trait yang diarahkan ke objek/NPC lain tidak otomatis mempengaruhi behavior terhadap `{{user}}`.
 
 ### Update Memory (`updateNpcMemory`)
 - Dipanggil setiap `afterResponse` dan `prepareAetherNovaStateForPrompt`.
@@ -250,26 +257,41 @@ interface NpcMemoryEntry {
   - **Role/Title**: Infer dari konteks sekitar nama NPC (pattern title before/after name).
   - **Race**: Pertahankan dari state lama jika tidak ada data baru.
   - **Physical Extra**: Deteksi dari status/konteks: `nine tails`, `animal ears`, dll.
-  - **Current Mood**: Boleh berubah tiap response (`angry`, `annoyed`, `calm`, `tense`, `embarrassed`, dll). Mood tidak mengubah relationship atau behavior. Deteksi dari full konteks naratif (bukan hanya NPC-adjacent), plus fallback ke status header jika ada.
-  - **Behavior Scores** (`updateBehaviorScores`):
-    - **Tidak ada global decay**. Score tidak berubah jika tidak ada evidence baru.
-    - Score naik jika ada evidence behavior sesuai bobot (minor +1, clear +1, strong +2, major +3).
-    - Score turun **hanya** jika ada evidence berlawanan (opposite behavior).
-    - Evidence per response di-cap 3 per label (`mergeBehaviorEvidence`).
-    - Score maksimal 9, minimal 0.
-    - NPC yang tidak hadir di header tidak mengalami perubahan score.
-  - **Behavior Toward {{user}}** (`stableBehaviorLabels`):
-    - Label stabil menggunakan **hysteresis** dua threshold:
-      - **Aktif** jika score >= 4.
-      - **Tetap aktif** jika score >= 2 (label yang sebelumnya aktif dipertahankan).
-      - **Hilang** jika score <= 1.
-    - Tidak ada rebuild mentah dari score — label yang sudah aktif tidak flicker.
-    - Contoh: `protective`, `suspicious`, `formal`, `playful`, `hostile`.
-  - **Opposite Behavior Reduction**:
-    - Evidence `hostile` menurunkan score `protective`, dan sebaliknya.
-    - Evidence `cold` menurunkan score `playful`, dan sebaliknya.
-    - Evidence `arrogant` menurunkan score `respectful`, dan sebaliknya.
-    - Pasangan lain: `trusting↔suspicious`, `affectionate↔dismissive`, `loyal↔rebellious/defiant`, `obedient↔defiant`.
+   - **Current Mood**: Boleh berisi beberapa tag sementara dalam satu string (comma-separated, maksimal 6 label). Contoh: `"tense, defensive, suspicious"`. Mood bisa mencatat mood (sad, happy, angry) dan temporary attitude (possessive, defensive, shy, jealous, suspicious, envious, proud, wise, teasing). Mood tidak mengubah relationship atau behavior. Deteksi menggunakan `extractTraitsFromText()` yang membaca seluruh konteks naratif + status header dengan negation guard.
+   - **Behavior Scores** (`updateBehaviorScores`):
+     - **Tidak ada global decay**. Score tidak berubah jika tidak ada evidence baru.
+     - Score naik jika ada evidence behavior sesuai bobot (minor +1, clear +1, strong +2, major +3).
+     - Score turun **hanya** jika ada evidence berlawanan (opposite behavior) atau melalui opposite reduction.
+     - Evidence per response di-cap 3 per label (`mergeBehaviorEvidence`).
+     - Score maksimal 9, minimal 0.
+     - NPC yang tidak hadir di header tidak mengalami perubahan score.
+   - **Trait/Opposite Score System**:
+     - Stage menggunakan `OPPOSITE_TRAIT_PAIRS` (Record<string, string[]>) untuk pasangan trait yang saling menyeimbangkan.
+     - Pasangan utama: `happy↔sad`, `calm↔angry/tense`, `trusting↔suspicious`, `affectionate↔cold/distant`, `playful/teasing↔serious/formal`, `protective↔hostile`, `respectful↔arrogant`, `loyal↔defiant/rebellious`, `obedient↔defiant`, `brave↔fearful`, `possessive↔detached`, `jealous↔secure`, `proud↔humble`, `wise↔reckless`, `defensive↔relaxed/open`.
+     - Jika trait A naik, opposite trait B turun dengan bobot: minor +1 → opposite -1, clear +1 → opposite -1, strong +2 → opposite -1, major +3 → opposite -2.
+     - Clamp score: minimal 0, maksimal 9.
+     - Score tidak turun tanpa evidence berlawanan yang jelas.
+   - **Negation/Contrast Guard** (`detectNegation`):
+     - Stage mendeteksi pola seperti `"not X, but Y"`, `"without X"`, `"no X"`, `"not out of X, but Y"`.
+     - Jika pola negasi terdeteksi untuk suatu trait, trait tersebut tidak ditambahkan ke behaviorScores.
+     - Contoh: `"not malice, but pride"` → hostile tidak naik, proud boleh naik kecil.
+     - Contoh: `"not jealousy, but concern"` → jealous tidak naik.
+   - **Target/Context Check** (`determineTraitTarget`):
+     - Sebelum trait mempengaruhi behavior terhadap `{{user}}`, Stage mengecek target/context.
+     - Target bisa: `{{user}}`, NPC lain, objek, situasi umum.
+     - Trait yang jelas diarahkan ke `{{user}}` → boleh masuk behaviorScores.
+     - Trait yang diarahkan ke NPC lain atau objek → tidak otomatis mempengaruhi behavior terhadap `{{user}}`.
+     - Target tidak jelas → dimasukkan ke currentMood saja dengan bobot kecil.
+     - Contoh: `"Yume's tails curl possessively around {{user}}"` → possessive naik.
+     - Contoh: `"Yume looks possessive over the ancient relic"` → possessive hanya di mood, tidak ke behaviorScores.
+   - **Behavior Toward {{user}}** (`stableBehaviorLabels`):
+     - Label stabil menggunakan **hysteresis** dua threshold:
+       - **Aktif** jika score >= 4.
+       - **Tetap aktif** jika score >= 2 (label yang sebelumnya aktif dipertahankan).
+       - **Hilang** jika score <= 1.
+     - Tidak ada rebuild mentah dari score — label yang sudah aktif tidak flicker.
+     - Hanya trait dari `STABLE_BEHAVIOR_CANDIDATES` yang bisa masuk behaviorTowardUser.
+     - Mood-only traits (`sad`, `happy`, `angry`, `shy`, `proud`, `wise`, dll) tidak masuk behaviorTowardUser.
   - **Relationship With {{user}}**: Array label konservatif (`stranger`, `acquaintance`, `formal`, `ally`, `friend`, `enemy`, `rival`, `subordinate`, `lover`, `romantic tension`). Hanya berubah lewat event besar.
   - **Relationship Events**: Event penting saja, maksimal 10, misalnya confession accepted, alliance formed, betrayal, oath sworn, formal employment.
   - **OnlyKnows**: Extract fakta dari konteks sekitar nama NPC (mention `{{user}} told`, `{{user}} gave`, `{{user}} threatened`, dll).
