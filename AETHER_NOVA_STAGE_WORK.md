@@ -795,15 +795,16 @@ Stage melakukan format narasi ringan:
 
 ## 10. Debug UI System
 
-Debug UI (di `Stage.tsx` render) saat ini: **Debug UI V1.8**.
+Debug UI (di `Stage.tsx` render) saat ini: **Aether Nova Stage UI V1.8**.
 
 Debug UI menampilkan:
 - Current state: Location, Time, You (compact), NPC, Thread, Wallet, Pending NPC Debug, Pending Memory Command.
-- **Minimize UI**: Header Debug UI memiliki tombol **Minimize**. Saat ditekan, panel berubah menjadi mini bar ringkas di bagian bawah frame dengan status `Idle/Modified`, versi UI, dan tombol **Open** untuk membuka kembali. Preferensi minimize disimpan di `localStorage` key `aether-nova-stage.debugUiMinimized`, sehingga mobile user tidak selalu tertutup panel debug besar.
+- **Minimize UI**: Header UI memiliki tombol **Minimize**. Saat ditekan, panel berubah menjadi mini bar ringkas di bagian atas frame dengan status `Idle/Modified`, versi UI, dan tombol **Open** untuk membuka kembali. Preferensi minimize disimpan di `localStorage` key `aether-nova-stage.debugUiMinimized`, sehingga mobile user tidak selalu tertutup panel debug besar.
 - **Edit Buttons**: Setiap field state utama (Location, You, NPC, Thread, Wallet, Status User) memiliki tombol **Edit**. Saat diklik, kartu edit melebar ke seluruh grid dan berubah menjadi form yang lebih nyaman. Field pendek memakai input, `timeOfDay` memakai select (`Morning/Midday/Afternoon/Evening/Night`), dan field panjang seperti `You`, `NPC`, dan `Thread` memakai textarea. User bisa mengubah value lalu **Save** (menerapkan edit ke state + mencatat di `manualEditOverrides`) atau **Cancel** (kembali ke tampilan baca).
 - **Status User Editor**: Saat Edit Status User diklik, panel detail berubah menjadi form grid dengan input untuk Gender, Race, dan setiap slot pakaian (Upper, Lower, Footwear, Outerwear, Accessories). Weapons dan Important Items bisa diedit lewat textarea dengan format `name | location | status`; parser juga menerima pemisah `—` atau `-`.
+- **Confirm destructive actions**: Aksi yang menghapus/clear data UI meminta konfirmasi lebih dulu (`Clear Logs`, clear log per kategori, `Clear Facts`, dan `Delete` NPC memory) agar salah tap di mobile tidak langsung menghapus data.
 - Manual edits yang dilakukan melalui UI disimpan di `manualEditOverrides` dan dipertahankan saat swipe/jump serta melalui normalisasi.
-- NPC Memory cards: semua NPC yang tersimpan dengan detail lengkap.
+- NPC Memory cards: semua NPC yang tersimpan dengan detail lengkap. Setiap kartu NPC punya tombol **Minimize/Expand** untuk menyembunyikan detail panjang; daftar kartu yang diminimize disimpan di `localStorage` key `aether-nova-stage.collapsedNpcCards`.
 - Debug Logs terpisah per kategori:
   - **NPC Memory Log**: command memory, perubahan jumlah memory, entry yang added/removed/changed.
   - **Format Header Log**: field header yang berubah (`Location`, `Time`, `You`, `NPC`, `Thread`, `Wallet`) dengan detail before → after.

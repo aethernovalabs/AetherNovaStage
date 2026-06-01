@@ -43,7 +43,7 @@ html, body, #root {
 .aether-debug-shell.is-minimized {
   position: fixed;
   right: 8px;
-  bottom: 8px;
+  top: 8px;
   left: 8px;
   z-index: 10;
   width: auto;
@@ -156,6 +156,7 @@ html, body, #root {
 .aether-debug-header h1 {
   font-size: 1.35rem;
   line-height: 1.1;
+  text-transform: uppercase;
 }
 
 .aether-debug-header h1 span {
@@ -288,6 +289,10 @@ html, body, #root {
   padding: 10px;
 }
 
+.aether-debug-memory-card.is-collapsed {
+  padding: 8px 10px;
+}
+
 .aether-debug-create {
   margin-bottom: 8px;
   border: 1px solid rgba(245, 242, 234, 0.12);
@@ -305,7 +310,7 @@ html, body, #root {
 
 .aether-debug-card-header {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -451,6 +456,18 @@ html, body, #root {
 .aether-debug-memory-card h3 {
   color: #f2d08d;
   font-size: 0.95rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.aether-debug-card-summary {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid rgba(245, 242, 234, 0.08);
+  color: #d8d8cf;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .aether-debug-memory-card dl {

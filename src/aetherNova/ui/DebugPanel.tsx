@@ -13,6 +13,7 @@ import {
 } from "./debugUtils";
 
 const DEBUG_UI_MINIMIZED_STORAGE_KEY = "aether-nova-stage.debugUiMinimized";
+const DEBUG_UI_COLLAPSED_NPCS_STORAGE_KEY = "aether-nova-stage.collapsedNpcCards";
 
 type EditableMetricField = {
     key: string;
@@ -38,6 +39,32 @@ function writeMinimizedPreference(value: boolean): void {
     }
 }
 
+function readCollapsedNpcCards(): Set<string> {
+    try {
+        const stored = window.localStorage.getItem(DEBUG_UI_COLLAPSED_NPCS_STORAGE_KEY);
+        const parsed = stored == null ? [] : JSON.parse(stored);
+        return new Set(Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === "string") : []);
+    } catch {
+        return new Set();
+    }
+}
+
+function writeCollapsedNpcCards(value: Set<string>): void {
+    try {
+        window.localStorage.setItem(DEBUG_UI_COLLAPSED_NPCS_STORAGE_KEY, JSON.stringify(Array.from(value)));
+    } catch {
+        // Debug UI preference only; ignore storage failures.
+    }
+}
+
+function confirmAction(message: string): boolean {
+    try {
+        return window.confirm(message);
+    } catch {
+        return false;
+    }
+}
+
 export function AetherNovaDebugPanel({
     getSnapshot,
     onApplyCommand,
@@ -51,6 +78,7 @@ export function AetherNovaDebugPanel({
 }): ReactElement {
     const [snapshot, setSnapshot] = useState<DebugSnapshot>(() => getSnapshot());
     const [isMinimized, setIsMinimized] = useState<boolean>(() => readMinimizedPreference());
+    const [collapsedNpcCards, setCollapsedNpcCards] = useState<Set<string>>(() => readCollapsedNpcCards());
     const npcMemoryEntries = Object.values(snapshot.state.npcMemory ?? {});
     const [editingName, setEditingName] = useState<string | null>(null);
     const [draft, setDraft] = useState<NpcMemoryDraft>(emptyNpcMemoryDraft());
@@ -100,6 +128,31 @@ export function AetherNovaDebugPanel({
         writeMinimizedPreference(next);
     };
 
+    const toggleNpcCard = (name: string): void => {
+        setCollapsedNpcCards((previous) => {
+            const next = new Set(previous);
+            if (next.has(name)) {
+                next.delete(name);
+            } else {
+                next.add(name);
+            }
+            writeCollapsedNpcCards(next);
+            return next;
+        });
+    };
+
+    const removeCollapsedNpcCard = (name: string): void => {
+        setCollapsedNpcCards((previous) => {
+            if (!previous.has(name)) {
+                return previous;
+            }
+            const next = new Set(previous);
+            next.delete(name);
+            writeCollapsedNpcCards(next);
+            return next;
+        });
+    };
+
     if (isMinimized) {
         return (
             <main className="aether-debug-shell is-minimized">
@@ -122,12 +175,15 @@ export function AetherNovaDebugPanel({
         <main className="aether-debug-shell">
             <header className="aether-debug-header">
                 <div>
-                    <p className="aether-debug-kicker">Aether Nova Stage</p>
-                    <h1>Debug UI <span>{DEBUG_UI_VERSION}</span></h1>
+                    <h1>Aether Nova Stage UI <span>{DEBUG_UI_VERSION}</span></h1>
                 </div>
                 <div className="aether-debug-header-actions">
                     <button type="button" aria-expanded="true" onClick={toggleMinimized}>Minimize</button>
-                    <button type="button" onClick={() => setSnapshot(onClearLogs())}>Clear Logs</button>
+                    <button type="button" onClick={() => {
+                        if (confirmAction("Clear all debug logs?")) {
+                            setSnapshot(onClearLogs());
+                        }
+                    }}>Clear Logs</button>
                     <span className={snapshot.lastModifiedMessageChanged ? "aether-debug-pill active" : "aether-debug-pill"}>
                         {snapshot.lastModifiedMessageChanged ? "Modified" : "Idle"}
                     </span>
@@ -299,8 +355,10 @@ export function AetherNovaDebugPanel({
                     <p className="aether-debug-empty">No NPC memory stored yet.</p>
                 ) : (
                     <div className="aether-debug-memory-list">
-                        {npcMemoryEntries.map((entry) => (
-                            <article className="aether-debug-memory-card" key={entry.name}>
+                        {npcMemoryEntries.map((entry) => {
+                            const isNpcCollapsed = collapsedNpcCards.has(entry.name);
+                            return (
+                            <article className={isNpcCollapsed ? "aether-debug-memory-card is-collapsed" : "aether-debug-memory-card"} key={entry.name}>
                                 {editingName === entry.name ? (
                                     <NpcMemoryEditor
                                         draft={draft}
@@ -327,14 +385,25 @@ export function AetherNovaDebugPanel({
                                         <div className="aether-debug-card-header">
                                             <h3>{entry.name}</h3>
                                             <div className="aether-debug-card-actions">
+                                                <button type="button" onClick={() => toggleNpcCard(entry.name)}>
+                                                    {isNpcCollapsed ? "Expand" : "Minimize"}
+                                                </button>
                                                 <button type="button" onClick={() => {
                                                     setEditingName(entry.name);
                                                     setDraft(draftFromNpcMemory(entry));
                                                     originalEntryRef.current = entry;
                                                 }}>Edit</button>
-                                                <button type="button" onClick={() => setSnapshot(onApplyCommand(`npc memory clearfacts: ${entry.name}`))}>Clear Facts</button>
+                                                <button type="button" onClick={() => {
+                                                    if (confirmAction(`Clear OnlyKnows facts for ${entry.name}?`)) {
+                                                        setSnapshot(onApplyCommand(`npc memory clearfacts: ${entry.name}`));
+                                                    }
+                                                }}>Clear Facts</button>
                                                 <button className="danger" type="button" onClick={() => {
+                                                    if (!confirmAction(`Delete NPC memory for ${entry.name}? This cannot be undone.`)) {
+                                                        return;
+                                                    }
                                                     setSnapshot(onApplyCommand(`npc memory delete: ${entry.name}`));
+                                                    removeCollapsedNpcCard(entry.name);
                                                     if (editingName === entry.name) {
                                                         setEditingName(null);
                                                         setDraft(emptyNpcMemoryDraft());
@@ -342,36 +411,45 @@ export function AetherNovaDebugPanel({
                                                 }}>Delete</button>
                                             </div>
                                         </div>
-                                        <dl>
-                                            <DebugDetail label="Role" value={entry.roleTitle} />
-                                            <DebugDetail label="Race" value={entry.race} />
-                                            <DebugDetail label="Physical Extra" value={entry.physicalExtra} />
-                                            <DebugDetail label="Current Mood" value={entry.currentMood} />
-                                            <DebugDetail label="Last Tone" value={entry.lastInteractionTone ?? "unknown"} />
-                                            <DebugDetail label="Relationship" value={formatDebugList(entry.relationshipWithUser, "stranger")} />
-                                            <DebugDetail label="Behavior" value={formatDebugList(entry.behaviorTowardUser, "None stable yet")} />
-                                            <DebugDetail label="Behavior Scores" value={formatDebugScores(entry.behaviorScores)} />
-                                        </dl>
-                                        <p className="aether-debug-facts-label">Relationship Events</p>
-                                        {entry.relationshipEvents.length === 0 ? (
-                                            <p className="aether-debug-empty compact">None</p>
+                                        {isNpcCollapsed ? (
+                                            <p className="aether-debug-card-summary">
+                                                {entry.roleTitle || "Unknown role"} | {entry.currentMood || "mood unknown"}
+                                            </p>
                                         ) : (
-                                            <ul>
-                                                {entry.relationshipEvents.map((event) => <li key={event}>{event}</li>)}
-                                            </ul>
-                                        )}
-                                        <p className="aether-debug-facts-label">OnlyKnows</p>
-                                        {entry.onlyKnows.length === 0 ? (
-                                            <p className="aether-debug-empty compact">None</p>
-                                        ) : (
-                                            <ul>
-                                                {entry.onlyKnows.map((fact) => <li key={fact}>{fact}</li>)}
-                                            </ul>
+                                            <>
+                                                <dl>
+                                                    <DebugDetail label="Role" value={entry.roleTitle} />
+                                                    <DebugDetail label="Race" value={entry.race} />
+                                                    <DebugDetail label="Physical Extra" value={entry.physicalExtra} />
+                                                    <DebugDetail label="Current Mood" value={entry.currentMood} />
+                                                    <DebugDetail label="Last Tone" value={entry.lastInteractionTone ?? "unknown"} />
+                                                    <DebugDetail label="Relationship" value={formatDebugList(entry.relationshipWithUser, "stranger")} />
+                                                    <DebugDetail label="Behavior" value={formatDebugList(entry.behaviorTowardUser, "None stable yet")} />
+                                                    <DebugDetail label="Behavior Scores" value={formatDebugScores(entry.behaviorScores)} />
+                                                </dl>
+                                                <p className="aether-debug-facts-label">Relationship Events</p>
+                                                {entry.relationshipEvents.length === 0 ? (
+                                                    <p className="aether-debug-empty compact">None</p>
+                                                ) : (
+                                                    <ul>
+                                                        {entry.relationshipEvents.map((event) => <li key={event}>{event}</li>)}
+                                                    </ul>
+                                                )}
+                                                <p className="aether-debug-facts-label">OnlyKnows</p>
+                                                {entry.onlyKnows.length === 0 ? (
+                                                    <p className="aether-debug-empty compact">None</p>
+                                                ) : (
+                                                    <ul>
+                                                        {entry.onlyKnows.map((fact) => <li key={fact}>{fact}</li>)}
+                                                    </ul>
+                                                )}
+                                            </>
                                         )}
                                     </>
                                 )}
                             </article>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </section>
@@ -436,7 +514,9 @@ function DebugLogPanel({
                 <button type="button" onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    onClear();
+                    if (confirmAction(`Clear ${title}?`)) {
+                        onClear();
+                    }
                 }}>Clear</button>
             </summary>
             {events.length === 0 ? (
