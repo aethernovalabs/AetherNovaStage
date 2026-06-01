@@ -163,6 +163,14 @@ interface UserStatusState {
 - Jika tidak ada evidence, stage pakai clothing dari state sebelumnya.
 - **Inferensi langsung dari konteks:** Stage bisa detect `"naked"`, `"shirtless"`, `"without armor"`, `"only pants"` langsung dari konteks non-dialog.
 
+### Posture/Body Language Guard (Clothing Slot)
+
+**Posture atau body language tidak boleh masuk ke slot clothing.** Stage menggunakan classifier `isOnlyPostureBodyDetail()` dan `hasPostureBodyKeyword()` untuk memastikan:
+
+- Jika `statusPart` hanya berisi posture/body keywords (sit, stand, kneel, lean, turn, step, approach, hold, carry, pet, stroke, etc.) dan tidak mengandung garment noun → **ditolak dari clothing slot**, masuk ke position/detail slot.
+- Campuran garment + posture dalam satu part comma (contoh: `casual shirt, sitting cross-legged`) dipisah oleh `splitMixedStatusPart()`: garment (`casual shirt`) masuk clothing, posture (`sitting cross-legged`) masuk position/detail.
+- Posture didefinisikan sebagai kata non-garment yang mendeskripsikan posisi/gerakan/aksi tubuh (`POSTURE_BODY_KEYWORDS`).
+
 ### Object/Environment Damage Guard
 
 **Object/environment damage tidak boleh mengubah pakaian user.** Stage menggunakan `isObjectDamageOnly()` untuk mendeteksi jika damage hanya mengenai objek/lingkungan (door, table, wall, window, dll.) tanpa menyentuh garment user. Jika terdeteksi, clothing tidak diubah.
@@ -176,6 +184,8 @@ Clothing tetap sama. Door damage bukan clothing damage.
 ### Never Invent New Clothing
 
 Stage tidak boleh menciptakan pakaian baru yang tidak pernah ada. Jika clothing berubah karena damage, modifikasi item lama (contoh: `casual shirt` → `torn casual shirt`), bukan invent baru.
+
+Invent detection: jika garment kandidat tidak ada di state sebelumnya dan tidak ada `CLOTHING_CHANGE_CUES` dalam narasi, stage tidak menerima garment baru.
 
 ### Position change logic:
 - Perubahan posisi diterima jika ada cue `walk`, `stand`, `sit`, `kneel`, `lean`, `turn`, `step`, `approach`, dll.
@@ -253,6 +263,16 @@ Cara kerja:
 5. **Thread inference merge:**
    - Jika AI mengulang thread lama yang generik, stage merge dengan hasil inferensi dari narasi.
    - Item lama ditandai `(Pending)` jika ada subgoal baru yang `(Ongoing)`.
+
+### Thread Waiting/Rendezvous Lock
+
+**Item thread yang menunggu (waiting/rendezvous) dikunci agar tidak hilang.** Stage menggunakan `applyThreadWaitingLock()` untuk:
+
+1. **Deteksi waiting pattern**: Setiap item thread dicek terhadap `THREAD_WAITING_PATTERNS`. Pattern yang terdeteksi: `waiting for`, `waiting on`, `awaiting`, `expecting`, `rendezvous with`, `meeting up with`, `to meet`, `to speak`, `to ask`, `pending`, `on hold`, `(Waiting)`, `(Pending)`, `patience`, `patiently`, `hold`.
+2. **Lock state**: Item yang match disimpan di `lockedWaitingThreads[]` dalam state — array of strings yang tidak berubah oleh normalisasi thread biasa.
+3. **Restore pada swipe**: `coerceHeaderState()` memanggil `applyThreadWaitingLock()` untuk mengembalikan item waiting yang masih dikunci ke thread state, sehingga user tidak kehilangan thread waiting saat swipe/jump.
+4. **Resolusi hanya oleh LLM**: Item waiting hanya dihapus dari lock jika ada `THREAD_WAITING_RESOLUTION_PATTERNS` dalam narasi: `arrive`, `meet`, `meets`, `met`, `found`, `speak`, `finish`, `complete`, `done`, `resolved`, `resolved:`, `(Resolved)`. Atau jika ada thread item dengan status `resolved`/`completed`/`done` yang cocok.
+5. **Privasi thread (OnlyKnows/Secret)**: Thread items dengan `(Only X knows)` atau `(Secret)` tetap dipertahankan saat lock restoration — marker privasi tidak di-strip.
 
 ---
 
@@ -535,7 +555,9 @@ Debug UI (di `Stage.tsx` render) saat ini: **Debug UI V1.7**.
 
 Debug UI menampilkan:
 - Current state: Location, Time, You (compact), NPC, Thread, Wallet, Pending NPC Debug, Pending Memory Command.
-- **Status User**: Panel detail yang menampilkan gender, apparentRace, clothing lengkap (upper, lower, footwear, outerwear, accessories), weapons, dan important items. Data ini berasal dari state `userStatus` dan tidak di-inject ke LLM.
+- **Edit Buttons**: Setiap field state utama (Location, You, NPC, Thread, Wallet, Status User) memiliki tombol **Edit**. Saat diklik, field berubah menjadi form input dengan value saat ini. User bisa mengubah value lalu **Save** (menerapkan edit ke state + mencatat di `manualEditOverrides`) atau **Cancel** (kembali ke tampilan baca).
+- **Status User Editor**: Saat Edit Status User diklik, panel detail berubah menjadi form dengan input untuk Gender, Race, dan setiap slot pakaian (Upper, Lower, Footwear, Outerwear, Accessories). Weapons dan Important Items ditampilkan sebagai textarea read-only.
+- Manual edits yang dilakukan melalui UI disimpan di `manualEditOverrides` dan dipertahankan saat swipe/jump serta melalui normalisasi.
 - NPC Memory cards: semua NPC yang tersimpan dengan detail lengkap.
 - Debug Logs terpisah per kategori:
   - **NPC Memory Log**: command memory, perubahan jumlah memory, entry yang added/removed/changed.
@@ -598,6 +620,8 @@ Location berubah jika:
     pendingNpcDebugQuery: string | null;
     pendingNpcMemoryCommand: string | null;
     userStatus: UserStatusState;
+    lockedWaitingThreads?: string[];       // Thread items with waiting/rendezvous status, persisted until resolved
+    manualEditOverrides?: Record<string, string>;  // UI manual edit values, preserved across normalization
 }
 ```
 

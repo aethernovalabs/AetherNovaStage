@@ -1,0 +1,188 @@
+export const POSITION_CHANGE_CUES = [
+    "move", "moves", "moved", "walk", "walks", "walked", "walking",
+    "stand", "stands", "stood", "standing", "sit", "sits", "sat", "sitting", "seated",
+    "kneel", "kneels", "kneeling", "lean", "leans", "turn", "turns", "step", "steps",
+    "approach", "approaches", "behind", "beside", "before", "door", "table", "throne",
+    "combat", "battle", "scene transition", "time skip",
+    "stop", "stops", "stopped", "halt", "halts",
+    "arrive", "arrives", "arrived", "reach", "reaches", "reached", "destination",
+    "left of", "right of", "left side", "right side", "next to", "in front of",
+    "across from", "facing", "steps away", "steps before", "paces away", "paces before",
+    "berdiri", "duduk", "berlutut",
+    "sebelah kiri", "sebelah kanan", "di kiri", "di kanan",
+    "di samping", "di hadapan", "di depan", "di belakang", "langkah",
+];
+
+export const POSITION_SPATIAL_CUES = [
+    "left of", "right of", "left side", "right side",
+    "beside", "next to", "near", "above", "below", "beneath", "under", "over",
+    "atop", "upon", "against", "beyond", "past", "around", "inside", "outside",
+    "alongside", "before", "behind", "in front of", "across from", "facing",
+    "toward", "towards", "ahead", "opposite", "between",
+    "steps", "paces", "arm's length",
+    "sebelah kiri", "sebelah kanan", "di kiri", "di kanan",
+    "di samping", "di hadapan", "di depan", "di belakang",
+    "menghadap", "langkah",
+];
+
+export const POSTURE_BODY_KEYWORDS = [
+    "posture", "stance", "standing", "sitting", "kneeling", "leaning",
+    "crouching", "lying", "lying down", "relaxed", "tense", "defensive",
+    "arms crossed", "hand on hip", "hands lowered", "hands on",
+    "eyes narrowed", "watching", "facing", "turning", "holding", "touching",
+    "body", "shoulders", "back straight", "head tilted", "head lowered",
+    "gaze", "looking", "staring", "glancing",
+];
+
+export const CLOTHING_CHANGE_CUES = [
+    "change clothes", "changed clothes", "changes clothes",
+    "change into", "changed into", "changes into",
+    "change outfit", "changed outfit", "changes outfit",
+    "wear", "wears", "wearing", "wore",
+    "put on", "puts on", "putting on",
+    "dress in", "dresses in", "dressed in",
+    "clad in", "dons", "donned", "donning",
+    "slip into", "slips into", "slipped into",
+    "wrap in", "wraps in", "wrapped in",
+    "swap into", "swaps into", "swapped into",
+    "new outfit", "new clothes",
+    "remove armor", "removes armor", "removed armor",
+    "new disguise", "changes disguise", "changed disguise",
+    "only wearing", "wears only", "wearing only",
+    "left sleeve", "right sleeve", "loose shirt", "loose pants",
+    "baggy shirt", "baggy pants",
+    "shirt caught", "pants caught", "sleeve caught",
+    "clothes caught", "clothing caught",
+    "baju longgar", "celana longgar", "hanya memakai", "tersangkut",
+];
+
+export const CLOTHING_DAMAGE_CUES = [
+    "burn", "burns", "burned", "burnt", "scorch", "scorched",
+    "tear", "tears", "torn", "rip", "rips", "ripped",
+    "shred", "shredded", "cut", "cuts", "slashed",
+    "bloody", "bloodied", "stained", "soaked", "wet", "muddy",
+    "damaged", "destroyed", "frayed", "singed",
+    "loose", "loosened", "baggy", "caught", "catches", "snag", "snags", "snagged",
+    "stuck", "hooked", "tangled", "slipping", "untucked", "unbuttoned", "unfastened",
+    "missing sleeve", "armor cracked", "cloak catches fire", "sleeve catches fire",
+    "robek", "terbakar", "longgar", "tersangkut",
+];
+
+export const CLOTHING_REMOVAL_CUES = [
+    "remove", "removes", "removed",
+    "take off", "takes off", "took off",
+    "strip", "strips", "stripped",
+    "undress", "undresses", "undressed",
+    "bare", "naked", "shirtless", "topless",
+    "without clothes", "without shirt", "without armor", "without cloak",
+    "remove cloak", "removes cloak", "removed cloak",
+    "only pants", "pants only",
+    "wearing only pants", "wears only pants", "only wearing pants",
+    "hanya memakai celana",
+];
+
+export const CLOTHING_ADJUSTMENT_CUES = [
+    "fix", "fixes", "fixed", "fixing",
+    "adjust", "adjusts", "adjusted", "adjusting",
+    "straighten", "straightens", "straightened", "straightening",
+    "smooth", "smooths", "smoothed", "smoothing",
+    "settle", "settles", "settled", "settling",
+    "fasten", "fastens", "fastened", "fastening",
+    "refasten", "refastens", "refastened", "refastening",
+    "tie", "ties", "tied", "tying",
+    "retie", "reties", "retied", "retying",
+    "cover", "covers", "covered", "covering",
+    "back into place", "into place",
+];
+
+export const DETAIL_BODY_PART_CUES = [
+    "hand", "hands", "palm", "palms", "finger", "fingers",
+    "arm", "arms", "elbow", "elbows",
+    "head", "eye", "eyes", "gaze", "face", "cheek", "cheeks", "forehead", "chin", "mouth", "nose", "hair",
+    "shoulder", "shoulders", "back", "body", "torso", "waist", "hip", "hips",
+    "knee", "knees",
+    "tail", "tails", "ear", "ears", "wing", "wings", "horn", "horns", "halo",
+    "fang", "fangs", "claw", "claws",
+];
+
+export const DETAIL_CONTACT_ACTION_CUES = [
+    "holding", "gripping", "grasping", "clutching",
+    "touching", "stroke", "strokes", "stroking",
+    "caress", "caresses", "caressing",
+    "pet", "pets", "petting",
+    "rub", "rubs", "rubbing",
+    "clean", "cleans", "cleaning",
+    "wipe", "wipes", "wiping",
+    "wash", "washes", "washing",
+    "brush", "brushes", "brushing",
+    "dry", "dries", "drying",
+    "pat", "pats", "patting",
+    "resting", "leaning", "pressing", "bracing", "supporting",
+    "release", "releases", "released", "releasing",
+    "place", "places", "placed", "placing",
+    "set down", "sets down", "setting down",
+    "slide", "slides", "slid", "sliding",
+    "pull", "pulls", "pulling",
+    "tug", "tugs", "tugging",
+    "draw", "draws", "drawing",
+    "lift", "lifts", "lifting",
+    "lower", "lowers", "lowering",
+    "against", "upon",
+    "hand remains", "hands remain", "palm remains", "palms remain",
+    "keeps his hand", "keeps her hand", "keeps their hand",
+    "keeps your hand", "keeps one hand", "keeps a hand",
+];
+
+export const DETAIL_VISIBLE_INTERACTION_CUES = [
+    "clean", "cleans", "cleaning",
+    "wipe", "wipes", "wiping",
+    "wash", "washes", "washing",
+    "brush", "brushes", "brushing",
+    "dry", "dries", "drying",
+    "pat", "pats", "patting",
+    "touch", "touches", "touching",
+    "stroke", "strokes", "stroking",
+    "caress", "caresses", "caressing",
+    "pet", "pets", "petting",
+    "rub", "rubs", "rubbing",
+    "pull", "pulls", "pulling",
+    "tug", "tugs", "tugging",
+    "draw", "draws", "drawing",
+    "lift", "lifts", "lifting",
+    "lower", "lowers", "lowering",
+];
+
+export const DETAIL_OBJECT_INTERACTION_CUES = [
+    "cup", "mug", "glass", "bottle",
+    "blanket", "sheet", "cloth", "towel", "curtain",
+    "door", "handle", "rope",
+    "weapon", "sword", "knife", "staff",
+    "book", "bag", "pouch",
+    "chair", "table",
+];
+
+export const DETAIL_SETTLED_BODY_CUES = [
+    "lowered", "lower", "down", "low",
+    "relaxed", "loose", "free",
+    "at side", "at sides", "by side", "by sides", "to side", "to sides",
+    "hanging",
+    "lowered hands", "lowered arms",
+    "hands lowered", "arms lowered",
+    "hands down", "arms down",
+    "hands at sides", "arms at sides",
+    "hands by sides", "arms by sides",
+    "lap", "thigh", "thighs", "knee", "knees", "waist", "hip", "hips",
+];
+
+export const DETAIL_POSTURE_CHANGE_CUES = [
+    "turn", "turns", "turned", "turning",
+    "face", "faces", "facing",
+    "toward", "towards",
+    "pull back", "pulls back", "pulled back",
+    "drawing back", "draws back",
+    "withdraw", "withdraws", "withdrew", "withdrawn",
+    "straighten", "straightens", "straightened",
+    "level", "leveled", "steady",
+    "forward",
+    "head level", "body turned",
+];

@@ -37,6 +37,14 @@ export interface AetherNovaMessageState {
     pendingNpcDebugQuery: string | null;
     pendingNpcMemoryCommand: string | null;
     userStatus: UserStatusState;
+    lockedWaitingThreads?: string[];
+    manualEditOverrides?: {
+      location?: string;
+      you?: string;
+      npc?: string;
+      thread?: string;
+      wallet?: string;
+    };
 }
 
 export interface NpcMemoryEntry {
@@ -636,6 +644,33 @@ const POSITION_SPATIAL_CUES = [
     "di belakang",
     "menghadap",
     "langkah",
+];
+
+const POSTURE_BODY_KEYWORDS = [
+  "posture", "stance", "standing", "sitting", "kneeling", "leaning",
+  "crouching", "lying", "lying down", "relaxed", "tense", "defensive",
+  "arms crossed", "hand on hip", "hands lowered", "hands on",
+  "eyes narrowed", "watching", "facing", "turning", "holding", "touching",
+  "body", "shoulders", "back straight", "head tilted", "head lowered",
+  "gaze", "looking", "staring", "glancing",
+];
+
+const THREAD_WAITING_PATTERNS = [
+  /\b\w+\s+(?:waiting|awaits?|awaiting)\s+(?:at|by|near|outside|in|for)\b/i,
+  /\b(?:rendezvous|meeting)\s+(?:with\s+)?[A-Z][A-Za-z'._-]+\b/i,
+  /\bmeet\s+(?:with\s+)?[A-Z][A-Za-z'._-]+\s+(?:at|by|near|outside|in)\b/i,
+  /\b[pP]ending\s+(?:meeting|rendezvous)\b/,
+  /\b[pP]romised\s+(?:meeting|rendezvous)\b/,
+  /\b[A-Z][A-Za-z'._-]+\s+(?:awaiting|waiting\s+for)\s+\{\{user\}\}\b/i,
+  /\b[A-Z][A-Za-z'._-]+\s+waiting\b/i,
+];
+
+const THREAD_WAITING_RESOLUTION_PATTERNS = [
+  /\b(?:reaches?|reached|arrives?\s+at|arrived\s+at|enters?\s+|entered)\b.*\b(?:waiting|finds?\s+|found)\b/i,
+  /\b(?:meets?\s+|met\s+)(?:with\s+)?[A-Z][A-Za-z'._-]+\s+(?:at|by|near|outside|in)\b/i,
+  /\b[A-Z][A-Za-z'._-]+\s+(?:leaves?|left|departs?|departed)\b.*\b(?:after\s+)?(?:waiting)\b/i,
+  /\b(?:meeting|rendezvous)\s+(?:is\s+)?(?:cancelled|canceled|abandoned|over|done|finished)\b/i,
+  /\bwait(s|ed)?\s+(?:too\s+)?long\b.*\b(?:leave|left|depart)\b/i,
 ];
 
 const CLOTHING_CHANGE_CUES = [
@@ -1433,19 +1468,28 @@ export function coerceHeaderState(
     const youLine = normalizeYouLine(raw.you ?? "", fallback.you, "", {trustRawStatus: true});
     const userStatus = coerceUserStatus(raw.userStatus, youLine);
 
+    const lockedWaiting = normalizeLockedWaitingThreads(raw.lockedWaitingThreads);
+    const {updatedThread} = applyThreadWaitingLock(
+      normalizeThreadLine(raw.thread ?? "", fallback.thread, ""),
+      { ...fallback, lockedWaitingThreads: lockedWaiting },
+      "",
+    );
+
     return {
         location: normalizeLocation(raw.location ?? "", fallback.location),
         timeOfDay: timeOfDayForClock(clock),
         clock,
         you: youLine,
         npc,
-        thread: normalizeThreadLine(raw.thread ?? "", fallback.thread, ""),
+        thread: updatedThread,
         wallet: walletState.value,
         walletInitialized: walletState.initialized,
         npcMemory,
         pendingNpcDebugQuery: normalizePendingNpcDebugQuery(raw.pendingNpcDebugQuery),
         pendingNpcMemoryCommand: normalizePendingNpcMemoryCommand(raw.pendingNpcMemoryCommand),
         userStatus,
+        lockedWaitingThreads: lockedWaiting,
+        manualEditOverrides: normalizeManualEditOverrides(raw.manualEditOverrides),
     };
 }
 
@@ -1455,6 +1499,8 @@ export function prepareAetherNovaStateForPrompt(
 ): AetherNovaMessageState {
     return {
         ...state,
+        lockedWaitingThreads: state.lockedWaitingThreads,
+        manualEditOverrides: state.manualEditOverrides,
         npcMemory: updateNpcMemory(state.npcMemory, state.npc, state.location),
         pendingNpcDebugQuery: debugNpcQuery(userMessage),
         pendingNpcMemoryCommand: state.pendingNpcMemoryCommand,
@@ -1490,6 +1536,40 @@ const GARMENT_NAMES = [
   "sleeves", "collar", "hem", "cuff", "cuffs", "waistband",
   "underwear", "bra", "panties", "boxers", "briefs",
 ];
+
+function hasGarmentKeyword(value: string): boolean {
+  return GARMENT_NAMES.some((g) => new RegExp(`\\b${escapeRegExp(g)}\\b`, "i").test(value));
+}
+
+function hasPostureBodyKeyword(value: string): boolean {
+  return POSTURE_BODY_KEYWORDS.some((kw) => new RegExp(`\\b${escapeRegExp(kw)}\\b`, "i").test(value));
+}
+
+function isOnlyPostureBodyDetail(value: string): boolean {
+  const clean = cleanFragment(value);
+  if (isPlaceholder(clean)) return false;
+  if (hasGarmentKeyword(clean)) return false;
+  return hasPostureBodyKeyword(clean);
+}
+
+function containsObjectDamageWithoutUserGarment(context: string): boolean {
+  const hasGarment = GARMENT_NAMES.some((g) => new RegExp(`\\b${escapeRegExp(g)}\\b`, "i").test(context));
+  if (hasGarment) return false;
+  const objectWords = ["door", "table", "wall", "window", "floor", "ground", "barrel", "crate", "chair", "bench", "desk", "gate", "fence", "stone", "rock", "pillar", "column"];
+  const damageCues = ["crack", "break", "shatter", "splinter", "burst", "destroy", "smash"];
+  const mentionsObject = objectWords.some((w) => new RegExp(`\\b${escapeRegExp(w)}\\b`, "i").test(context));
+  const mentionsDamage = damageCues.some((c) => new RegExp(`\\b${escapeRegExp(c)}\\w*\\b`, "i").test(context));
+  const mentionsUser = /\{\{user\}\}|\byou\b/i.test(context);
+  return mentionsObject && mentionsDamage && mentionsUser;
+}
+
+function isValidClothingContent(value: string): boolean {
+  const clean = cleanFragment(value);
+  if (isPlaceholder(clean)) return false;
+  if (isOnlyPostureBodyDetail(clean)) return false;
+  if (/^[A-Z][a-z]+\s+(?:posture|stance|body|expression|gaze|eyes?)\b/i.test(clean)) return false;
+  return hasGarmentKeyword(clean) || looksLikeClothingSlot(clean);
+}
 
 const WEAPON_KEYWORDS = [
   "sword", "blade", "dagger", "knife", "staff", "bow", "arrow", "axe",
@@ -1925,19 +2005,24 @@ export function normalizeAetherNovaResponse(
         previousState.walletInitialized === true,
     );
     const youLine = normalizeYouLine(extracted.youLine ?? "", previousState.you, correctionContext, {sceneChanged});
+    const npc = normalizeNpcLine(extracted.npcLine ?? "", previousState.npc, correctionContext, {sceneChanged});
+    const thread = normalizeThreadLine(extracted.threadLine ?? "", previousState.thread, correctionContext);
+    const {updatedThread, updatedLockedThreads} = applyThreadWaitingLock(thread, previousState, correctionContext);
     const state: AetherNovaMessageState = {
         location: timeLocation.location,
         timeOfDay: timeLocation.timeOfDay,
         clock: timeLocation.clock,
         you: youLine,
-        npc: normalizeNpcLine(extracted.npcLine ?? "", previousState.npc, correctionContext, {sceneChanged}),
-        thread: normalizeThreadLine(extracted.threadLine ?? "", previousState.thread, correctionContext),
+        npc,
+        thread: updatedThread,
         wallet: wallet.value,
         walletInitialized: wallet.initialized,
         npcMemory: previousState.npcMemory,
         pendingNpcDebugQuery: null,
         pendingNpcMemoryCommand: previousState.pendingNpcMemoryCommand,
         userStatus: updateUserStatus(previousState.userStatus, youLine, correctionContext),
+        lockedWaitingThreads: updatedLockedThreads,
+        manualEditOverrides: previousState.manualEditOverrides,
     };
     state.npcMemory = updateNpcMemory(previousState.npcMemory, state.npc, `${state.location}\n${correctionContext}`);
     const debugQuery = previousState.pendingNpcDebugQuery ?? debugNpcQuery(context);
@@ -1948,6 +2033,56 @@ export function normalizeAetherNovaResponse(
         state,
         systemMessage: debugMessage.length > 0 ? debugMessage : null,
     };
+}
+
+function applyThreadWaitingLock(
+  currentThread: string,
+  previousState: AetherNovaMessageState,
+  narrative: string,
+): {updatedThread: string; updatedLockedThreads: string[]} {
+  const previousLocked = previousState.lockedWaitingThreads ?? [];
+  const currentItems = splitThreadItems(currentThread);
+  const lowerNarrative = narrative.toLowerCase();
+
+  const resolvedLocks: string[] = [];
+  const activeLocks: string[] = [];
+
+  for (const lockedItem of previousLocked) {
+    const isResolved = THREAD_WAITING_RESOLUTION_PATTERNS.some((p) => p.test(lowerNarrative));
+    const itemStillPresent = currentItems.some((item) => threadItemsOverlap(item, lockedItem));
+
+    if (isResolved) {
+      resolvedLocks.push(lockedItem);
+    } else if (itemStillPresent) {
+      activeLocks.push(lockedItem);
+    } else {
+      activeLocks.push(lockedItem);
+    }
+  }
+
+  for (const item of currentItems) {
+    if (isWaitingThreadItem(item)) {
+      if (!activeLocks.some((l) => threadItemsOverlap(l, item))) {
+        activeLocks.push(item);
+      }
+    }
+  }
+
+  let resultThread = currentThread;
+  for (const lockedItem of activeLocks) {
+    if (!currentItems.some((item) => threadItemsOverlap(item, lockedItem))) {
+      const separator = resultThread === "None" || resultThread.length === 0 ? "" : " ; ";
+      resultThread = resultThread === "None" || resultThread.length === 0
+        ? lockedItem
+        : `${resultThread}${separator}${lockedItem}`;
+    }
+  }
+
+  return {updatedThread: resultThread, updatedLockedThreads: activeLocks};
+}
+
+function isWaitingThreadItem(value: string): boolean {
+  return THREAD_WAITING_PATTERNS.some((p) => p.test(value));
 }
 
 export function formatHeader(state: AetherNovaMessageState): string {
@@ -3156,6 +3291,23 @@ function normalizePendingNpcDebugQuery(value: unknown): string | null {
 
 function normalizePendingNpcMemoryCommand(value: unknown): string | null {
     return typeof value === "string" && parseNpcMemoryCommands(value).length > 0 ? value : null;
+}
+
+function normalizeLockedWaitingThreads(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && cleanFragment(item).length > 0);
+}
+
+function normalizeManualEditOverrides(value: unknown): AetherNovaMessageState["manualEditOverrides"] {
+  if (value == null || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  const result: AetherNovaMessageState["manualEditOverrides"] = {};
+  if (typeof raw.location === "string") result.location = raw.location;
+  if (typeof raw.you === "string") result.you = raw.you;
+  if (typeof raw.npc === "string") result.npc = raw.npc;
+  if (typeof raw.thread === "string") result.thread = raw.thread;
+  if (typeof raw.wallet === "string") result.wallet = raw.wallet;
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function splitNpcTitleFromName(value: string): {name: string; title: string} {
@@ -4800,6 +4952,14 @@ function splitMixedStatusPart(part: string): string[] {
         return commaParts;
     }
 
+    if (commaParts.length > 1) {
+      const hasGarment = commaParts.some((p) => hasGarmentKeyword(p));
+      const hasOnlyPosture = commaParts.some((p) => !hasGarmentKeyword(p) && hasPostureBodyKeyword(p));
+      if (hasGarment && hasOnlyPosture) {
+        return commaParts;
+      }
+    }
+
     const withDetail = clean.match(/^(.*?\b(?:standing|seated|sitting|walking|kneeling|crouching|lying|above|below|beneath|under|over|atop|upon|against|beyond|past|around|inside|outside|alongside|beside|before|behind|near|facing|left|right|front|table|door|counter)\b.*?)\s+with\s+((?:his|her|their|your|both|one)?\s*(?:eye|eyes|gaze|tail|tails|ear|ears|wing|wings|horn|horns|hand|hands|arm|arms|posture|body)\b.*)$/i);
     if (withDetail != null) {
         return [withDetail[1], withDetail[2]].map(cleanFragment).filter(Boolean);
@@ -4809,6 +4969,8 @@ function splitMixedStatusPart(part: string): string[] {
 }
 
 function isClothingStatusPart(value: string): boolean {
+    if (isOnlyPostureBodyDetail(value)) return false;
+    if (!hasGarmentKeyword(value) && hasPostureBodyKeyword(value)) return false;
     return looksLikeClothingSlot(value);
 }
 
