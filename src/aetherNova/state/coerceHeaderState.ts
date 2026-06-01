@@ -12,7 +12,7 @@ import {applyThreadWaitingLock} from "../thread/threadWaitingLock";
 import {coerceWalletState} from "../wallet/normalizeWalletLine";
 import {updateNpcMemory, coerceNpcMemory} from "../npcMemory/updateNpcMemory";
 import {coerceUserStatus} from "../userStatus/userStatusState";
-import {normalizePendingNpcDebugQuery, normalizePendingNpcMemoryCommand, normalizeLockedWaitingThreads, normalizeManualEditOverrides} from "./stateMerge";
+import {normalizePendingNpcDebugQuery, normalizePendingNpcMemoryCommand, normalizeLockedWaitingThreads, normalizeManualEditOverrides, normalizeTerminalGraceItems} from "./stateMerge";
 
 export function createInitialHeaderState(
     characters: Record<string, Character>,
@@ -39,6 +39,7 @@ export function coerceHeaderState(
     const userStatus = coerceUserStatus(raw.userStatus, youLine);
 
     const lockedWaiting = normalizeLockedWaitingThreads(raw.lockedWaitingThreads);
+    const terminalGrace = normalizeTerminalGraceItems(raw.terminalThreadGraceItems);
     const {updatedThread} = applyThreadWaitingLock(
       normalizeThreadLine(raw.thread ?? "", fallback.thread, ""),
       { ...fallback, lockedWaitingThreads: lockedWaiting },
@@ -59,6 +60,7 @@ export function coerceHeaderState(
         pendingNpcMemoryCommand: normalizePendingNpcMemoryCommand(raw.pendingNpcMemoryCommand),
         userStatus,
         lockedWaitingThreads: lockedWaiting,
+        terminalThreadGraceItems: terminalGrace,
         manualEditOverrides: normalizeManualEditOverrides(raw.manualEditOverrides),
     };
 }

@@ -6,7 +6,7 @@ import {normalizeLocationTimeLine} from "../header/normalizeLocation";
 import {normalizeWalletLine} from "../wallet/normalizeWalletLine";
 import {normalizeYouLine} from "../header/normalizeYouLine";
 import {normalizeNpcLine} from "../header/normalizeNpcLine";
-import {normalizeThreadLine} from "../thread/normalizeThreadLine";
+import {normalizeThreadLine, splitThreadItems, isTerminalThreadItem, threadItemsOverlap} from "../thread/normalizeThreadLine";
 import {applyThreadWaitingLock} from "../thread/threadWaitingLock";
 import {updateUserStatus} from "../userStatus/userStatusState";
 import {updateNpcMemory} from "../npcMemory/updateNpcMemory";
@@ -15,6 +15,34 @@ import {buildNpcDebugFooter} from "../npcMemory/npcMemoryHelpers";
 export function debugNpcQuery(userMessage: string): string | null {
     const match = userMessage.match(/[\[【]\s*debug\s*:\s*npc\s+([^\]】]+)[\]】]/i);
     return match == null ? null : cleanFragment(match[1]);
+}
+
+function applyTerminalGrace(
+    rawThreadLine: string,
+    normalizedThread: string,
+    previousGrace: string[],
+): {thread: string; newGrace: string[]} {
+    const rawItems = rawThreadLine
+        .split(/\s*;\s*/g)
+        .map(cleanFragment)
+        .filter(Boolean);
+    const terminalItems = rawItems.filter((item) => isTerminalThreadItem(item));
+    const normalizedItems = normalizedThread === "None" || normalizedThread.length === 0
+        ? []
+        : normalizedThread.split(/\s*;\s*/g).map(cleanFragment).filter(Boolean);
+    const newGrace: string[] = [];
+    for (const terminalItem of terminalItems) {
+        const alreadyInGrace = previousGrace.some((g) => threadItemsOverlap(g, terminalItem));
+        if (!alreadyInGrace) {
+            const alreadyInNormalized = normalizedItems.some((n) => threadItemsOverlap(n, terminalItem));
+            if (!alreadyInNormalized) {
+                normalizedItems.push(terminalItem);
+            }
+            newGrace.push(terminalItem);
+        }
+    }
+    const thread = normalizedItems.join(" ; ");
+    return {thread: thread.length > 0 ? thread : "None", newGrace};
 }
 
 export function normalizeAetherNovaResponse(
@@ -34,15 +62,21 @@ export function normalizeAetherNovaResponse(
     );
     const youLine = normalizeYouLine(extracted.youLine ?? "", previousState.you, correctionContext, {sceneChanged});
     const npc = normalizeNpcLine(extracted.npcLine ?? "", previousState.npc, correctionContext, {sceneChanged});
-    const thread = normalizeThreadLine(extracted.threadLine ?? "", previousState.thread, correctionContext);
+    const thread = normalizeThreadLine(extracted.threadLine ?? "", previousState.thread, correctionContext, npc);
     const {updatedThread, updatedLockedThreads} = applyThreadWaitingLock(thread, previousState, correctionContext);
+    const previousGrace = previousState.terminalThreadGraceItems ?? [];
+    const {thread: finalThread, newGrace: terminalGraceItems} = applyTerminalGrace(
+        extracted.threadLine ?? "",
+        updatedThread,
+        previousGrace,
+    );
     const state: AetherNovaMessageState = {
         location: timeLocation.location,
         timeOfDay: timeLocation.timeOfDay,
         clock: timeLocation.clock,
         you: youLine,
         npc,
-        thread: updatedThread,
+        thread: finalThread,
         wallet: wallet.value,
         walletInitialized: wallet.initialized,
         npcMemory: previousState.npcMemory,
@@ -50,6 +84,7 @@ export function normalizeAetherNovaResponse(
         pendingNpcMemoryCommand: previousState.pendingNpcMemoryCommand,
         userStatus: updateUserStatus(previousState.userStatus, youLine, correctionContext),
         lockedWaitingThreads: updatedLockedThreads,
+        terminalThreadGraceItems: terminalGraceItems,
         manualEditOverrides: previousState.manualEditOverrides,
     };
     state.npcMemory = updateNpcMemory(previousState.npcMemory, state.npc, `${state.location}\n${correctionContext}`);

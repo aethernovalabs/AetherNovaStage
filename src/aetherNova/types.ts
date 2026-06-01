@@ -38,6 +38,7 @@ export interface AetherNovaMessageState {
     pendingNpcMemoryCommand: string | null;
     userStatus: UserStatusState;
     lockedWaitingThreads?: string[];
+    terminalThreadGraceItems?: string[];
     manualEditOverrides?: {
       location?: string;
       you?: string;

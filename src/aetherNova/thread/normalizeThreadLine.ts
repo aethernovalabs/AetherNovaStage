@@ -20,6 +20,126 @@ function capitalizeThreadItem(value: string): string {
     return clean.length === 0 ? "" : `${clean[0].toUpperCase()}${clean.slice(1)}`;
 }
 
+function isThreatOrConditionalStatement(sentence: string): boolean {
+    const threatPatterns = [
+        /\bif\s+(?:he|she|they|you|we|i|not)\b/i,
+        /\bif\s+not\b/i,
+        /\botherwise\b/i,
+        /\bor\s+else\b/i,
+        /\b(?:might|may)\s+(?:have\s+to|need\s+to)\b/i,
+        /\b(?:would|will)\s+(?:have\s+to|need\s+to)\b/i,
+        /\bthreat(?:ened|ening)?\b/i,
+    ];
+    return threatPatterns.some((p) => p.test(sentence));
+}
+
+function isPastWarningStatement(sentence: string): boolean {
+    const pastWarningPatterns = [
+        /\b(?:already|had)\s+(?:warn(?:ed|ing)?|told|said|asked|informed)\b/i,
+        /\bwarned\s+(?:him|her|them|you)\s+(?:before|earlier|already|previously)\b/i,
+        /\balready\s+warned\b/i,
+    ];
+    return pastWarningPatterns.some((p) => p.test(sentence));
+}
+
+const THREAD_MEETING_KEYWORDS = ["meeting", "meet", "audience", "appointment", "rendezvous", "speak with", "talk to"];
+const THREAD_MEETING_SKIP_NAMES = new Set([
+    "meeting", "meet", "audience", "appointment", "rendezvous", "speak", "talk",
+    "king", "queen", "prince", "princess", "lord", "lady", "sir", "dame",
+    "duke", "duchess", "count", "countess", "baron", "baroness",
+    "pending", "ongoing", "active", "waiting", "imminent",
+    "complete", "completed", "done", "finished", "failed",
+    "resolved", "secret", "only", "knows",
+]);
+
+function extractMeetingNpcNames(item: string): string[] {
+    const clean = item.replace(/\([^)]*\)/g, "").trim();
+    const names = clean.match(/\b[A-Z][a-z]{2,}\b/g) || [];
+    return names.filter((n) => !THREAD_MEETING_SKIP_NAMES.has(n.toLowerCase()));
+}
+
+function extractNpcNamesFromLine(npcLine: string): string[] {
+    return npcLine
+        .split(",")
+        .map((entry) => {
+            const nameMatch = entry.match(/^([A-Z][A-Za-z'._\-\s]+?)(?:\s*-\s*|$)/);
+            return nameMatch ? cleanFragment(nameMatch[1]) : "";
+        })
+        .filter(Boolean);
+}
+
+function isMeetingThreadItemComplete(item: string, npcLine: string, currentThread: string): boolean {
+    const itemLower = item.toLowerCase();
+    const isMeetingType = THREAD_MEETING_KEYWORDS.some((k) => itemLower.includes(k));
+    if (!isMeetingType) {
+        return false;
+    }
+    if (isTerminalThreadItem(item)) {
+        return false;
+    }
+    const itemNpcs = extractMeetingNpcNames(item);
+    if (itemNpcs.length === 0) {
+        return false;
+    }
+    const headerNames = extractNpcNamesFromLine(npcLine);
+    const targetFound = itemNpcs.some((npc) =>
+        headerNames.some((h) => h.toLowerCase().includes(npc.toLowerCase())),
+    );
+    if (targetFound) {
+        return true;
+    }
+    const threadLower = currentThread.toLowerCase();
+    const itemHasAudience = itemLower.includes("audience");
+    const itemHasMeeting = itemLower.includes("meeting");
+    if ((itemHasAudience || itemHasMeeting) && threadLower.includes("audience") && threadLower.includes("(active)")) {
+        return true;
+    }
+    return false;
+}
+
+function replaceStatusTag(item: string, newStatus: string): string {
+    const clean = item.replace(/\s*\([^)]*\)\s*$/g, "").trim();
+    const secretMarker = item.match(/\([^)]*(?:Secret|Only\s+\w+\s+knows)[^)]*\)/i);
+    if (secretMarker) {
+        return `${clean} (${newStatus}, ${secretMarker[1].replace(/^\(\s*/, "").replace(/\s*\)$/, "")})`;
+    }
+    return `${clean} (${newStatus})`;
+}
+
+function completeMeetingThreadItems(thread: string, npcLine: string, currentThread: string): string {
+    const items = thread
+        .split(/\s*;\s*/g)
+        .map(cleanFragment)
+        .filter(Boolean);
+    const result = items.map((item) =>
+        isMeetingThreadItemComplete(item, npcLine, currentThread)
+            ? replaceStatusTag(item, "Complete")
+            : item,
+    );
+    return result.join(" ; ");
+}
+
+function isCandidateGroundedInEvidence(candidate: string, evidence: string): boolean {
+    const cleanCandidate = candidate.replace(/\([^)]*\)/g, "").trim();
+    const actionTokens = cleanCandidate
+        .toLowerCase()
+        .split(/[^a-z0-9]+/g)
+        .filter((t) => t.length > 2 && !THREAD_STOP_WORDS.has(t))
+        .filter((t) => !["meeting", "meet", "audience", "appointment", "rendezvous", "bounty"].includes(t));
+    if (actionTokens.length === 0) {
+        return true;
+    }
+    const evidenceLower = evidence.toLowerCase();
+    let matchedCount = 0;
+    for (const token of actionTokens) {
+        if (evidenceLower.includes(token)) {
+            matchedCount++;
+        }
+    }
+    const threshold = Math.max(1, Math.ceil(actionTokens.length * 0.25));
+    return matchedCount >= threshold;
+}
+
 function cleanThreadObject(value: string): string {
     return limitWords(
         cleanFragment(value)
@@ -279,6 +399,8 @@ function threadSentences(narrative: string, previousThread: string): string[] {
         .filter((sentence) => {
             return sentence.length > 0
                 && sentence.length <= 220
+                && !isThreatOrConditionalStatement(sentence)
+                && !isPastWarningStatement(sentence)
                 && (
                     containsAnyCue(sentence, THREAD_INFERENCE_CUES)
                     || sentenceCouldInferLinkedSubgoal(sentence, previousThread)
@@ -313,23 +435,47 @@ export function inferThreadFromNarrative(narrative: string, previousThread: stri
     return thread.length > 0 ? thread : null;
 }
 
-export function normalizeThreadLine(rawLine: string, previousThread: string, narrative: string): string {
+function validateCandidateItems(candidate: string, narrative: string): string {
+    const items = candidate
+        .split(/\s*;\s*/g)
+        .map(cleanFragment)
+        .filter(Boolean);
+    const validItems = items.filter((item) => {
+        if (isTerminalThreadItem(item)) {
+            return true;
+        }
+        return isCandidateGroundedInEvidence(item, narrative);
+    });
+    return validItems.join(" ; ");
+}
+
+export function normalizeThreadLine(rawLine: string, previousThread: string, narrative: string, npcLine?: string): string {
     const rawCandidate = cleanLabeledValue(rawLine, "Thread");
     const inferredThread = inferThreadFromNarrative(narrative, previousThread);
     const previousActiveThread = activeThreadOrNone(previousThread);
 
     if (isNoThreadValue(rawCandidate)) {
-        return inferredThread ?? "None";
+        const result = inferredThread ?? "None";
+        return npcLine ? completeMeetingThreadItems(result, npcLine, previousThread) : result;
     }
 
     if (isPlaceholder(rawCandidate)) {
-        return inferredThread ?? previousActiveThread;
+        const result = inferredThread ?? previousActiveThread;
+        return npcLine ? completeMeetingThreadItems(result, npcLine, previousThread) : result;
     }
 
-    const candidate = normalizeThreadValue(rawCandidate);
+    let candidate = normalizeThreadValue(rawCandidate);
 
     if (candidate.length === 0) {
-        return inferredThread ?? previousActiveThread;
+        const result = inferredThread ?? previousActiveThread;
+        return npcLine ? completeMeetingThreadItems(result, npcLine, previousThread) : result;
+    }
+
+    candidate = validateCandidateItems(candidate, narrative);
+
+    if (candidate.length === 0) {
+        const result = inferredThread ?? previousActiveThread;
+        return npcLine ? completeMeetingThreadItems(result, npcLine, previousThread) : result;
     }
 
     if (
@@ -338,16 +484,18 @@ export function normalizeThreadLine(rawLine: string, previousThread: string, nar
         && !sameText(candidate, previousActiveThread)
         && !threadChangeIsSupported(candidate, previousActiveThread, narrative)
     ) {
-        return inferredThread != null && threadChangeIsSupported(inferredThread, previousActiveThread, narrative)
+        const result = inferredThread != null && threadChangeIsSupported(inferredThread, previousActiveThread, narrative)
             ? mergeThreadInference(previousActiveThread, inferredThread)
             : previousActiveThread;
+        return npcLine ? completeMeetingThreadItems(result, npcLine, previousThread) : result;
     }
 
     if (inferredThread != null && threadShouldUseNarrativeInference(candidate, previousActiveThread, inferredThread)) {
-        return mergeThreadInference(candidate, inferredThread);
+        const merged = mergeThreadInference(candidate, inferredThread);
+        return npcLine ? completeMeetingThreadItems(merged, npcLine, previousThread) : merged;
     }
 
-    return candidate;
+    return npcLine ? completeMeetingThreadItems(candidate, npcLine, previousThread) : candidate;
 }
 
 export function normalizeThreadValue(rawValue: string): string {

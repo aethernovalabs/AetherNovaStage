@@ -17,6 +17,11 @@ export function normalizeLockedWaitingThreads(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === "string" && cleanFragment(item).length > 0);
 }
 
+export function normalizeTerminalGraceItems(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
 export function normalizeManualEditOverrides(value: unknown): AetherNovaMessageState["manualEditOverrides"] {
   if (value == null || typeof value !== "object") return undefined;
   const raw = value as Record<string, unknown>;

@@ -863,6 +863,7 @@ Location berubah jika:
     pendingNpcMemoryCommand: string | null;
     userStatus: UserStatusState;
     lockedWaitingThreads?: string[];       // Thread items with waiting/rendezvous status, persisted until resolved
+    terminalThreadGraceItems?: string[];   // Terminal items (Complete/Finished/Failed) shown once, then removed next response
     manualEditOverrides?: Record<string, string>;  // UI manual edit values, preserved across normalization
 }
 ```
@@ -873,14 +874,72 @@ Location berubah jika:
 3. **afterResponse**: State diupdate dari hasil normalisasi.
 4. **setState (swipe)**: State di-coerce dari messageState tujuan.
 
-### State Coercion (`coerceHeaderState`)
+---
+
+## 13. Thread System Updates — False Positive, Auto-Complete, dan Terminal Grace
+
+Perubahan berikut ditambahkan untuk memperbaiki bug thread inference dan thread completion.
+
+### Evidence-Bound Thread Baru
+
+Stage hanya menerima thread candidate baru dari LLM jika aksi/objek dalam candidate didukung oleh evidence terbaru (user message + narrative). Fungsi `isCandidateGroundedInEvidence()` mengekstrak action tokens dari candidate dan memeriksa apakah minimal 25% di antaranya muncul di evidence.
+
+Nama target (contoh: "Aldric") saja tidak cukup untuk validasi. Candidate harus memiliki aksi/objek yang benar-benar disebut dalam evidence.
+
+### Ancaman, Conditional, dan Past Warning Bukan Mission
+
+Kalimat yang mengandung pola berikut tidak digunakan untuk thread inference:
+- **Conditional/ancaman**: `if not`, `might have to`, `otherwise`, `or else`, `would have to`, `threatened`
+- **Past warning**: `already warned`, `had told`, `warned him before`
+
+Pola ini dideteksi oleh `isThreatOrConditionalStatement()` dan `isPastWarningStatement()` di `src/aetherNova/thread/normalizeThreadLine.ts`, yang memfilter kalimat sebelum masuk ke inference pipeline.
+
+### Meeting/Audience/Appointment Auto-Complete
+
+Stage mendeteksi thread meeting-type dan mengubah statusnya menjadi `(Complete)` secara otomatis jika salah satu kondisi terpenuhi:
+1. Target NPC sudah hadir di current NPC header
+2. Ada thread lain yang sudah `(Active)` dan mencakup event yang sama (contoh: `Audience with the Royal Family (Active)` menyerap `Meeting King Halvair and Queen Meridiane (Imminent)`)
+
+Fungsi `completeMeetingThreadItems()` mengekstrak nama NPC dari thread item (proper nouns) dan mencocokkan dengan NPC header line. Marker privasi seperti `(Secret, Only X knows)` tetap dipertahankan saat status berubah.
+
+### Terminal Grace — Satu Response Lalu Hapus
+
+Thread dengan status `Complete`, `Finished`, atau `Failed` hanya tampil satu response, lalu dihapus pada response berikutnya. Mekanisme `terminalThreadGraceItems` di state melacak item terminal yang sudah ditampilkan.
+
+- Response N: item terminal muncul di thread output, ditambahkan ke `terminalThreadGraceItems`
+- Response N+1: item sudah ada di grace → tidak ditambahkan lagi → otomatis hilang
+
+Fungsi `applyTerminalGrace()` di `src/aetherNova/response/normalizeAetherNovaResponse.ts` menangani logika ini.
+
+### Waiting Lock Release untuk Thread Selesai
+
+`applyThreadWaitingLock()` di `src/aetherNova/thread/threadWaitingLock.ts` sekarang melepas locked items jika:
+1. Item sudah terminal (Complete/Finished/Failed)
+2. Target NPC dari meeting/waiting item sudah hadir di NPC header
+
+Lock tidak akan mengembalikan thread yang sudah selesai. Thread rahasia (`Secret`, `Only X knows`) tetap dipertahankan sampai benar-benar selesai.
+
+### Ringkasan File yang Diubah
+
+| File | Perubahan |
+|------|-----------|
+| `src/aetherNova/types.ts` | Menambah `terminalThreadGraceItems?: string[]` |
+| `src/aetherNova/thread/normalizeThreadLine.ts` | Evidence grounding (`isCandidateGroundedInEvidence`), threat/conditional guard (`isThreatOrConditionalStatement`, `isPastWarningStatement`), meeting auto-complete (`completeMeetingThreadItems`, `isMeetingThreadItemComplete`), parameter `npcLine` |
+| `src/aetherNova/thread/threadWaitingLock.ts` | Release lock untuk item terminal/meeting terselesaikan |
+| `src/aetherNova/response/normalizeAetherNovaResponse.ts` | Terminal grace (`applyTerminalGrace`), NPC line passing ke thread normalization |
+| `src/aetherNova/state/coerceHeaderState.ts` | Handle `terminalThreadGraceItems` |
+| `src/aetherNova/state/stateMerge.ts` | Normalize `terminalThreadGraceItems` |
+
+---
+
+## 14. State Coercion (`coerceHeaderState`)
 Saat restore state (swipe/jump), stage menormalkan semua field:
 - Location: `normalizeLocation()` → 3-tier format.
 - Clock: `normalizeClock()` → `HH:MM`.
 - TimeOfDay: `timeOfDayForClock()` → koreksi otomatis.
 - You: `normalizeYouLine()` dengan `trustRawStatus: true`.
 - NPC: `normalizeNpcLine()`.
-- Thread: `normalizeThreadLine()`.
+- Thread: `normalizeThreadLine()` — also validates candidate items against evidence and auto-completes meeting threads.
 - Wallet: `coerceWalletState()` → parse amounts + format.
 - NPC Memory: `coerceNpcMemory()` → normalisasi entries.
 - Pending fields: dipertahankan/null sesuai kondisi.
