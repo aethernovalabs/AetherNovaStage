@@ -653,6 +653,66 @@ export function inferNpcRelationshipUpdate(
     };
 }
 
+const HIGH_VALUE_FACT_CUES = [
+    /\b(?:his name|her name|my name|their name|true name|real name)\b/i,
+    /\b(?:memory loss|amnesia|forget|forgotten|lost memories|kehilangan ingatan)\b/i,
+    /\b(?:secret|secretly|confess|confessed|confession|admit|admitted|reveal|revealed|disclose|disclosed)\b/i,
+    /\b(?:hidden\s+(?:plan|relic|treasure|weapon|passage|identity))|true\s+identity|real\s+identity\b/i,
+    /\b(?:private\s+(?:warning|promise|matter|conversation|secret))|privately\s+(?:told|warned|promised|admitted)\b/i,
+    /\b(?:threaten|threatened|threatening|plot|conspiracy|betray|betrayal|kill|assassinate|assassination)\b/i,
+    /\b(?:code\s+(?:phrase|word|signal)|password|safe\s+word)\b/i,
+    /\b(?:entrusted|entrust)\b/i,
+    /\b(?:fear\s+(?:of\s+losing|that)|afraid\s+(?:of\s+losing|that))\b/i,
+    /\b(?:promise\s+(?:to|that)|vow|oath|swear|swore)\b/i,
+];
+
+const ORDINARY_DIALOGUE_PATTERNS = [
+    /\b(?:(?:for\s+)?now|currently|right\s+now)\s+(?:we|i)\s+(?:need|have|should|must|will|want)\s+(?:to\s+)?/i,
+    /\b(?:we\s+should|we\s+need\s+to|we\s+have\s+to|we\s+must|i\s+should|i\s+need\s+to|i\s+have\s+to|i\s+must)\b/i,
+    /\b(?:meet\s+(?:with\s+)?(?:my|your|his|her|their|our|the)\s+(?:mother|father|parent|family|friend|contact|informant))/i,
+    /\b(?:go\s+to\s+the|head\s+to\s+the|come\s+to\s+the|walk\s+to\s+the|travel\s+to\s+the)\b/i,
+    /\b(?:let'?s?\s+(?:go|head|move|continue|find|see|talk|ask|meet))\b/i,
+    /\b(?:don'?t\s+worr?y|no\s+worr?ies|it'?s?\s+fine|it'?s?\s+ok(?:ay)?)\b/i,
+    /\b(?:we\s+will|i\s+will|we'?ll|i'?ll)\s+(?:see|find|look|go|come|meet|talk|ask|continue|wait)\b/i,
+];
+
+function isPrivateHighValueFact(factText: string): boolean {
+    const lower = factText.toLowerCase();
+    return HIGH_VALUE_FACT_CUES.some((cue) => cue.test(lower));
+}
+
+function isOrdinaryDialogue(factText: string): boolean {
+    const lower = factText.toLowerCase();
+    return ORDINARY_DIALOGUE_PATTERNS.some((pattern) => pattern.test(lower));
+}
+
+function isMalformedFact(factText: string): boolean {
+    const trimmed = factText.trim();
+    if (/^[:;,]\s*/.test(trimmed)) return true;
+    if ((trimmed.match(/"/g) || []).length % 2 !== 0) return true;
+    if (trimmed.length < 8) return true;
+    if (/^[""'']/.test(trimmed) || /[""'']$/.test(trimmed)) return true;
+    return false;
+}
+
+function sanitizeFact(factText: string): string {
+    let result = factText
+        .replace(/^[:;,.\s]+/, "")
+        .replace(/[""'']+/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    return result;
+}
+
+function filterOnlyKnowsFact(fact: string): string | null {
+    if (isMalformedFact(fact)) return null;
+    const sanitized = sanitizeFact(fact);
+    if (sanitized.length < 8) return null;
+    if (isOrdinaryDialogue(sanitized)) return null;
+    if (isPrivateHighValueFact(sanitized)) return sanitized;
+    return null;
+}
+
 export function inferNpcOnlyKnows(headerEntry: NpcHeaderMemoryEntry, context: string): string[] {
     const firstName = headerEntry.firstName || headerEntry.name;
     const facts: string[] = [];
@@ -681,7 +741,11 @@ export function inferNpcOnlyKnows(headerEntry: NpcHeaderMemoryEntry, context: st
         // {{user}} told/asked/informed/warned NPC about something
         const toldAbout = npcNear.match(new RegExp(`\\{\\{user\\}\\}\\s+(?:told|asked|informed|warned)\\s+${npcNameRegexSource(firstName)}\\s+(?:about|of|that)\\s+(.+?)(?:\\.|!|\\?|$)`, "i"));
         if (toldAbout != null) {
-            facts.push(`{{user}} told ${firstName}: ${cleanFactText(toldAbout[1])}`);
+            const fact = cleanFactText(toldAbout[1]);
+            const filtered = filterOnlyKnowsFact(fact);
+            if (filtered != null) {
+                facts.push(`{{user}} told ${firstName}: ${filtered}`);
+            }
         }
     }
 
@@ -716,7 +780,11 @@ export function inferNpcOnlyKnows(headerEntry: NpcHeaderMemoryEntry, context: st
         const toldPattern = new RegExp(`\\b(?:i|you|\\{\\{user\\}\\})\\s+(?:told|tell|revealed|reveal|informed|inform)\\s+(?:${npcNameRegexSource(headerEntry.name)}|${npcNameRegexSource(firstName)}|him|her|them|you)\\b\\s*(?:that\\s+)?(.{4,120})`, "i");
         const told = toldPattern.exec(sentence);
         if (told != null) {
-            facts.push(`{{user}} told ${firstName}: ${cleanFactText(told[1])}`);
+            const fact = cleanFactText(told[1]);
+            const filtered = filterOnlyKnowsFact(fact);
+            if (filtered != null) {
+                facts.push(`{{user}} told ${firstName}: ${filtered}`);
+            }
         }
     }
 

@@ -3,6 +3,76 @@ import {WEAPON_KEYWORDS, ITEM_KEYWORDS} from "../constants";
 import {escapeRegExp} from "../utils/regex";
 import {cleanFragment, sameText} from "../utils/text";
 
+const INVALID_LOCATION_VALUES = new Set(["the", "a", "an", "it", "there", "nearby", ""]);
+
+const USER_ACTION_WORDS =
+  "carr(?:y|ies|ying|ied)|hold(?:s|ing|held)?|wield(?:s|ing|ed)?|draw(?:s|ing|drew|n)?|" +
+  "pull(?:s|ed|ing)?|take(?:s|n|ing|took)?|pick(?:s|ed|ing)?\\s+up|" +
+  "wear(?:s|ing|wore)?|slip(?:s|ing|ped)?|tuck(?:s|ing|ed)?|put(?:s|ting)?|" +
+  "grip(?:s|ing|ped)?|grasp(?:s|ing|ped)?|lift(?:s|ing|ed)?|grab(?:s|ing|bed)?|" +
+  "snatch(?:es|ing|ed)?";
+
+const LOCATION_RING_PATTERNS = [
+  /\bUpper Ring\b/i, /\bLower Ring\b/i, /\bInner Ring\b/i, /\bOuter Ring\b/i,
+  /\bMiddle Ring\b/i, /\bRoyal Ring\b/i, /\bNoble Ring\b/i, /\bMarket Ring\b/i,
+  /\bTemple Ring\b/i, /\bCity Ring\b/i, /\bRing District\b/i, /\bRing Road\b/i,
+  /\bRing Avenue\b/i, /\bRing Gate\b/i,
+];
+
+const LOCATION_CONTEXT_WORDS = /\b(?:passed\s+through|entered|arrived\s+at|moved\s+into|walked\s+into|through\s+the\s+archway|streets|district|avenue|architecture|marble|crowds|buildings|ring\s+of\s+the\s+city)\b/i;
+
+function isValidLocationValue(location: string): boolean {
+  const clean = cleanFragment(location).toLowerCase();
+  return clean.length > 2 && !INVALID_LOCATION_VALUES.has(clean);
+}
+
+function hasUserOwnership(context: string, itemName: string): boolean {
+  const lower = context.toLowerCase();
+  const item = itemName.toLowerCase();
+  const itemEscaped = escapeRegExp(item);
+
+  if (new RegExp(`(?:\\{\\{user\\}\\}'s|your)\\s+(?:\\w+\\s+){0,3}${itemEscaped}\\b`, "i").test(lower)) return true;
+  if (new RegExp(`\\b(?:you|\\{\\{user\\}\\})\\s+(?:${USER_ACTION_WORDS})\\s+(?:the|an?|that|this|a)\\s+${itemEscaped}\\b`, "i").test(lower)) return true;
+  if (new RegExp(`${itemEscaped}\\s+(?:at|on|in|around|behind|across|upon)\\s+(?:your|\\{\\{user\\}\\}'s)\\b`, "i").test(lower)) return true;
+  return false;
+}
+
+function hasNpcOwnership(context: string, itemName: string): boolean {
+  const lower = context.toLowerCase();
+  const item = itemName.toLowerCase();
+  const itemEscaped = escapeRegExp(item);
+
+  const pronounAfter = new RegExp(`${itemEscaped}\\s+(?:\\w+\\s+){0,5}(?:her|his|their|its)\\s+`, "i");
+  if (pronounAfter.test(lower)) {
+    const nearbyUser = new RegExp(`\\{\\{user\\}\\}\\s+(?:\\w+\\s+){0,5}${itemEscaped}`, "i").test(lower)
+      || new RegExp(`\\byou\\s+(?:\\w+\\s+){0,5}${itemEscaped}`, "i").test(lower);
+    if (!nearbyUser) return true;
+  }
+
+  const pronounBefore = new RegExp(`\\b(?:her|his|their|its)\\s+(?:\\w+\\s+){0,2}${itemEscaped}\\b`, "i");
+  if (pronounBefore.test(lower)) {
+    const nearbyUser = new RegExp(`\\{\\{user\\}\\}\\s+(?:\\w+\\s+){0,5}${itemEscaped}`, "i").test(lower)
+      || new RegExp(`\\byou\\s+(?:\\w+\\s+){0,5}${itemEscaped}`, "i").test(lower);
+    if (!nearbyUser) return true;
+  }
+
+  const namePossessive = new RegExp(`\\b\\w+'s\\s+${itemEscaped}\\b`, "i");
+  if (namePossessive.test(lower)) {
+    if (new RegExp(`\\{\\{user\\}\\}'s\\s+${itemEscaped}`, "i").test(lower)) return false;
+    return true;
+  }
+
+  return false;
+}
+
+function isLocationPhraseItem(context: string, itemName: string): boolean {
+  if (itemName.toLowerCase() === "ring") {
+    if (LOCATION_RING_PATTERNS.some((p) => p.test(context))) return true;
+    if (LOCATION_CONTEXT_WORDS.test(context) && new RegExp(`\\b${escapeRegExp(itemName)}\\b`, "i").test(context)) return true;
+  }
+  return false;
+}
+
 export function updateUserWeapons(
   previous: UserStatusState["weapons"],
   narrativeContext: string,
@@ -23,14 +93,17 @@ export function updateUserWeapons(
       continue;
     }
     if (existing != null) {
-      const location = extractWeaponLocation(narrativeContext, weapon);
-      if (location != null) existing.location = location;
+      if (!hasNpcOwnership(narrativeContext, weapon)) {
+        const location = extractWeaponLocation(narrativeContext, weapon);
+        if (location != null) existing.location = location;
+      }
       continue;
     }
-    const addCue = /\b(?:hold|holds|holding|carry|carries|carrying|wield|wields|wielding|draw|draws|drew|pull|pulls|pulled|grip|grips|gripping|grasp|grasps|grasping|with|and|,\s*)\b/i;
-    if (addCue.test(narrativeContext)) {
+    if (hasUserOwnership(narrativeContext, weapon) && !hasNpcOwnership(narrativeContext, weapon)) {
       const location = extractWeaponLocation(narrativeContext, weapon) || `in ${getDefaultWeaponLocation(weapon)}`;
-      weapons.push({ name: weapon, location, status: "intact" });
+      if (isValidLocationValue(location)) {
+        weapons.push({ name: weapon, location, status: "intact" });
+      }
     }
   }
 
@@ -44,7 +117,8 @@ export function extractWeaponLocation(context: string, weapon: string): string |
   );
   const match = re.exec(context);
   if (match != null) {
-    return cleanFragment(match[1]);
+    const loc = cleanFragment(match[1]);
+    return isValidLocationValue(loc) ? loc : null;
   }
   const beforeRe = new RegExp(
     `(?:in|on|at|behind|under|beneath|beside|against|across)\\s+([^.;,\\n]{2,40})\\s+${escapeRegExp(weapon)}`,
@@ -52,7 +126,8 @@ export function extractWeaponLocation(context: string, weapon: string): string |
   );
   const beforeMatch = beforeRe.exec(context);
   if (beforeMatch != null) {
-    return cleanFragment(beforeMatch[1]);
+    const loc = cleanFragment(beforeMatch[1]);
+    return isValidLocationValue(loc) ? loc : null;
   }
   return null;
 }
@@ -98,14 +173,18 @@ export function updateUserItems(
         existing.status = "removed";
         continue;
       }
-      const location = extractItemLocation(narrativeContext, item);
-      if (location != null) existing.location = location;
+      if (!hasNpcOwnership(narrativeContext, item)) {
+        const location = extractItemLocation(narrativeContext, item);
+        if (location != null) existing.location = location;
+      }
       continue;
     }
-    const addCue = /\b(?:hold|holds|holding|carry|carries|carrying|with|wear|wears|wearing|around|about)\b/i;
-    if (addCue.test(narrativeContext)) {
+    if (isLocationPhraseItem(narrativeContext, item)) continue;
+    if (hasUserOwnership(narrativeContext, item) && !hasNpcOwnership(narrativeContext, item)) {
       const location = extractItemLocation(narrativeContext, item) || `in {{user}}'s possession`;
-      items.push({ name: item, location, status: "intact" });
+      if (isValidLocationValue(location)) {
+        items.push({ name: item, location, status: "intact" });
+      }
     }
   }
 
@@ -119,7 +198,8 @@ export function extractItemLocation(context: string, item: string): string | nul
   );
   const match = re.exec(context);
   if (match != null) {
-    return cleanFragment(match[1]);
+    const loc = cleanFragment(match[1]);
+    return isValidLocationValue(loc) ? loc : null;
   }
   const beforeRe = new RegExp(
     `(?:in|on|at|behind|under|beneath|beside|against|around|about|inside)\\s+([^.;,\\n]{2,40})\\s+${escapeRegExp(item)}`,
@@ -127,7 +207,8 @@ export function extractItemLocation(context: string, item: string): string | nul
   );
   const beforeMatch = beforeRe.exec(context);
   if (beforeMatch != null) {
-    return cleanFragment(beforeMatch[1]);
+    const loc = cleanFragment(beforeMatch[1]);
+    return isValidLocationValue(loc) ? loc : null;
   }
   return null;
 }

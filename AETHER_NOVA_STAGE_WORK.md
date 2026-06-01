@@ -321,6 +321,35 @@ Jika tidak ada evidence, pertahankan state sebelumnya.
 
 Status User menyimpan senjata dan item penting yang dibawa. Item tidak boleh tiba-tiba hilang tanpa evidence. Item hanya berubah jika ada evidence jelas: ditinggalkan, diberikan ke NPC, dicuri, jatuh, terbakar, rusak, dibuang, disimpan, dipakai/habis, atau dipindahkan lokasi.
 
+#### Target-Aware Ownership Guard
+
+Weapons/items bersifat **target-aware** — hanya item/senjata yang jelas dimiliki, dipakai, atau diambil `{{user}}` yang masuk Status User.
+
+**User Ownership Anchors** (valid untuk menambah/memperbarui item):
+- `{{user}}'s [item]` atau `your [item]`
+- `you/[{{user}}] [action] [item]` — action: carry, hold, wield, draw, pull, take, pick up, wear, slip, tuck, put, grip, grasp, lift, grab, snatch
+- `[item] at/on/in/around/behind your/{{user}}'s`
+
+**NPC Ownership Rejection** (jika terdeteksi, item tidak disimpan/diperbarui):
+- `her/his/their/its [item]` — kecuali `{{user}}` adalah subjek terdekat
+- `[item] ... her/his/their/its` (possesif setelah item) — kecuali `{{user}}` adalah subjek terdekat
+- `[Nama]'s [item]` atau `[title]'s [item]`
+
+#### Location/Proper Noun False Positive Guard
+
+Item `ring` tidak diekstrak dari frasa lokasi seperti:
+- `Upper Ring`, `Lower Ring`, `Inner Ring`, `Outer Ring`, `Middle Ring`
+- `Ring District`, `Ring Road`, `Ring Avenue`, `Ring Gate`
+- Konteks lokasi/arsitektur: `passed through`, `entered`, `arrived at`, `moved into`, `walked into`, `through the archway`, `streets`, `district`, `avenue`, `architecture`, `marble`, `crowds`, `buildings`
+
+#### Invalid Location Value Guard
+
+Location hasil ekstraksi ditolak jika hanya berisi: `the`, `a`, `an`, `it`, `there`, `nearby`, atau kosong. Item/weapon baru tidak dibuat dengan location invalid; item/weapon existing tidak diperbarui dengan location invalid.
+
+#### Noun Alone Not Enough
+
+Sebutan noun saja (tanpa ownership anchor) tidak cukup untuk membuat item/weapon baru. Contoh: `ring`, `dagger`, `document`, `brooch`, `cloak`, `sword`, `coin`, `key`, `letter` — jika hanya disebut dalam narasi tanpa kepemilikan user, tidak masuk Status User.
+
 ---
 
 ## 5. NPC System (`normalizeNpcLine`)
@@ -594,7 +623,13 @@ interface NpcMemoryEntry {
      - Mood-only traits (`sad`, `happy`, `angry`, `shy`, `proud`, `wise`, dll) tidak masuk behaviorTowardUser.
   - **Relationship With {{user}}**: Array label konservatif (`stranger`, `acquaintance`, `formal`, `ally`, `friend`, `enemy`, `rival`, `subordinate`, `lover`, `romantic tension`). Hanya berubah lewat event besar.
   - **Relationship Events**: Event penting saja, maksimal 10, misalnya confession accepted, alliance formed, betrayal, oath sworn, formal employment.
-  - **OnlyKnows**: Extract fakta dari konteks sekitar nama NPC (mention `{{user}} told`, `{{user}} gave`, `{{user}} threatened`, dll).
+   - **OnlyKnows**: Extract fakta dari konteks sekitar nama NPC. Hanya fakta **high-value/private** yang disimpan. Fakta yang ditolak:
+     - Obrolan biasa, rencana umum scene (`we need to`, `we should`, `let's go`, dll.)
+     - Rencana pertemuan/route (`meet your mother`, `go to the palace`)
+     - Kalimat user yang tidak rahasia (`don't worry`, `it's fine`)
+     - Fakta yang rusak/malformed (diawali colon/koma, dangling quote, terlalu pendek)
+     - Fakta yang sudah ada di Thread
+     - Fakta valid disanitasi: leading punctuation dihapus, dangling quote dihapus, whitespace dinormalisasi.
 
 Boundary penting:
 - `currentMood` boleh berubah setiap response, tapi **tidak otomatis mengubah behavior atau relationship**.
