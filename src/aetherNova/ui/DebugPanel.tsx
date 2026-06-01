@@ -23,6 +23,14 @@ type EditableMetricField = {
     options?: string[];
 };
 
+type ConfirmRequest = {
+    title: string;
+    message: string;
+    confirmLabel: string;
+    danger?: boolean;
+    onConfirm: () => void;
+};
+
 function readMinimizedPreference(): boolean {
     try {
         return window.localStorage.getItem(DEBUG_UI_MINIMIZED_STORAGE_KEY) === "true";
@@ -57,14 +65,6 @@ function writeCollapsedNpcCards(value: Set<string>): void {
     }
 }
 
-function confirmAction(message: string): boolean {
-    try {
-        return window.confirm(message);
-    } catch {
-        return false;
-    }
-}
-
 export function AetherNovaDebugPanel({
     getSnapshot,
     onApplyCommand,
@@ -79,6 +79,7 @@ export function AetherNovaDebugPanel({
     const [snapshot, setSnapshot] = useState<DebugSnapshot>(() => getSnapshot());
     const [isMinimized, setIsMinimized] = useState<boolean>(() => readMinimizedPreference());
     const [collapsedNpcCards, setCollapsedNpcCards] = useState<Set<string>>(() => readCollapsedNpcCards());
+    const [pendingConfirm, setPendingConfirm] = useState<ConfirmRequest | null>(null);
     const npcMemoryEntries = Object.values(snapshot.state.npcMemory ?? {});
     const [editingName, setEditingName] = useState<string | null>(null);
     const [draft, setDraft] = useState<NpcMemoryDraft>(emptyNpcMemoryDraft());
@@ -153,6 +154,23 @@ export function AetherNovaDebugPanel({
         });
     };
 
+    const requestConfirm = (request: ConfirmRequest): void => {
+        setPendingConfirm(() => request);
+    };
+
+    const closeConfirm = (): void => {
+        setPendingConfirm(null);
+    };
+
+    const runPendingConfirm = (): void => {
+        const request = pendingConfirm;
+        if (request == null) {
+            return;
+        }
+        setPendingConfirm(null);
+        request.onConfirm();
+    };
+
     if (isMinimized) {
         return (
             <main className="aether-debug-shell is-minimized">
@@ -180,9 +198,12 @@ export function AetherNovaDebugPanel({
                 <div className="aether-debug-header-actions">
                     <button type="button" aria-expanded="true" onClick={toggleMinimized}>Minimize</button>
                     <button type="button" onClick={() => {
-                        if (confirmAction("Clear all debug logs?")) {
-                            setSnapshot(onClearLogs());
-                        }
+                        requestConfirm({
+                            title: "Clear Logs",
+                            message: "Clear all debug logs? State and NPC Memory will stay unchanged.",
+                            confirmLabel: "Clear Logs",
+                            onConfirm: () => setSnapshot(onClearLogs()),
+                        });
                     }}>Clear Logs</button>
                     <span className={snapshot.lastModifiedMessageChanged ? "aether-debug-pill active" : "aether-debug-pill"}>
                         {snapshot.lastModifiedMessageChanged ? "Modified" : "Idle"}
@@ -394,20 +415,29 @@ export function AetherNovaDebugPanel({
                                                     originalEntryRef.current = entry;
                                                 }}>Edit</button>
                                                 <button type="button" onClick={() => {
-                                                    if (confirmAction(`Clear OnlyKnows facts for ${entry.name}?`)) {
-                                                        setSnapshot(onApplyCommand(`npc memory clearfacts: ${entry.name}`));
-                                                    }
+                                                    requestConfirm({
+                                                        title: "Clear Facts",
+                                                        message: `Clear OnlyKnows facts for ${entry.name}?`,
+                                                        confirmLabel: "Clear Facts",
+                                                        danger: true,
+                                                        onConfirm: () => setSnapshot(onApplyCommand(`npc memory clearfacts: ${entry.name}`)),
+                                                    });
                                                 }}>Clear Facts</button>
                                                 <button className="danger" type="button" onClick={() => {
-                                                    if (!confirmAction(`Delete NPC memory for ${entry.name}? This cannot be undone.`)) {
-                                                        return;
-                                                    }
-                                                    setSnapshot(onApplyCommand(`npc memory delete: ${entry.name}`));
-                                                    removeCollapsedNpcCard(entry.name);
-                                                    if (editingName === entry.name) {
-                                                        setEditingName(null);
-                                                        setDraft(emptyNpcMemoryDraft());
-                                                    }
+                                                    requestConfirm({
+                                                        title: "Delete NPC Memory",
+                                                        message: `Delete NPC memory for ${entry.name}? This cannot be undone.`,
+                                                        confirmLabel: "Delete",
+                                                        danger: true,
+                                                        onConfirm: () => {
+                                                            setSnapshot(onApplyCommand(`npc memory delete: ${entry.name}`));
+                                                            removeCollapsedNpcCard(entry.name);
+                                                            if (editingName === entry.name) {
+                                                                setEditingName(null);
+                                                                setDraft(emptyNpcMemoryDraft());
+                                                            }
+                                                        },
+                                                    });
                                                 }}>Delete</button>
                                             </div>
                                         </div>
@@ -468,6 +498,7 @@ export function AetherNovaDebugPanel({
                             emptyText={group.emptyText}
                             defaultOpen={group.defaultOpen === true}
                             onClear={() => setSnapshot(onClearLogs(group.category))}
+                            onConfirmAction={requestConfirm}
                         />
                     ))}
                 </div>
@@ -487,6 +518,13 @@ export function AetherNovaDebugPanel({
                 <summary>Latest User Message</summary>
                 <pre>{snapshot.latestUserMessage || "No pending user message."}</pre>
             </details>
+            {pendingConfirm != null ? (
+                <ConfirmDialog
+                    request={pendingConfirm}
+                    onCancel={closeConfirm}
+                    onConfirm={runPendingConfirm}
+                />
+            ) : null}
         </main>
     );
 }
@@ -497,12 +535,14 @@ function DebugLogPanel({
     emptyText,
     defaultOpen,
     onClear,
+    onConfirmAction,
 }: {
     title: string;
     events: DebugEvent[];
     emptyText: string;
     defaultOpen: boolean;
     onClear: () => void;
+    onConfirmAction: (request: ConfirmRequest) => void;
 }): ReactElement {
     const [isOpen, setIsOpen] = useState(defaultOpen);
 
@@ -514,9 +554,12 @@ function DebugLogPanel({
                 <button type="button" onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    if (confirmAction(`Clear ${title}?`)) {
-                        onClear();
-                    }
+                    onConfirmAction({
+                        title: "Clear Log",
+                        message: `Clear ${title}?`,
+                        confirmLabel: "Clear",
+                        onConfirm: onClear,
+                    });
                 }}>Clear</button>
             </summary>
             {events.length === 0 ? (
@@ -540,6 +583,35 @@ function DebugLogPanel({
                 </ol>
             )}
         </details>
+    );
+}
+
+function ConfirmDialog({
+    request,
+    onCancel,
+    onConfirm,
+}: {
+    request: ConfirmRequest;
+    onCancel: () => void;
+    onConfirm: () => void;
+}): ReactElement {
+    return (
+        <div className="aether-confirm-overlay" role="presentation">
+            <section className="aether-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="aether-confirm-title">
+                <h2 id="aether-confirm-title">{request.title}</h2>
+                <p>{request.message}</p>
+                <div className="aether-confirm-actions">
+                    <button type="button" onClick={onCancel}>Cancel</button>
+                    <button
+                        type="button"
+                        className={request.danger === true ? "danger" : undefined}
+                        onClick={onConfirm}
+                    >
+                        {request.confirmLabel}
+                    </button>
+                </div>
+            </section>
+        </div>
     );
 }
 
