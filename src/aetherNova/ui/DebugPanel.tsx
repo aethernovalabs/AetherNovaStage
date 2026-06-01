@@ -30,6 +30,8 @@ export function AetherNovaDebugPanel({
     const [editingSection, setEditingSection] = useState<string | null>(null);
     const [editForm, setEditForm] = useState<Record<string, string>>({});
     const [editUserStatusClothing, setEditUserStatusClothing] = useState<Record<string, string>>({});
+    const [editUserWeaponsText, setEditUserWeaponsText] = useState("");
+    const [editUserItemsText, setEditUserItemsText] = useState("");
 
     useEffect(() => {
         const intervalId = window.setInterval(() => {
@@ -43,6 +45,11 @@ export function AetherNovaDebugPanel({
         setEditingSection(section);
         setEditForm(fields);
         setEditUserStatusClothing({});
+        if (section === "userStatus") {
+            const s = snapshot.state.userStatus;
+            setEditUserWeaponsText(s.weapons.map((w) => `${w.name} — ${w.location}${w.status ? ` — ${w.status}` : ""}`).join("\n"));
+            setEditUserItemsText(s.importantItems.map((i) => `${i.name} — ${i.location}${i.status ? ` — ${i.status}` : ""}`).join("\n"));
+        }
     };
 
     const cancelEdit = (): void => {
@@ -160,7 +167,11 @@ export function AetherNovaDebugPanel({
                     <UserStatusEditor
                         status={snapshot.state.userStatus}
                         clothing={editUserStatusClothing}
+                        weaponsText={editUserWeaponsText}
+                        itemsText={editUserItemsText}
                         onClothingChange={setEditUserStatusClothing}
+                        onWeaponsChange={setEditUserWeaponsText}
+                        onItemsChange={setEditUserItemsText}
                         onCancel={cancelEdit}
                         onSave={(patch) => {
                             const clothingFields = editUserStatusClothing;
@@ -172,10 +183,21 @@ export function AetherNovaDebugPanel({
                             if (clothingFields.accessories !== undefined) {
                                 clothingPatch.accessories = clothingFields.accessories.split(",").map(s => s.trim()).filter(Boolean);
                             }
+                            const parseLine = (line: string) => {
+                                const parts = line.split("—").map((p) => p.trim());
+                                if (parts.length >= 2) {
+                                    return {name: parts[0], location: parts[1], status: parts[2] || "intact"};
+                                }
+                                return null;
+                            };
+                            const weapons = editUserWeaponsText.split("\n").map(parseLine).filter((w): w is NonNullable<typeof w> => w != null);
+                            const importantItems = editUserItemsText.split("\n").map(parseLine).filter((i): i is NonNullable<typeof i> => i != null);
                             saveEdit({
                                 userStatusPatch: {
                                     ...patch,
                                     clothing: {...snapshot.state.userStatus.clothing, ...clothingPatch},
+                                    weapons,
+                                    importantItems,
                                 }
                             });
                         }}
@@ -510,13 +532,21 @@ function EditableMetric({
 function UserStatusEditor({
     status,
     clothing,
+    weaponsText,
+    itemsText,
     onClothingChange,
+    onWeaponsChange,
+    onItemsChange,
     onCancel,
     onSave,
 }: {
     status: UserStatusState;
     clothing: Record<string, string>;
+    weaponsText: string;
+    itemsText: string;
     onClothingChange: (c: Record<string, string>) => void;
+    onWeaponsChange: (v: string) => void;
+    onItemsChange: (v: string) => void;
     onCancel: () => void;
     onSave: (patch: Partial<UserStatusState>) => void;
 }): ReactElement {
@@ -527,8 +557,6 @@ function UserStatusEditor({
     const footwear = clothing.footwear ?? status.clothing.footwear ?? "";
     const outerwear = clothing.outerwear ?? status.clothing.outerwear ?? "";
     const accessories = clothing.accessories ?? (status.clothing.accessories ?? []).join(", ");
-    const weaponsText = status.weapons.map((w) => `${w.name} — ${w.location}${w.status ? ` — ${w.status}` : ""}`).join("\n");
-    const itemsText = status.importantItems.map((i) => `${i.name} — ${i.location}${i.status ? ` — ${i.status}` : ""}`).join("\n");
 
     return (
         <div className="aether-user-status-editor">
@@ -564,7 +592,7 @@ function UserStatusEditor({
                 <span className="aether-user-status-label">Weapons (one per line):</span>
                 <textarea
                     value={weaponsText}
-                    onChange={() => {}}
+                    onChange={(e) => onWeaponsChange(e.target.value)}
                     placeholder="name — location — status"
                     rows={3}
                 />
@@ -573,7 +601,7 @@ function UserStatusEditor({
                 <span className="aether-user-status-label">Important Items (one per line):</span>
                 <textarea
                     value={itemsText}
-                    onChange={() => {}}
+                    onChange={(e) => onItemsChange(e.target.value)}
                     placeholder="name — location — status"
                     rows={3}
                 />
