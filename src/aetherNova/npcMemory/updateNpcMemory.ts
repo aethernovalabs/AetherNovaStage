@@ -20,6 +20,7 @@ import {
     completeNpcMemoryName,
     isEmptyNpcMemoryValue,
     formatNpcMemoryForPrompt,
+    isPersistableNpcMemoryName,
 } from "./npcMemoryHelpers";
 import {
     inferNpcRoleTitle,
@@ -82,7 +83,7 @@ export function coerceNpcMemory(rawMemory: unknown, fallbackMemory: NpcMemorySto
 
     for (const entry of Object.values(fallbackMemory)) {
         const normalized = normalizeNpcMemoryEntry(entry);
-        if (normalized != null) {
+        if (normalized != null && isPersistableNpcMemoryName(normalized.name)) {
             next[npcMemoryKey(normalized.name)] = normalized;
         }
     }
@@ -93,7 +94,7 @@ export function coerceNpcMemory(rawMemory: unknown, fallbackMemory: NpcMemorySto
 
     for (const value of Object.values(rawMemory as Record<string, unknown>)) {
         const normalized = normalizeNpcMemoryEntry(value);
-        if (normalized != null) {
+        if (normalized != null && isPersistableNpcMemoryName(normalized.name)) {
             next[npcMemoryKey(normalized.name)] = normalized;
         }
     }
@@ -141,6 +142,13 @@ export function updateNpcMemory(previousMemory: NpcMemoryStore, npcLine: string,
         const previous = existingKey == null ? null : next[existingKey];
 
         const canon = findNpcCanonByNameOrAlias(headerEntry.name);
+
+        if (canon == null && !isPersistableNpcMemoryName(headerEntry.name)) {
+            if (existingKey != null) {
+                delete next[existingKey];
+            }
+            continue;
+        }
 
         const name = canon != null ? canon.name : completeNpcMemoryName(headerEntry.name, previous, next);
         const key = npcMemoryKey(name);

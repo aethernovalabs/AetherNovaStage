@@ -208,6 +208,145 @@ export function isEmptyNpcMemoryValue(value: unknown): boolean {
   );
 }
 
+const GENERIC_NPC_BLOCKLIST = new Set([
+    "page boy",
+    "palace guards",
+    "palace guard",
+    "royal guards",
+    "royal guard",
+    "city guards",
+    "city guard",
+    "handmaidens",
+    "handmaiden",
+    "nobles",
+    "noble",
+    "servants",
+    "servant",
+    "crowd",
+    "villagers",
+    "villager",
+    "merchants",
+    "merchant",
+    "messenger",
+    "herald",
+    "attendant",
+    "patrol",
+    "escorts",
+    "escort",
+    "old merchant",
+    "royal herald",
+    "a palace guard",
+    "the herald",
+    "a messenger",
+    "the guard",
+    "the guards",
+    "aldric's guard",
+    "a guard",
+    "a palace guard",
+]);
+
+const GENERIC_NPC_WORDS = new Set([
+    "king",
+    "queen",
+    "prince",
+    "princess",
+    "emperor",
+    "empress",
+    "lord",
+    "lady",
+    "duke",
+    "duchess",
+    "sir",
+    "captain",
+    "commander",
+    "general",
+    "colonel",
+    "sergeant",
+    "minister",
+    "priest",
+    "priestess",
+    "knight",
+    "knights",
+    "guard",
+    "guards",
+    "soldier",
+    "soldiers",
+    "merchant",
+    "merchants",
+    "broker",
+    "informant",
+    "innkeeper",
+    "herald",
+    "page",
+    "messenger",
+    "attendant",
+    "patrol",
+    "escort",
+    "escorts",
+    "servant",
+    "servants",
+    "maid",
+    "maids",
+    "handmaiden",
+    "handmaidens",
+    "noble",
+    "nobles",
+    "crowd",
+    "villager",
+    "villagers",
+    "old",
+    "young",
+    "royal",
+    "palace",
+    "city",
+    "town",
+    "village",
+    "master",
+    "mistress",
+    "apprentice",
+    "acolyte",
+    "man",
+    "woman",
+    "boy",
+    "girl",
+    "men",
+    "women",
+    "child",
+    "children",
+    "a",
+    "an",
+    "the",
+]);
+
+export function isPersistableNpcMemoryName(name: string): boolean {
+    const clean = cleanNpcMemoryName(name);
+    if (clean.length === 0) {
+        return false;
+    }
+    if (/x\d+/i.test(clean)) {
+        return false;
+    }
+
+    const lower = clean.toLowerCase();
+    if (GENERIC_NPC_BLOCKLIST.has(lower)) {
+        return false;
+    }
+
+    const words = clean.split(/\s+/).filter(Boolean);
+    if (words.length < 2) {
+        return false;
+    }
+
+    for (const word of words) {
+        const w = word.toLowerCase();
+        if (!GENERIC_NPC_WORDS.has(w)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 export function formatNpcMemoryForPrompt(entry: NpcMemoryEntry, includeFull: boolean): string {
     const fields: string[] = [
         `Name: ${entry.name}`,

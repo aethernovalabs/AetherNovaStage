@@ -674,6 +674,53 @@ Boundary penting:
 - `relationshipWithUser` boleh punya lebih dari satu label, contoh `ally, suspicious`.
 - NPC tidak hadir di header → behaviorScores dan behaviorTowardUser tidak berubah.
 
+### NPC-Specific Mood Evidence
+
+Stage menggunakan NPC-specific context untuk mood inference, bukan full narrative context. Setiap NPC hanya dipengaruhi oleh evidence yang relevan untuk NPC tersebut.
+
+**Sumber evidence untuk NPC tertentu:**
+- Header status milik NPC tersebut saja (bukan NPC lain).
+- Kalimat/paragraf yang menyebut nama NPC atau alias.
+- Dialogue lines dengan speaker NPC tersebut.
+- Action beats yang jelas melekat ke NPC tersebut.
+
+**Cara kerja:**
+- `buildNpcSpecificEvidenceContext()` memfilter narasi untuk setiap NPC.
+- Hanya sentences yang menyebut nama NPC atau alias yang masuk ke konteks mood NPC tersebut.
+- Dialogue lines diekstrak per speaker, hanya milik NPC yang dianalisis.
+- Header status dari NPC A tidak mempengaruhi mood NPC B.
+- Dialogue speaker NPC A tidak mempengaruhi mood NPC B.
+
+**Contoh:** Dalam scene throne hall dengan Halvair, Meridiane, Aveline:
+- `Halvair's jaw tightened` hanya masuk evidence Halvair.
+- `Queen Meridiane's eyebrow lifted` hanya masuk evidence Meridiane.
+- `Aveline: "Father. I have brought him as agreed."` hanya masuk evidence Aveline.
+- Mencegah seluruh NPC menerima mood tags yang identik.
+
+### Generic/Group NPC Memory Ignore
+
+NPC generic atau group tidak dipersist ke `npcMemory`.
+
+**Rule:**
+- Generic/group NPC boleh muncul di header, tapi tidak dibuat memory permanen.
+- Hanya canon NPC atau NPC dengan nama personal jelas yang dipersist.
+- Role-only NPC tanpa personal name diabaikan.
+- `coerceNpcMemory()` membersihkan entry generic yang sudah ada.
+
+**Contoh yang diabaikan (tidak masuk npcMemory):**
+- `Palace Guards x6`, `Page Boy`, `Royal Guards`
+- `City Guards x4`, `Handmaidens`, `Nobles`, `Servants`
+- `A Palace Guard`, `The Herald`, `A Messenger`
+- `Old Merchant`, `Aldric's Guard`
+
+**Contoh yang tetap dipersist:**
+- `Aveline Montreval`, `Halvair Montreval`, `Meridiane Montreval` (canon)
+- `Captain Rowan Vale`, `Guard Rowan` (nama personal jelas)
+
+**Helper:**
+- `isPersistableNpcMemoryName(name)` mengecek apakah nama NPC layak dipersist.
+- Filter diterapkan di `updateNpcMemory()` dan `coerceNpcMemory()`.
+
 ### Injection Rules (`buildNpcMemoryDirections`)
 Hanya NPC memory context yang diinject ke prompt LLM. Header state (`Location`, `Time`, `You`, `NPC`, `Thread`, `Wallet`) tidak diinject — hanya disimpan internal stage untuk koreksi header respons LLM.
 

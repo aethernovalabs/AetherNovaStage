@@ -417,6 +417,52 @@ function userActionTargetsNpc(name: string, context: string, actionSource: strin
         || new RegExp(`\\b${targetSource}\\b[^.!?\\n]{0,40}\\b(?:was|is|had been|has been)\\s+${actionSource}\\b`, "i").test(context);
 }
 
+function extractNpcDialogueFromNarrative(npcName: string, aliases: string[], narrative: string): string[] {
+    const dialogueLines: string[] = [];
+    const searchNames = [npcName, ...aliases].filter((n) => n.length > 0);
+
+    for (const name of searchNames) {
+        const escaped = npcNameRegexSource(name);
+        const pattern = new RegExp(
+            `(?:\\*{0,2})\\b${escaped}\\b(?:\\*{0,2})\\s*:\\s*(?:"[^"]*"|'[^']*')`,
+            "gi",
+        );
+        let match: RegExpExecArray | null;
+        while ((match = pattern.exec(narrative)) !== null) {
+            dialogueLines.push(match[0]);
+        }
+    }
+
+    return dialogueLines;
+}
+
+function buildNpcSpecificEvidenceContext(params: {
+    npcName: string;
+    aliases: string[];
+    npcHeaderStatus: string;
+    narrative: string;
+}): string {
+    const {npcName, aliases, npcHeaderStatus, narrative} = params;
+    const searchNames = [npcName, ...aliases].filter((n) => n.length > 0);
+
+    const sentences = npcMemorySentences(narrative);
+    const relatedSentences = sentences.filter((sentence) =>
+        searchNames.some((name) =>
+            new RegExp(`\\b${npcNameRegexSource(name)}\\b`, "i").test(sentence),
+        ),
+    );
+
+    const dialogueLines = extractNpcDialogueFromNarrative(npcName, aliases, narrative);
+
+    const parts = [
+        npcHeaderStatus,
+        ...relatedSentences,
+        ...dialogueLines,
+    ].filter((part) => part.length > 0);
+
+    return parts.join("\n");
+}
+
 function normalizeRoleTitle(value: string): string {
     return cleanFragment(value)
         .toLowerCase()
@@ -517,18 +563,27 @@ export function inferNpcPhysicalExtra(headerEntry: NpcHeaderMemoryEntry, previou
 }
 
 export function inferNpcMood(headerEntry: NpcHeaderMemoryEntry, previous: NpcMemoryEntry | null, context: string): MoodInference {
-    const socialContext = npcSocialContext(headerEntry, context);
+    const npcName = headerEntry.name;
+    const aliases = [firstNameOf(npcName)].filter((n) => n.length > 0 && n.toLowerCase() !== npcName.toLowerCase());
+
+    const npcContext = buildNpcSpecificEvidenceContext({
+        npcName,
+        aliases,
+        npcHeaderStatus: headerEntry.status ?? "",
+        narrative: context,
+    });
+
+    const socialContext = npcSocialContext(headerEntry, npcContext);
     const searchable = socialContext.toLowerCase();
-    const fullContext = context.toLowerCase();
     const statusText = (headerEntry.status ?? "").toLowerCase();
 
-    const traits = extractTraitsFromText(headerEntry.name, context, headerEntry.status ?? "", {});
-    const suppressedTags = detectSuppressedMoodTags(fullContext);
+    const traits = extractTraitsFromText(headerEntry.name, npcContext, headerEntry.status ?? "", {});
+    const suppressedTags = detectSuppressedMoodTags(npcContext);
 
     const moodLabels = traits
         .filter((t) => !detectNegation(searchable, t.label))
         .filter((t) => !suppressedTags.has(t.label))
-        .filter((t) => hasRequiredEvidence(t.label, fullContext))
+        .filter((t) => hasRequiredEvidence(t.label, npcContext))
         .map((t) => t.label);
 
     const toneMap: Record<string, string> = {
@@ -601,7 +656,7 @@ export function inferNpcMood(headerEntry: NpcHeaderMemoryEntry, previous: NpcMem
     const statusMoodMatch = /\b(angry|annoyed|sad|happy|calm|curious|nervous|excited|bored|tired|confused|worried|relaxed|serious|playful|shy|cold|distant|possessive|defensive|suspicious|jealous|proud|teasing|watchful|cautious|authoritative|commanding|stern|controlled|composed)\b/i.exec(statusText);
     if (statusMoodMatch != null) {
         const statusLabel = statusMoodMatch[1].toLowerCase();
-        if (!suppressedTags.has(statusLabel) && hasRequiredEvidence(statusLabel, fullContext)) {
+        if (!suppressedTags.has(statusLabel) && hasRequiredEvidence(statusLabel, npcContext)) {
             return {currentMood: statusLabel, lastInteractionTone: tone};
         }
     }
