@@ -1,7 +1,7 @@
 import type {TimeOfDay, UserStatusState, AetherNovaMessageState} from "./types";
 
 export const CLOCK_PATTERN = /\b([01]?\d|2[0-3]):([0-5]\d)\b/;
-export const TIME_OF_DAYS: TimeOfDay[] = ["Morning", "Afternoon", "Evening", "Night"];
+export const TIME_OF_DAYS: TimeOfDay[] = ["Morning", "Midday", "Afternoon", "Evening", "Night"];
 export const HEADER_DIVIDER = "***";
 export const NPC_MEMORY_COMMAND_PATTERN = /(?:[\[【]\s*)?npc[\s_-]*memory\s+((?:delete|remove|clearfacts|clear\s+facts|clear|set|update|add\s+fact|addfact|relation\s+event|relationship\s+event|relationship|relation|behavior\s+score|behavior|mood|show)\s*:?\s*[^\n\]】]+)(?:[\]】])?/gi;
 

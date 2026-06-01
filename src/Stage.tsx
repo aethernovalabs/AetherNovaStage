@@ -231,19 +231,20 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
     }
 
     private applyStateEdit(patch: Partial<AetherNovaMessageState & {userStatusPatch?: Partial<UserStatusState>}>): DebugSnapshot {
+        const {userStatusPatch, ...statePatch} = patch;
         this.state = {
             ...this.state,
-            ...patch,
+            ...statePatch,
             manualEditOverrides: {
                 ...(this.state.manualEditOverrides ?? {}),
-                ...(patch.location != null ? {location: patch.location} : {}),
-                ...(patch.you != null ? {you: patch.you} : {}),
-                ...(patch.npc != null ? {npc: patch.npc} : {}),
-                ...(patch.thread != null ? {thread: patch.thread} : {}),
-                ...(patch.wallet != null ? {wallet: patch.wallet} : {}),
+                ...(statePatch.location != null ? {location: statePatch.location} : {}),
+                ...(statePatch.you != null ? {you: statePatch.you} : {}),
+                ...(statePatch.npc != null ? {npc: statePatch.npc} : {}),
+                ...(statePatch.thread != null ? {thread: statePatch.thread} : {}),
+                ...(statePatch.wallet != null ? {wallet: statePatch.wallet} : {}),
             },
-            userStatus: patch.userStatusPatch
-                ? deepMergeUserStatus(this.state.userStatus, patch.userStatusPatch)
+            userStatus: userStatusPatch
+                ? deepMergeUserStatus(this.state.userStatus, userStatusPatch)
                 : this.state.userStatus,
         };
         this.pushDebugEvent("lifecycle", "uiEdit", `Manual edit applied: ${Object.keys(patch).join(", ")}`);
@@ -299,5 +300,4 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         return this.createDebugSnapshot();
     }
 }
-
 

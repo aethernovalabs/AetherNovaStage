@@ -19,7 +19,11 @@ export function timeOfDayForClock(clock: string): TimeOfDay {
         return "Morning";
     }
 
-    if (hour >= 12 && hour <= 16) {
+    if (hour >= 12 && hour <= 14) {
+        return "Midday";
+    }
+
+    if (hour >= 15 && hour <= 16) {
         return "Afternoon";
     }
 

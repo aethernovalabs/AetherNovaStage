@@ -4,7 +4,7 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: #f5f2ea;
-  background: #121416;
+  background: transparent;
 }
 
 * {
@@ -17,7 +17,7 @@ html, body, #root {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #121416 !important;
+  background: transparent !important;
 }
 
 .outer,
@@ -32,12 +32,61 @@ html, body, #root {
   height: 100%;
   min-height: 100vh;
   overflow-y: auto;
-  padding: 14px;
+  padding: 12px;
   color: #f5f2ea;
   background:
-    linear-gradient(180deg, rgba(18, 20, 22, 0.98), rgba(22, 25, 26, 0.98)),
-    #121416 !important;
+    linear-gradient(180deg, rgba(13, 16, 18, 0.98), rgba(20, 23, 22, 0.98)),
+    #0f1213 !important;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.aether-debug-shell.is-minimized {
+  position: fixed;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  z-index: 10;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  overflow: visible;
+  background: transparent !important;
+}
+
+.aether-debug-minibar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid rgba(215, 180, 106, 0.46);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #f5f2ea;
+  background: rgba(20, 23, 22, 0.96) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.aether-debug-minibar span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aether-debug-minibar strong {
+  color: #17150e;
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: #d7b46a;
+  font-size: 0.72rem;
 }
 
 .aether-debug-header {
@@ -45,8 +94,14 @@ html, body, #root {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-bottom: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin: -12px -12px 0;
+  padding: 12px;
   border-bottom: 1px solid rgba(245, 242, 234, 0.14);
+  background: rgba(13, 16, 18, 0.96) !important;
+  backdrop-filter: blur(10px);
 }
 
 .aether-debug-header-actions {
@@ -57,6 +112,9 @@ html, body, #root {
 }
 
 .aether-debug-header-actions button,
+.aether-debug-details summary button,
+.aether-edit-trigger,
+.aether-edit-actions button,
 .aether-debug-log-panel summary button {
   min-height: 30px;
   border: 1px solid rgba(245, 242, 234, 0.16);
@@ -71,6 +129,9 @@ html, body, #root {
 }
 
 .aether-debug-header-actions button:hover,
+.aether-debug-details summary button:hover,
+.aether-edit-trigger:hover,
+.aether-edit-actions button:hover,
 .aether-debug-log-panel summary button:hover {
   border-color: rgba(215, 180, 106, 0.52);
   background: #2c302f !important;
@@ -122,8 +183,8 @@ html, body, #root {
 
 .aether-debug-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
   margin-top: 12px;
 }
 
@@ -136,7 +197,17 @@ html, body, #root {
 }
 
 .aether-debug-metric {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  align-items: start;
   padding: 10px;
+}
+
+.aether-debug-metric.editable {
+  grid-column: 1 / -1;
+  border-color: rgba(215, 180, 106, 0.34);
+  background: #171a1a !important;
 }
 
 .aether-debug-metric span,
@@ -152,11 +223,20 @@ html, body, #root {
 }
 
 .aether-debug-metric p {
+  grid-column: 1 / -1;
   margin: 4px 0 0;
   color: #f5f2ea;
   font-size: 0.86rem;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+
+.aether-edit-trigger {
+  grid-column: 2;
+  grid-row: 1;
+  min-height: 26px;
+  padding: 4px 7px;
+  font-size: 0.72rem;
 }
 
 .aether-debug-section {
@@ -230,7 +310,8 @@ html, body, #root {
 }
 
 .aether-debug-card-actions,
-.aether-debug-editor-actions {
+.aether-debug-editor-actions,
+.aether-edit-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -264,10 +345,16 @@ html, body, #root {
 
 .aether-debug-editor {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 8px;
   padding: 10px;
   border-top: 1px solid rgba(245, 242, 234, 0.1);
+}
+
+.aether-debug-editor label.wide,
+.aether-debug-editor-actions,
+.aether-edit-form label:has(textarea) {
+  grid-column: 1 / -1;
 }
 
 .aether-debug-editor label {
@@ -281,7 +368,12 @@ html, body, #root {
 }
 
 .aether-debug-editor input,
-.aether-debug-editor textarea {
+.aether-debug-editor textarea,
+.aether-edit-form input,
+.aether-edit-form select,
+.aether-edit-form textarea,
+.aether-user-status-editor input,
+.aether-user-status-editor textarea {
   width: 100%;
   border: 1px solid rgba(245, 242, 234, 0.14);
   border-radius: 6px;
@@ -293,15 +385,67 @@ html, body, #root {
   line-height: 1.35;
 }
 
-.aether-debug-editor textarea {
+.aether-debug-editor select,
+.aether-edit-form select {
+  width: 100%;
+  border: 1px solid rgba(245, 242, 234, 0.14);
+  border-radius: 6px;
+  padding: 7px 8px;
+  color: #f5f2ea;
+  background: #111314 !important;
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.aether-debug-editor textarea,
+.aether-edit-form textarea,
+.aether-user-status-editor textarea {
   min-height: 84px;
   resize: vertical;
 }
 
 .aether-debug-editor input:focus,
-.aether-debug-editor textarea:focus {
+.aether-debug-editor select:focus,
+.aether-debug-editor textarea:focus,
+.aether-edit-form input:focus,
+.aether-edit-form select:focus,
+.aether-edit-form textarea:focus,
+.aether-user-status-editor input:focus,
+.aether-user-status-editor textarea:focus {
   outline: 2px solid rgba(215, 180, 106, 0.38);
   outline-offset: 1px;
+}
+
+.aether-debug-editor-actions,
+.aether-edit-actions {
+  justify-content: flex-end;
+}
+
+.aether-edit-form {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+  padding: 10px;
+  border: 1px solid rgba(245, 242, 234, 0.1);
+  border-radius: 8px;
+  background: #101313 !important;
+}
+
+.aether-edit-form label {
+  display: grid;
+  gap: 5px;
+  color: #aeb6ac;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.aether-edit-form .aether-edit-actions {
+  grid-column: 1 / -1;
 }
 
 .aether-debug-memory-card h3 {
@@ -478,6 +622,33 @@ html, body, #root {
   line-height: 1.5;
 }
 
+.aether-user-status-editor {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  padding: 10px;
+  border-top: 1px solid rgba(245, 242, 234, 0.1);
+  background: #101313 !important;
+}
+
+.aether-user-status-editor label {
+  display: grid;
+  gap: 5px;
+}
+
+.aether-user-status-editor label.wide,
+.aether-user-status-editor .wide {
+  grid-column: 1 / -1;
+}
+
+.aether-user-status-editor label span {
+  color: #9ea69b;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
 .aether-user-status-row {
   display: flex;
   gap: 8px;
@@ -514,4 +685,63 @@ html, body, #root {
   color: #6d7b6a;
   position: absolute;
   left: -12px;
+}
+
+@media (max-width: 560px) {
+  .aether-debug-shell {
+    padding: 10px;
+  }
+
+  .aether-debug-header {
+    align-items: stretch;
+    margin: -10px -10px 0;
+    padding: 10px;
+  }
+
+  .aether-debug-header,
+  .aether-debug-header-actions {
+    flex-wrap: wrap;
+  }
+
+  .aether-debug-header-actions {
+    width: 100%;
+  }
+
+  .aether-debug-header-actions button {
+    flex: 1 1 96px;
+  }
+
+  .aether-debug-pill {
+    display: inline-flex;
+    flex: 1 1 72px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .aether-debug-grid,
+  .aether-debug-editor,
+  .aether-edit-form,
+  .aether-user-status-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .aether-debug-event-main {
+    grid-template-columns: 54px 1fr;
+  }
+
+  .aether-debug-event-main span {
+    grid-column: 1 / -1;
+  }
+
+  .aether-debug-memory-card dl {
+    grid-template-columns: 1fr;
+  }
+
+  .aether-debug-log-panel summary {
+    flex-wrap: wrap;
+  }
+
+  .aether-debug-summary-badge {
+    margin-left: 0;
+  }
 }

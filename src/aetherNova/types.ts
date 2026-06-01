@@ -1,6 +1,6 @@
 import type {Character} from "@chub-ai/stages-ts";
 
-export type TimeOfDay = "Morning" | "Afternoon" | "Evening" | "Night";
+export type TimeOfDay = "Morning" | "Midday" | "Afternoon" | "Evening" | "Night";
 
 export interface UserStatusState {
   gender: string;

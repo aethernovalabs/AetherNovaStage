@@ -12,6 +12,32 @@ import {
     formatDebugScores,
 } from "./debugUtils";
 
+const DEBUG_UI_MINIMIZED_STORAGE_KEY = "aether-nova-stage.debugUiMinimized";
+
+type EditableMetricField = {
+    key: string;
+    label: string;
+    value: string;
+    multiline?: boolean;
+    options?: string[];
+};
+
+function readMinimizedPreference(): boolean {
+    try {
+        return window.localStorage.getItem(DEBUG_UI_MINIMIZED_STORAGE_KEY) === "true";
+    } catch {
+        return false;
+    }
+}
+
+function writeMinimizedPreference(value: boolean): void {
+    try {
+        window.localStorage.setItem(DEBUG_UI_MINIMIZED_STORAGE_KEY, String(value));
+    } catch {
+        // Debug UI preference only; ignore storage failures.
+    }
+}
+
 export function AetherNovaDebugPanel({
     getSnapshot,
     onApplyCommand,
@@ -24,6 +50,7 @@ export function AetherNovaDebugPanel({
     onStateEdit: (patch: Partial<AetherNovaMessageState & {userStatusPatch?: Partial<UserStatusState>}>) => DebugSnapshot;
 }): ReactElement {
     const [snapshot, setSnapshot] = useState<DebugSnapshot>(() => getSnapshot());
+    const [isMinimized, setIsMinimized] = useState<boolean>(() => readMinimizedPreference());
     const npcMemoryEntries = Object.values(snapshot.state.npcMemory ?? {});
     const [editingName, setEditingName] = useState<string | null>(null);
     const [draft, setDraft] = useState<NpcMemoryDraft>(emptyNpcMemoryDraft());
@@ -67,6 +94,30 @@ export function AetherNovaDebugPanel({
         setEditUserStatusClothing({});
     };
 
+    const toggleMinimized = (): void => {
+        const next = !isMinimized;
+        setIsMinimized(next);
+        writeMinimizedPreference(next);
+    };
+
+    if (isMinimized) {
+        return (
+            <main className="aether-debug-shell is-minimized">
+                <button
+                    type="button"
+                    className="aether-debug-minibar"
+                    aria-expanded="false"
+                    onClick={toggleMinimized}
+                >
+                    <span>Aether Nova Stage</span>
+                    <strong>{snapshot.lastModifiedMessageChanged ? "Modified" : "Idle"}</strong>
+                    <span>{DEBUG_UI_VERSION}</span>
+                    <span>Open</span>
+                </button>
+            </main>
+        );
+    }
+
     return (
         <main className="aether-debug-shell">
             <header className="aether-debug-header">
@@ -75,6 +126,7 @@ export function AetherNovaDebugPanel({
                     <h1>Debug UI <span>{DEBUG_UI_VERSION}</span></h1>
                 </div>
                 <div className="aether-debug-header-actions">
+                    <button type="button" aria-expanded="true" onClick={toggleMinimized}>Minimize</button>
                     <button type="button" onClick={() => setSnapshot(onClearLogs())}>Clear Logs</button>
                     <span className={snapshot.lastModifiedMessageChanged ? "aether-debug-pill active" : "aether-debug-pill"}>
                         {snapshot.lastModifiedMessageChanged ? "Modified" : "Idle"}
@@ -89,7 +141,7 @@ export function AetherNovaDebugPanel({
                     editing={editingSection === "location"}
                     fields={[
                         {key: "location", label: "Main Location - Sub - Detail", value: snapshot.state.location},
-                        {key: "timeOfDay", label: "Time of Day", value: snapshot.state.timeOfDay},
+                        {key: "timeOfDay", label: "Time of Day", value: snapshot.state.timeOfDay, options: ["Morning", "Midday", "Afternoon", "Evening", "Night"]},
                         {key: "clock", label: "HH:MM", value: snapshot.state.clock},
                     ]}
                     editForm={editForm}
@@ -112,7 +164,7 @@ export function AetherNovaDebugPanel({
                     value={snapshot.state.you}
                     editing={editingSection === "you"}
                     fields={[
-                        {key: "you", label: "Gender - Race (Clothes; Position; Detail)", value: snapshot.state.you},
+                        {key: "you", label: "Gender - Race (Clothes; Position; Detail)", value: snapshot.state.you, multiline: true},
                     ]}
                     editForm={editForm}
                     onEdit={() => startEdit("you", {you: snapshot.state.you})}
@@ -125,7 +177,7 @@ export function AetherNovaDebugPanel({
                     value={snapshot.state.npc}
                     editing={editingSection === "npc"}
                     fields={[
-                        {key: "npc", label: "NPC entries", value: snapshot.state.npc},
+                        {key: "npc", label: "NPC entries", value: snapshot.state.npc, multiline: true},
                     ]}
                     editForm={editForm}
                     onEdit={() => startEdit("npc", {npc: snapshot.state.npc})}
@@ -138,7 +190,7 @@ export function AetherNovaDebugPanel({
                     value={snapshot.state.thread}
                     editing={editingSection === "thread"}
                     fields={[
-                        {key: "thread", label: "Thread items", value: snapshot.state.thread},
+                        {key: "thread", label: "Thread items", value: snapshot.state.thread, multiline: true},
                     ]}
                     editForm={editForm}
                     onEdit={() => startEdit("thread", {thread: snapshot.state.thread})}
@@ -186,7 +238,7 @@ export function AetherNovaDebugPanel({
                                 clothingPatch.accessories = clothingFields.accessories.split(",").map(s => s.trim()).filter(Boolean);
                             }
                             const parseLine = (line: string) => {
-                                const parts = line.split("—").map((p) => p.trim());
+                                const parts = line.split(/\s+(?:—|-|\|)\s+/).map((p) => p.trim());
                                 if (parts.length >= 2) {
                                     return {name: parts[0], location: parts[1], status: parts[2] || "intact"};
                                 }
@@ -495,7 +547,7 @@ function EditableMetric({
     label: string;
     value: string;
     editing: boolean;
-    fields: Array<{key: string; label: string; value: string}>;
+    fields: EditableMetricField[];
     editForm: Record<string, string>;
     onEdit: () => void;
     onCancel: () => void;
@@ -510,10 +562,27 @@ function EditableMetric({
                     {fields.map((field) => (
                         <label key={field.key}>
                             {field.label}
-                            <input
-                                value={editForm[field.key] ?? field.value}
-                                onChange={(e) => onChange({...editForm, [field.key]: e.target.value})}
-                            />
+                            {field.options != null ? (
+                                <select
+                                    value={editForm[field.key] ?? field.value}
+                                    onChange={(e) => onChange({...editForm, [field.key]: e.target.value})}
+                                >
+                                    {field.options.map((option) => (
+                                        <option key={option} value={option}>{option}</option>
+                                    ))}
+                                </select>
+                            ) : field.multiline === true ? (
+                                <textarea
+                                    value={editForm[field.key] ?? field.value}
+                                    onChange={(e) => onChange({...editForm, [field.key]: e.target.value})}
+                                    rows={3}
+                                />
+                            ) : (
+                                <input
+                                    value={editForm[field.key] ?? field.value}
+                                    onChange={(e) => onChange({...editForm, [field.key]: e.target.value})}
+                                />
+                            )}
                         </label>
                     ))}
                     <div className="aether-edit-actions">
@@ -564,58 +633,61 @@ function UserStatusEditor({
     const accessories = clothing.accessories ?? (status.clothing.accessories ?? []).join(", ");
 
     return (
-        <div className="aether-user-status-editor">
-            <div className="aether-user-status-row">
-                <span className="aether-user-status-label">Gender:</span>
+        <form className="aether-user-status-editor" onSubmit={(event) => {
+            event.preventDefault();
+            onSave({gender, apparentRace: race});
+        }}>
+            <label>
+                <span>Gender</span>
                 <input value={gender} onChange={(e) => setGender(e.target.value)} />
-            </div>
-            <div className="aether-user-status-row">
-                <span className="aether-user-status-label">Race:</span>
+            </label>
+            <label>
+                <span>Race</span>
                 <input value={race} onChange={(e) => setRace(e.target.value)} />
-            </div>
-            <div className="aether-user-status-section">
-                <span className="aether-user-status-label">Upper:</span>
+            </label>
+            <label>
+                <span>Upper</span>
                 <input value={upper} onChange={(e) => onClothingChange({...clothing, upper: e.target.value})} />
-            </div>
-            <div className="aether-user-status-section">
-                <span className="aether-user-status-label">Lower:</span>
+            </label>
+            <label>
+                <span>Lower</span>
                 <input value={lower} onChange={(e) => onClothingChange({...clothing, lower: e.target.value})} />
-            </div>
-            <div className="aether-user-status-section">
-                <span className="aether-user-status-label">Footwear:</span>
+            </label>
+            <label>
+                <span>Footwear</span>
                 <input value={footwear} onChange={(e) => onClothingChange({...clothing, footwear: e.target.value})} />
-            </div>
-            <div className="aether-user-status-section">
-                <span className="aether-user-status-label">Outerwear:</span>
+            </label>
+            <label>
+                <span>Outerwear</span>
                 <input value={outerwear} onChange={(e) => onClothingChange({...clothing, outerwear: e.target.value})} />
-            </div>
-            <div className="aether-user-status-section">
-                <span className="aether-user-status-label">Accessories:</span>
+            </label>
+            <label className="wide">
+                <span>Accessories</span>
                 <input value={accessories} onChange={(e) => onClothingChange({...clothing, accessories: e.target.value})} />
-            </div>
-            <div className="aether-user-status-section">
-                <span className="aether-user-status-label">Weapons (one per line):</span>
+            </label>
+            <label className="wide">
+                <span>Weapons</span>
                 <textarea
                     value={weaponsText}
                     onChange={(e) => onWeaponsChange(e.target.value)}
-                    placeholder="name — location — status"
-                    rows={3}
+                    placeholder="name | location | status"
+                    rows={4}
                 />
-            </div>
-            <div className="aether-user-status-section">
-                <span className="aether-user-status-label">Important Items (one per line):</span>
+            </label>
+            <label className="wide">
+                <span>Important Items</span>
                 <textarea
                     value={itemsText}
                     onChange={(e) => onItemsChange(e.target.value)}
-                    placeholder="name — location — status"
-                    rows={3}
+                    placeholder="name | location | status"
+                    rows={4}
                 />
-            </div>
-            <div className="aether-edit-actions">
-                <button type="button" onClick={() => onSave({gender, apparentRace: race})}>Save</button>
+            </label>
+            <div className="aether-edit-actions wide">
+                <button type="submit">Save</button>
                 <button type="button" onClick={onCancel}>Cancel</button>
             </div>
-        </div>
+        </form>
     );
 }
 

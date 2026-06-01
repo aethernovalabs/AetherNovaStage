@@ -54,6 +54,7 @@ state_schema:
         type: string
         enum:
           - Morning
+          - Midday
           - Afternoon
           - Evening
           - Night

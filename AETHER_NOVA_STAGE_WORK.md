@@ -198,9 +198,11 @@ Cara kerja:
 - Ekstrak `HH:MM` dari location line menggunakan regex `CLOCK_PATTERN`.
 - **Time of Day dikoreksi OTOMATIS** berdasarkan jam:
   - `05:00-11:59` → Morning
-  - `12:00-16:59` → Afternoon
+  - `12:00-14:59` → Midday
+  - `15:00-16:59` → Afternoon
   - `17:00-20:59` → Evening
   - `21:00-04:59` → Night
+- Jika AI menulis `Afternoon | 13:12`, stage paksa jadi `Midday | 13:12`.
 - Jika AI menulis `Evening | 23:10`, stage paksa jadi `Night | 23:10`.
 - Jika tidak ada clock dalam response, stage pakai clock dari state sebelumnya.
 
@@ -793,12 +795,13 @@ Stage melakukan format narasi ringan:
 
 ## 10. Debug UI System
 
-Debug UI (di `Stage.tsx` render) saat ini: **Debug UI V1.7**.
+Debug UI (di `Stage.tsx` render) saat ini: **Debug UI V1.8**.
 
 Debug UI menampilkan:
 - Current state: Location, Time, You (compact), NPC, Thread, Wallet, Pending NPC Debug, Pending Memory Command.
-- **Edit Buttons**: Setiap field state utama (Location, You, NPC, Thread, Wallet, Status User) memiliki tombol **Edit**. Saat diklik, field berubah menjadi form input dengan value saat ini. User bisa mengubah value lalu **Save** (menerapkan edit ke state + mencatat di `manualEditOverrides`) atau **Cancel** (kembali ke tampilan baca).
-- **Status User Editor**: Saat Edit Status User diklik, panel detail berubah menjadi form dengan input untuk Gender, Race, dan setiap slot pakaian (Upper, Lower, Footwear, Outerwear, Accessories). Weapons dan Important Items ditampilkan sebagai textarea read-only.
+- **Minimize UI**: Header Debug UI memiliki tombol **Minimize**. Saat ditekan, panel berubah menjadi mini bar ringkas di bagian bawah frame dengan status `Idle/Modified`, versi UI, dan tombol **Open** untuk membuka kembali. Preferensi minimize disimpan di `localStorage` key `aether-nova-stage.debugUiMinimized`, sehingga mobile user tidak selalu tertutup panel debug besar.
+- **Edit Buttons**: Setiap field state utama (Location, You, NPC, Thread, Wallet, Status User) memiliki tombol **Edit**. Saat diklik, kartu edit melebar ke seluruh grid dan berubah menjadi form yang lebih nyaman. Field pendek memakai input, `timeOfDay` memakai select (`Morning/Midday/Afternoon/Evening/Night`), dan field panjang seperti `You`, `NPC`, dan `Thread` memakai textarea. User bisa mengubah value lalu **Save** (menerapkan edit ke state + mencatat di `manualEditOverrides`) atau **Cancel** (kembali ke tampilan baca).
+- **Status User Editor**: Saat Edit Status User diklik, panel detail berubah menjadi form grid dengan input untuk Gender, Race, dan setiap slot pakaian (Upper, Lower, Footwear, Outerwear, Accessories). Weapons dan Important Items bisa diedit lewat textarea dengan format `name | location | status`; parser juga menerima pemisah `—` atau `-`.
 - Manual edits yang dilakukan melalui UI disimpan di `manualEditOverrides` dan dipertahankan saat swipe/jump serta melalui normalisasi.
 - NPC Memory cards: semua NPC yang tersimpan dengan detail lengkap.
 - Debug Logs terpisah per kategori:
@@ -822,7 +825,7 @@ Debug UI juga bisa mengatur NPC Memory:
 
 Setiap aksi UI memakai command internal `npc memory ...`, mengubah state internal langsung, dan mengisi `pendingNpcMemoryCommand` agar efeknya diterapkan ulang pada lifecycle berikutnya.
 
-Debug diaktifkan dengan `position: ADJACENT` di `chub_meta.yaml`.
+Debug diaktifkan dengan `position: ADJACENT` di `public/chub_meta.yaml`.
 Untuk production, ubah ke `position: NONE`.
 
 ### NPC Debug Query
@@ -851,7 +854,7 @@ Location berubah jika:
 ```ts
 {
     location: string;
-    timeOfDay: "Morning" | "Afternoon" | "Evening" | "Night";
+    timeOfDay: "Morning" | "Midday" | "Afternoon" | "Evening" | "Night";
     clock: string;
     you: string;
     npc: string;

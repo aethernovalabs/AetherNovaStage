@@ -1,7 +1,7 @@
 import type {AetherNovaMessageState} from "../types";
 
 export const DEBUG_STORAGE_KEY = "aether-nova-stage.pendingNpcDebugQuery";
-export const DEBUG_UI_VERSION = "V1.7";
+export const DEBUG_UI_VERSION = "V1.8";
 
 export type DebugCategory = "lifecycle" | "npcMemory" | "headerFormat" | "narrativeFormat" | "walletThread" | "system" | "injection";
 
