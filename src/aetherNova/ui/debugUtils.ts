@@ -2,6 +2,25 @@ import type {AetherNovaMessageState, NpcMemoryEntry, NpcMemoryStore, UserStatusS
 import type {NpcMemoryDraft} from "./types";
 import {DEBUG_STORAGE_KEY} from "./types";
 
+export function computeDirtyFields(draft: NpcMemoryDraft, original: NpcMemoryEntry | null): Set<string> {
+    const dirty = new Set<string>();
+    if (original == null) {
+        return dirty;
+    }
+    if (draft.name !== original.name) dirty.add("name");
+    if (draft.roleTitle !== original.roleTitle) dirty.add("roleTitle");
+    if (draft.race !== original.race) dirty.add("race");
+    if (draft.physicalExtra !== original.physicalExtra) dirty.add("physicalExtra");
+    if (draft.currentMood !== original.currentMood) dirty.add("currentMood");
+    if (draft.lastInteractionTone !== (original.lastInteractionTone ?? "")) dirty.add("lastInteractionTone");
+    if (draft.behaviorTowardUserText !== original.behaviorTowardUser.join(", ")) dirty.add("behaviorTowardUserText");
+    if (draft.behaviorScoresText !== Object.entries(original.behaviorScores).map(([l, s]) => `${l}: ${s}`).join("; ")) dirty.add("behaviorScoresText");
+    if (draft.relationshipWithUserText !== original.relationshipWithUser.join(", ")) dirty.add("relationshipWithUserText");
+    if (draft.relationshipEventsText !== original.relationshipEvents.join("; ")) dirty.add("relationshipEventsText");
+    if (draft.onlyKnowsText !== original.onlyKnows.join("; ")) dirty.add("onlyKnowsText");
+    return dirty;
+}
+
 export function emptyNpcMemoryDraft(): NpcMemoryDraft {
     return {
         name: "",
@@ -34,27 +53,50 @@ export function draftFromNpcMemory(entry: NpcMemoryEntry): NpcMemoryDraft {
     };
 }
 
-export function npcMemorySetCommand(draft: NpcMemoryDraft, targetName: string = draft.name): string | null {
+export function npcMemorySetCommand(draft: NpcMemoryDraft, targetName: string = draft.name, dirtyFields?: Set<string>): string | null {
     const name = cleanDebugValue(draft.name);
     const target = cleanDebugValue(targetName || draft.name);
     if (name.length === 0 || target.length === 0) {
         return null;
     }
 
-    return [
-        `npc memory set: ${target}`,
-        `name=${name}`,
-        `role=${cleanDebugValue(draft.roleTitle) || "Unknown role/title"}`,
-        `race=${cleanDebugValue(draft.race) || "Unknown"}`,
-        `physical=${cleanDebugValue(draft.physicalExtra) || "none"}`,
-        `mood=${cleanDebugValue(draft.currentMood) || "unknown"}`,
-        `tone=${cleanDebugValue(draft.lastInteractionTone)}`,
-        `behavior=${cleanDebugList(draft.behaviorTowardUserText)}`,
-        `behaviorScores=${cleanDebugScoreMap(draft.behaviorScoresText)}`,
-        `relationship=${cleanDebugList(draft.relationshipWithUserText) || "stranger"}`,
-        `event=${cleanDebugFacts(draft.relationshipEventsText)}`,
-        `onlyKnows=${cleanDebugFacts(draft.onlyKnowsText)}`,
-    ].join(" | ");
+    const parts: string[] = [`npc memory set: ${target}`];
+
+    if (dirtyFields == null || dirtyFields.has("name")) {
+        parts.push(`name=${name}`);
+    }
+    if (dirtyFields == null || dirtyFields.has("roleTitle")) {
+        parts.push(`role=${cleanDebugValue(draft.roleTitle) || "Unknown role/title"}`);
+    }
+    if (dirtyFields == null || dirtyFields.has("race")) {
+        parts.push(`race=${cleanDebugValue(draft.race) || "Unknown"}`);
+    }
+    if (dirtyFields == null || dirtyFields.has("physicalExtra")) {
+        parts.push(`physical=${cleanDebugValue(draft.physicalExtra) || "none"}`);
+    }
+    if (dirtyFields == null || dirtyFields.has("currentMood")) {
+        parts.push(`mood=${cleanDebugValue(draft.currentMood) || "unknown"}`);
+    }
+    if (dirtyFields == null || dirtyFields.has("lastInteractionTone")) {
+        parts.push(`tone=${cleanDebugValue(draft.lastInteractionTone)}`);
+    }
+    if (dirtyFields == null || dirtyFields.has("behaviorTowardUser") || dirtyFields.has("behaviorTowardUserText")) {
+        parts.push(`behavior=${cleanDebugList(draft.behaviorTowardUserText)}`);
+    }
+    if (dirtyFields == null || dirtyFields.has("behaviorScores") || dirtyFields.has("behaviorScoresText")) {
+        parts.push(`behaviorScores=${cleanDebugScoreMap(draft.behaviorScoresText)}`);
+    }
+    if (dirtyFields == null || dirtyFields.has("relationshipWithUser") || dirtyFields.has("relationshipWithUserText")) {
+        parts.push(`relationship=${cleanDebugList(draft.relationshipWithUserText) || "stranger"}`);
+    }
+    if (dirtyFields == null || dirtyFields.has("relationshipEvents") || dirtyFields.has("relationshipEventsText")) {
+        parts.push(`event=${cleanDebugFacts(draft.relationshipEventsText)}`);
+    }
+    if (dirtyFields == null || dirtyFields.has("onlyKnows") || dirtyFields.has("onlyKnowsText")) {
+        parts.push(`onlyKnows=${cleanDebugFacts(draft.onlyKnowsText)}`);
+    }
+
+    return parts.join(" | ");
 }
 
 function cleanDebugValue(value: string): string {
@@ -82,7 +124,7 @@ function cleanDebugScoreMap(value: string): string {
         .split(/\n+|;|,/g)
         .map(cleanDebugValue)
         .map((entry) => {
-            const match = /^([A-Za-z][A-Za-z -]{1,40})\s*(?:=|:|\s)\s*([+-]?\d+)$/i.exec(entry);
+            const match = /^([A-Za-z][A-Za-z -]{1,40})\s*(?:=|:|\s)\s*([+-]?\d+(?:\.\d+)?)$/i.exec(entry);
             return match == null ? "" : `${match[1].trim()}:${match[2]}`;
         })
         .filter(Boolean)

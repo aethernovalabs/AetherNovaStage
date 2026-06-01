@@ -2,33 +2,33 @@ import type {AetherNovaMessageState, NpcMemoryCommand, NpcMemoryCommandUpdates, 
 import {NPC_MEMORY_COMMAND_PATTERN} from "../constants";
 import {coerceNpcMemory} from "./updateNpcMemory";
 import {resolveNpcMemoryKey, npcMemoryKey} from "./npcMemoryState";
-import {cleanNpcMemoryName, cleanMemoryField, cleanMemoryLabel, cleanFactText, formatMemoryLabels, formatBehaviorScores, normalizeMemoryLabelList, normalizeRelationshipList, normalizeBehaviorScores, ensureBehaviorScoresForStableLabels, applyBehaviorScoreDeltas, clampBehaviorScore, mergeUniqueList, completeNpcMemoryName, isEmptyNpcMemoryValue} from "./npcMemoryHelpers";
+import {cleanNpcMemoryName, cleanMemoryField, cleanMemoryLabel, cleanFactText, formatMemoryLabels, formatBehaviorScores, normalizeMemoryLabelList, normalizeRelationshipList, normalizeBehaviorScores, ensureBehaviorScoresForStableLabels, applyBehaviorScoreDeltas, clampBehaviorScore, mergeUniqueList, mergeBehaviorScores, completeNpcMemoryName, isEmptyNpcMemoryValue} from "./npcMemoryHelpers";
 import {mergeKnownFacts, stableBehaviorLabels} from "./npcMemoryInference";
 import {findNpcCanonByNameOrAlias} from "./npcCanonRegistry";
 import {cleanFragment, normalizeLineEndings} from "../utils/text";
 import {splitTopLevel} from "../utils/split";
 
 function parseBehaviorScoreDelta(value: string): {label: string; delta: number} | null {
-    const match = /^([A-Za-z][A-Za-z -]{1,40})\s*([+-]\d+)$/i.exec(cleanFragment(value));
+    const match = /^([A-Za-z][A-Za-z -]{1,40})\s*([+-]\d+(?:\.\d+)?)$/i.exec(cleanFragment(value));
     if (match == null) {
         return null;
     }
 
     const label = cleanMemoryLabel(match[1], "");
-    const delta = Number.parseInt(match[2], 10);
+    const delta = Number.parseFloat(match[2]);
     return label.length > 0 && Number.isFinite(delta) ? {label, delta} : null;
 }
 
 function parseBehaviorScoreMap(value: string): Record<string, number> {
     const scores: Record<string, number> = {};
     for (const part of splitMemoryFields(value)) {
-        const match = /^([A-Za-z][A-Za-z -]{1,40})\s*(?:=|:|\s)\s*([+-]?\d+)$/i.exec(part);
+        const match = /^([A-Za-z][A-Za-z -]{1,40})\s*(?:=|:|\s)\s*([+-]?\d+(?:\.\d+)?)$/i.exec(part);
         if (match == null) {
             continue;
         }
 
         const label = cleanMemoryLabel(match[1], "");
-        const score = Number.parseInt(match[2], 10);
+        const score = Number.parseFloat(match[2]);
         if (label.length > 0 && Number.isFinite(score)) {
             scores[label] = clampBehaviorScore(score);
         }
@@ -333,7 +333,7 @@ function applyNpcMemoryCommand(memory: NpcMemoryStore, command: NpcMemoryCommand
         lastInteractionTone: command.updates.lastInteractionTone ?? previous?.lastInteractionTone,
         behaviorTowardUser: normalizeMemoryLabelList(command.updates.behaviorTowardUser ?? previous?.behaviorTowardUser, []),
         behaviorScores: command.updates.behaviorScores != null
-            ? ensureBehaviorScoresForStableLabels(command.updates.behaviorScores, normalizeMemoryLabelList(command.updates.behaviorTowardUser ?? previous?.behaviorTowardUser, []))
+            ? mergeBehaviorScores(previous?.behaviorScores ?? {}, ensureBehaviorScoresForStableLabels(command.updates.behaviorScores, normalizeMemoryLabelList(command.updates.behaviorTowardUser ?? previous?.behaviorTowardUser, [])))
             : applyBehaviorScoreDeltas(
                 ensureBehaviorScoresForStableLabels(previous?.behaviorScores ?? {}, normalizeMemoryLabelList(command.updates.behaviorTowardUser ?? previous?.behaviorTowardUser, [])),
                 command.updates.behaviorScoreDeltas ?? {},

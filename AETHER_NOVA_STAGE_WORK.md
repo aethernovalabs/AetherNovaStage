@@ -623,13 +623,25 @@ interface NpcMemoryEntry {
      - Mood-only traits (`sad`, `happy`, `angry`, `shy`, `proud`, `wise`, dll) tidak masuk behaviorTowardUser.
   - **Relationship With {{user}}**: Array label konservatif (`stranger`, `acquaintance`, `formal`, `ally`, `friend`, `enemy`, `rival`, `subordinate`, `lover`, `romantic tension`). Hanya berubah lewat event besar.
   - **Relationship Events**: Event penting saja, maksimal 10, misalnya confession accepted, alliance formed, betrayal, oath sworn, formal employment.
-   - **OnlyKnows**: Extract fakta dari konteks sekitar nama NPC. Hanya fakta **high-value/private** yang disimpan. Fakta yang ditolak:
-     - Obrolan biasa, rencana umum scene (`we need to`, `we should`, `let's go`, dll.)
-     - Rencana pertemuan/route (`meet your mother`, `go to the palace`)
-     - Kalimat user yang tidak rahasia (`don't worry`, `it's fine`)
-     - Fakta yang rusak/malformed (diawali colon/koma, dangling quote, terlalu pendek)
-     - Fakta yang sudah ada di Thread
-     - Fakta valid disanitasi: leading punctuation dihapus, dangling quote dihapus, whitespace dinormalisasi.
+    - **OnlyKnows**: Extract fakta dari konteks sekitar nama NPC. Hanya fakta **high-value/private** yang disimpan. Fakta yang ditolak:
+      - Obrolan biasa, rencana umum scene (`we need to`, `we should`, `let's go`, dll.)
+      - Rencana pertemuan/route (`meet your mother`, `go to the palace`)
+      - Kalimat user yang tidak rahasia (`don't worry`, `it's fine`)
+      - Fakta yang rusak/malformed (diawali colon/koma, dangling quote, terlalu pendek)
+      - Placeholder seperti `"name npc"`, `{{npc}}`, `undefined`, `null`
+      - Fakta yang sudah ada di Thread
+      - Fakta valid disanitasi: leading punctuation dihapus, dangling quote dihapus, whitespace dinormalisasi.
+      - **OnlyKnows extraction is recipient-aware**: Fakta hanya masuk ke NPC yang menjadi penerima eksplisit (via cue seperti `I told Aveline`, `I whispered to Yume`, `I warned Debi`). NPC lain yang hadir tidak otomatis menerima fakta, kecuali ada evidence overhear (`Aveline overheard`, `Debi heard this`, `everyone present heard`).
+      - **Auto-extract append**: Auto extractor hanya append valid new facts ke OnlyKnows, tidak replace seluruh list. Jika fact duplicate/similar dengan existing fact, tidak di-append.
+      - **Ordinary instruction ditolak**: `gather co-conspirators`, `meet your mother`, `tactical command` tidak masuk OnlyKnows.
+    - **Field-Scoped Manual Edit (non-destructive)**: Debug UI save menggunakan patch/merge, bukan full replace:
+      - Editing `OnlyKnows` hanya mengubah `onlyKnows`.
+      - Editing `Relationship Events` hanya mengubah `relationshipEvents`.
+      - Editing `Current Mood`, `Role/Title`, `Race`, `Physical Extra`, `Relationship` hanya mengubah field tersebut.
+      - `behaviorScores` di-preserve kecuali diedit secara eksplisit.
+      - `behaviorTowardUser` dan `behaviorScores` memiliki sinkronisasi terbatas: menambah manual behavior bisa set score minimum >= 3; menghapus behavior bisa menurunkan hanya label tersebut; score tidak terkait di-preserve.
+      - Input behaviorScores invalid tidak wipe score lama (parse gagal → preserve previous).
+      - Dirty-field tracking: hanya field yang berubah yang dikirim dalam command `npc memory set`, field lain fallback ke nilai sebelumnya.
 
 Boundary penting:
 - `currentMood` boleh berubah setiap response, tapi **tidak otomatis mengubah behavior atau relationship**.

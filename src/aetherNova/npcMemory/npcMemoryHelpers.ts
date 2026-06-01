@@ -39,6 +39,23 @@ export function ensureBehaviorScoresForStableLabels(scores: Record<string, numbe
     return next;
 }
 
+export function mergeBehaviorScores(previous: Record<string, number>, patch: Record<string, number>): Record<string, number> {
+    const next: Record<string, number> = {};
+    for (const [label, score] of Object.entries(previous)) {
+        const clean = cleanMemoryLabel(label, "");
+        if (clean.length > 0 && Number.isFinite(score)) {
+            next[clean] = clampBehaviorScore(score);
+        }
+    }
+    for (const [label, score] of Object.entries(patch)) {
+        const clean = cleanMemoryLabel(label, "");
+        if (clean.length > 0 && Number.isFinite(score)) {
+            next[clean] = clampBehaviorScore(score);
+        }
+    }
+    return next;
+}
+
 export function applyBehaviorScoreDeltas(scores: Record<string, number>, deltas: Record<string, number>): Record<string, number> {
     const next = normalizeBehaviorScores(scores, []);
     for (const [label, delta] of Object.entries(deltas)) {

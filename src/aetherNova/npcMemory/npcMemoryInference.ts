@@ -674,6 +674,10 @@ const ORDINARY_DIALOGUE_PATTERNS = [
     /\b(?:let'?s?\s+(?:go|head|move|continue|find|see|talk|ask|meet))\b/i,
     /\b(?:don'?t\s+worr?y|no\s+worr?ies|it'?s?\s+fine|it'?s?\s+ok(?:ay)?)\b/i,
     /\b(?:we\s+will|i\s+will|we'?ll|i'?ll)\s+(?:see|find|look|go|come|meet|talk|ask|continue|wait)\b/i,
+    /\bgather\s+(?:co.?conspirators?|allies?|supplies?|everyone|the\s+others?)\b/i,
+    /\b(?:tactical|battle\s+plan|formation|defensive\s+position)\b/i,
+    /\b(?:small\s+talk|casual\s+(?:chat|conversation|remark))\b/i,
+    /\b(?:route\s+plan|travel\s+plan|scout\s+ahead|patrol)\b/i,
 ];
 
 function isPrivateHighValueFact(factText: string): boolean {
@@ -692,6 +696,12 @@ function isMalformedFact(factText: string): boolean {
     if ((trimmed.match(/"/g) || []).length % 2 !== 0) return true;
     if (trimmed.length < 8) return true;
     if (/^[""'']/.test(trimmed) || /[""'']$/.test(trimmed)) return true;
+    if (/"name\s+npc"/i.test(trimmed)) return true;
+    if (/^name\s+npc\b/i.test(trimmed)) return true;
+    if (/\{\{npc\}\}/i.test(trimmed)) return true;
+    if (/\{\{user\}\}\s+told\s+["""]?name\s+npc["""]?/i.test(trimmed)) return true;
+    if (/^(?:undefined|null|\[\]|{}\s*)$/i.test(trimmed)) return true;
+    if (/^[:;,.!?]\s/.test(trimmed)) return true;
     return false;
 }
 
@@ -701,6 +711,11 @@ function sanitizeFact(factText: string): string {
         .replace(/[""'']+/g, "")
         .replace(/\s+/g, " ")
         .trim();
+
+    result = result.replace(/^name\s+npc\s*[:;,-]?\s*/i, "").trim();
+    result = result.replace(/\s+name\s+npc\s*$/i, "").trim();
+    result = result.replace(/^(?:the|a|an)\s+(?:name\s+npc)\b/i, "").trim();
+
     return result;
 }
 
@@ -713,66 +728,138 @@ function filterOnlyKnowsFact(fact: string): string | null {
     return null;
 }
 
+export function isExplicitRecipient(npcName: string, context: string): boolean {
+    const firstName = firstNameOf(npcName);
+    const nameSource = npcNameRegexSource(npcName);
+    const firstSource = npcNameRegexSource(firstName);
+
+    const explicitTellCues = [
+        new RegExp(`\\b(?:i|you|\\{\\{user\\}\\})\\s+(?:told|tell|whispered\\s+to|quietly\\s+(?:told|warned|said|asked)|answered|replied\\s+to|said\\s+to|confessed\\s+to|admitted\\s+to|gave|handed|warned)\\s+(?:${nameSource}|${firstSource})\\b`, "i"),
+        new RegExp(`\\b(?:i|you|\\{\\{user\\}\\})\\s+(?:explain|explained|revealed|reveal|informed|inform|promised|promise)\\s+(?:${nameSource}|${firstSource})\\b`, "i"),
+        new RegExp(`\\b(?:${nameSource}|${firstSource})\\s*(?:,|!)\\s*(?:\\s*"+)?(?:you|i)\\s+(?:need|have|should|must|will)\\b`, "i"),
+    ];
+
+    return explicitTellCues.some((cue) => cue.test(context));
+}
+
+export function hasOverhearEvidence(npcName: string, context: string): boolean {
+    const firstName = firstNameOf(npcName);
+    const nameSource = npcNameRegexSource(npcName);
+    const firstSource = npcNameRegexSource(firstName);
+
+    const overhearCues = [
+        new RegExp(`\\b(?:${nameSource}|${firstSource})\\s+(?:overheard|heard|could\\s+hear|listened|caught\\s+(?:every\\s+)?word|was\\s+close\\s+enough\\s+to\\s+hear)\\b`, "i"),
+        /\b(?:everyone\s+present\s+(?:heard|knew)|both\s+\w+\s+and\s+\w+\s+heard)\b/i,
+        /\b(?:in\s+(?:front\s+of|earshot\s+of))\s+(?:everyone|all|the\s+group)/i,
+        new RegExp(`\\b(?:${nameSource}|${firstSource})\\s+(?:was|were|stood|remained|stayed)\\s+(?:nearby|close|behind|in\s+the\s+room)\\b`, "i"),
+    ];
+
+    return overhearCues.some((cue) => cue.test(context));
+}
+
 export function inferNpcOnlyKnows(headerEntry: NpcHeaderMemoryEntry, context: string): string[] {
     const firstName = headerEntry.firstName || headerEntry.name;
     const facts: string[] = [];
     const npcNear = nearNpcContext(headerEntry.name, context);
 
-    // Only extract contextual facts if the NPC is actually mentioned
-    if (npcNear.length > 0) {
-        // {{user}} and NPC did something together
-        const together = npcNear.match(new RegExp(`\\{\\{user\\}\\}\\s+and\\s+${npcNameRegexSource(firstName)}\\s+(.+?)(?:\\.|!|\\?|$)`, "i"));
-        if (together != null) {
-            facts.push(`{{user}} and ${firstName} ${cleanFactText(together[1])}`);
-        }
+    // Recipient check: only extract if NPC is mentioned and is intended recipient or can overhear
+    const isRecipient = isExplicitRecipient(headerEntry.name, context);
+    const canOverhear = hasOverhearEvidence(headerEntry.name, context);
 
-        // NPC and {{user}} did something together (reversed order)
-        const togetherRev = npcNear.match(new RegExp(`${npcNameRegexSource(firstName)}\\s+and\\s+\\{\\{user\\}\\}\\s+(.+?)(?:\\.|!|\\?|$)`, "i"));
-        if (togetherRev != null) {
-            facts.push(`{{user}} and ${firstName} ${cleanFactText(togetherRev[1])}`);
-        }
+    if (npcNear.length === 0) {
+        return [];
+    }
 
-        // {{user}} gave/showed/offered/handed NPC something
-        const gave = npcNear.match(new RegExp(`\\{\\{user\\}\\}\\s+(?:gave|showed|offered|handed|passed|returns?|returned)\\s+${npcNameRegexSource(firstName)}\\s+(.+?)(?:\\.|!|\\?|$)`, "i"));
-        if (gave != null) {
-            facts.push(`{{user}} gave ${firstName}: ${cleanFactText(gave[1])}`);
-        }
-
-        // {{user}} told/asked/informed/warned NPC about something
-        const toldAbout = npcNear.match(new RegExp(`\\{\\{user\\}\\}\\s+(?:told|asked|informed|warned)\\s+${npcNameRegexSource(firstName)}\\s+(?:about|of|that)\\s+(.+?)(?:\\.|!|\\?|$)`, "i"));
-        if (toldAbout != null) {
-            const fact = cleanFactText(toldAbout[1]);
-            const filtered = filterOnlyKnowsFact(fact);
+    // If not the intended recipient and cannot overhear, don't extract
+    if (!isRecipient && !canOverhear) {
+        // Still allow name/memory-loss facts that are NPC-agnostic
+        const nameTold = /\b(?:my name is|call me|i am called|i'm called|my name's)\b/i.test(context)
+            && npcMentionedInText(headerEntry.name, context);
+        if (nameTold) {
+            const filtered = filterOnlyKnowsFact(`${firstName} learned {{user}}'s name`);
             if (filtered != null) {
-                facts.push(`{{user}} told ${firstName}: ${filtered}`);
+                facts.push(filtered);
             }
+        }
+        return mergeUniqueList(facts.map(cleanFactText).filter(Boolean), 4);
+    }
+
+    // {{user}} and NPC did something together
+    const together = npcNear.match(new RegExp(`\\{\\{user\\}\\}\\s+and\\s+${npcNameRegexSource(firstName)}\\s+(.+?)(?:\\.|!|\\?|$)`, "i"));
+    if (together != null) {
+        const filtered = filterOnlyKnowsFact(together[1]);
+        if (filtered != null) {
+            facts.push(`{{user}} and ${firstName} ${filtered}`);
+        }
+    }
+
+    // NPC and {{user}} did something together (reversed order)
+    const togetherRev = npcNear.match(new RegExp(`${npcNameRegexSource(firstName)}\\s+and\\s+\\{\\{user\\}\\}\\s+(.+?)(?:\\.|!|\\?|$)`, "i"));
+    if (togetherRev != null) {
+        const filtered = filterOnlyKnowsFact(togetherRev[1]);
+        if (filtered != null) {
+            facts.push(`{{user}} and ${firstName} ${filtered}`);
+        }
+    }
+
+    // {{user}} gave/showed/offered/handed NPC something
+    const gave = npcNear.match(new RegExp(`\\{\\{user\\}\\}\\s+(?:gave|showed|offered|handed|passed|returns?|returned)\\s+${npcNameRegexSource(firstName)}\\s+(.+?)(?:\\.|!|\\?|$)`, "i"));
+    if (gave != null) {
+        const filtered = filterOnlyKnowsFact(gave[1]);
+        if (filtered != null) {
+            facts.push(`{{user}} gave ${firstName}: ${filtered}`);
+        }
+    }
+
+    // {{user}} told/asked/informed/warned NPC about something
+    const toldAbout = npcNear.match(new RegExp(`\\{\\{user\\}\\}\\s+(?:told|asked|informed|warned)\\s+${npcNameRegexSource(firstName)}\\s+(?:about|of|that)\\s+(.+?)(?:\\.|!|\\?|$)`, "i"));
+    if (toldAbout != null) {
+        const fact = cleanFactText(toldAbout[1]);
+        const filtered = filterOnlyKnowsFact(fact);
+        if (filtered != null) {
+            facts.push(`{{user}} told ${firstName}: ${filtered}`);
         }
     }
 
     // {{user}} told NPC their name
-    if (/\b(?:my name is|call me|i am called|i'm called|my name's)\b/i.test(context)) {
-        facts.push(`{{user}} told ${firstName} their name`);
+    if (/\b(?:my name is|call me|i am called|i'm called|my name's)\b/i.test(context) && npcMentionedInText(headerEntry.name, context)) {
+        const filtered = filterOnlyKnowsFact(`${firstName} learned {{user}}'s name`);
+        if (filtered != null) {
+            facts.push(filtered);
+        }
     }
 
     // {{user}} mentioned memory loss/amnesia near NPC
     if (npcMentionedInText(headerEntry.name, context) && (/\b(?:lost|lose|lost my|lost his|lost her|lost their)\s+(?:memory|memories)\b/i.test(context) || /\b(?:amnesia|cannot remember|can't remember|kehilangan ingatan)\b/i.test(context))) {
-        facts.push(`{{user}} told ${firstName} about memory loss`);
+        const filtered = filterOnlyKnowsFact(`{{user}} told ${firstName} about memory loss`);
+        if (filtered != null) {
+            facts.push(filtered);
+        }
     }
 
     // {{user}} threatened or warned NPC
     if (userActionTargetsNpc(headerEntry.name, context, "(?:threaten|threatened|threatening|warn|warned|warning|mengancam)")) {
-        facts.push(`{{user}} threatened or warned ${firstName}`);
+        const filtered = filterOnlyKnowsFact(`{{user}} threatened or warned ${firstName}`);
+        if (filtered != null) {
+            facts.push(filtered);
+        }
     }
 
     // {{user}} helped/saved/protected NPC
     if (npcNear.length > 0 && userActionTargetsNpc(headerEntry.name, npcNear, "(?:helped|saved|protected|rescued|aided|assisted|healed)")) {
-        facts.push(`{{user}} helped ${firstName}`);
+        const filtered = filterOnlyKnowsFact(`{{user}} helped ${firstName}`);
+        if (filtered != null) {
+            facts.push(filtered);
+        }
     }
 
     // {{user}} traveled/went with NPC
     const traveled = npcNear.match(new RegExp(`\\{\\{user\\}\\}\\s+(?:went|traveled|travelled|walked|headed|moved|followed)\\s+(?:with|to|into|toward|after)\\s+${npcNameRegexSource(firstName)}`, "i"));
     if (traveled != null) {
-        facts.push(cleanFactText(traveled[0]));
+        const filtered = filterOnlyKnowsFact(cleanFactText(traveled[0]));
+        if (filtered != null) {
+            facts.push(filtered);
+        }
     }
 
     // General "I/you/{{user}} told NPC that ..." pattern across full context

@@ -1,12 +1,13 @@
 import type {ReactElement} from "react";
-import React, {useState, useEffect} from "react";
-import type {AetherNovaMessageState, UserStatusState} from "../types";
+import React, {useState, useEffect, useRef} from "react";
+import type {AetherNovaMessageState, UserStatusState, NpcMemoryEntry} from "../types";
 import type {DebugSnapshot, DebugEvent, NpcMemoryDraft, DebugCategory} from "./types";
 import {DEBUG_UI_VERSION, DEBUG_LOG_GROUPS} from "./types";
 import {
     emptyNpcMemoryDraft,
     draftFromNpcMemory,
     npcMemorySetCommand,
+    computeDirtyFields,
     formatDebugList,
     formatDebugScores,
 } from "./debugUtils";
@@ -26,6 +27,7 @@ export function AetherNovaDebugPanel({
     const npcMemoryEntries = Object.values(snapshot.state.npcMemory ?? {});
     const [editingName, setEditingName] = useState<string | null>(null);
     const [draft, setDraft] = useState<NpcMemoryDraft>(emptyNpcMemoryDraft());
+    const originalEntryRef = useRef<NpcMemoryEntry | null>(null);
 
     const [editingSection, setEditingSection] = useState<string | null>(null);
     const [editForm, setEditForm] = useState<Record<string, string>>({});
@@ -257,13 +259,15 @@ export function AetherNovaDebugPanel({
                                             setDraft(emptyNpcMemoryDraft());
                                         }}
                                         onSave={() => {
-                                            const command = npcMemorySetCommand(draft, entry.name);
+                                            const dirtyFields = computeDirtyFields(draft, originalEntryRef.current);
+                                            const command = npcMemorySetCommand(draft, entry.name, dirtyFields);
                                             if (command == null) {
                                                 return;
                                             }
                                             setSnapshot(onApplyCommand(command));
                                             setEditingName(null);
                                             setDraft(emptyNpcMemoryDraft());
+                                            originalEntryRef.current = null;
                                         }}
                                     />
                                 ) : (
@@ -274,6 +278,7 @@ export function AetherNovaDebugPanel({
                                                 <button type="button" onClick={() => {
                                                     setEditingName(entry.name);
                                                     setDraft(draftFromNpcMemory(entry));
+                                                    originalEntryRef.current = entry;
                                                 }}>Edit</button>
                                                 <button type="button" onClick={() => setSnapshot(onApplyCommand(`npc memory clearfacts: ${entry.name}`))}>Clear Facts</button>
                                                 <button className="danger" type="button" onClick={() => {
