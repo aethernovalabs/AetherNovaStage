@@ -37,7 +37,7 @@ export const TestStageRunner = <StageType extends StageBase<InitStateType, ChatS
      This is the main thing you'll want to modify.
      ***/
     async function runTests() {
-        await stage.setState({location: "Solmeryn Kingdom - The Lamplighter's Nest - Hidden Chamber", timeOfDay: "Afternoon", clock: "13:12", you: "Unknown - Human (Regular clothing; Standing; hands visible)", npc: "None", thread: "None", wallet: "0G ; 0S ; 0C", walletInitialized: false, npcMemory: {}, pendingNpcDebugQuery: null, pendingNpcMemoryCommand: null});
+        await stage.setState({location: "Solmeryn Kingdom - The Lamplighter's Nest - Hidden Chamber", timeOfDay: "Afternoon", clock: "13:12", you: "Unknown - Human (Regular clothing; Standing; hands visible)", npc: "None", thread: "None", wallet: "0G ; 0S ; 0C", walletInitialized: false, npcMemory: {}, pendingNpcDebugQuery: null, pendingNpcMemoryCommand: null, userStatus: { gender: "Unknown", apparentRace: "Human", clothing: {}, weapons: [], importantItems: [] }});
         refresh();
 
         const beforePromptResponse = await stage.beforePrompt({

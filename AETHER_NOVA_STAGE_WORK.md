@@ -102,11 +102,11 @@ Cara kerja:
 
 ---
 
-## 4. You System (`normalizeYouLine`)
+## 4. You System (`normalizeYouLine`) + Status User
 
-### Format: `Gender - Apparent Race (Clothes/disguise; Position; body detail)`
+### Format (Header - Compact): `Gender - Apparent Race (Clothes/disguise; Position; body detail)`
 
-Cara kerja:
+**Cara kerja Header You (compact):**
 1. **Identity**: Parse `Gender - Race` dari line, pakai fallback state sebelumnya jika placeholder.
 2. **Race**: Tolak `Anomaly` kecuali sudah revealed/confirmed di konteks.
 3. **Status** (`Clothes; Position; body detail`):
@@ -115,7 +115,46 @@ Cara kerja:
    - Clothing slot dideteksi dengan `CLOTHING_SLOT_PATTERN` (nama garment) dan `CLOTHING_DAMAGE_WORDS`.
    - Position slot dideteksi dengan `POSITION_CHANGE_CUES` dan `POSITION_SPATIAL_CUES`.
 
-**Clothes change logic:**
+**Header tetap compact dan hemat token.** Header tidak wajib menyebut celana, sepatu, senjata, aksesoris, atau item detail. Cukup pakaian visible utama + posisi + detail tubuh.
+
+### Status User (Detail - Disimpan di State)
+
+Selain header compact, Stage menyimpan **Status User** yang berisi data detail tentang `{{user}}`:
+
+```ts
+interface UserStatusState {
+  gender: string;
+  apparentRace: string;
+  clothing: {
+    upper?: string;
+    lower?: string;
+    footwear?: string;
+    outerwear?: string;
+    accessories?: string[];
+  };
+  weapons: Array<{
+    name: string;
+    location: string;
+    status?: string;
+  }>;
+  importantItems: Array<{
+    name: string;
+    location: string;
+    status?: string;
+  }>;
+}
+```
+
+**Data Status User tidak di-inject penuh ke LLM.** Header tetap compact dan hanya memakai data dari `normalizeYouLine`. Status User disimpan di state untuk keperluan UI/debug dan tracking internal.
+
+**Update Status User terjadi di `afterResponse`** via fungsi `updateUserStatus()` yang dipanggil dari `normalizeAetherNovaResponse()`:
+1. Parse gender/race dari `youLine` yang sudah dinormalisasi (gender/race stabil).
+2. Update clothing detail dari narasi dengan guard ketat.
+3. Track weapons dan important items dari narasi.
+4. Simpan ke state `userStatus`.
+
+### Clothes Change Logic (Header & Status User)
+
 - Perubahan pakaian hanya diterima jika ada EVIDENCE dari narasi NON-dialog:
   - `CLOTHING_CHANGE_CUES`: `change clothes`, `wear`, `put on`, `dressed in`, `clad in`, `dons`, dll.
   - `CLOTHING_REMOVAL_CUES`: `remove`, `take off`, `strip`, `undress`, `naked`, dll.
@@ -124,13 +163,27 @@ Cara kerja:
 - Jika tidak ada evidence, stage pakai clothing dari state sebelumnya.
 - **Inferensi langsung dari konteks:** Stage bisa detect `"naked"`, `"shirtless"`, `"without armor"`, `"only pants"` langsung dari konteks non-dialog.
 
-**Position change logic:**
+### Object/Environment Damage Guard
+
+**Object/environment damage tidak boleh mengubah pakaian user.** Stage menggunakan `isObjectDamageOnly()` untuk mendeteksi jika damage hanya mengenai objek/lingkungan (door, table, wall, window, dll.) tanpa menyentuh garment user. Jika terdeteksi, clothing tidak diubah.
+
+Contoh tidak valid (clothing tetap):
+```md
+*{{user}} kicks the door open. The wooden door cracks and breaks apart.*
+```
+Clothing tetap sama. Door damage bukan clothing damage.
+
+### Never Invent New Clothing
+
+Stage tidak boleh menciptakan pakaian baru yang tidak pernah ada. Jika clothing berubah karena damage, modifikasi item lama (contoh: `casual shirt` → `torn casual shirt`), bukan invent baru.
+
+### Position change logic:
 - Perubahan posisi diterima jika ada cue `walk`, `stand`, `sit`, `kneel`, `lean`, `turn`, `step`, `approach`, dll.
 - Posisi dengan spatial relation (`left of`, `beside`, `before`, `behind`, `facing`) butuh evidence di narasi.
 - Posisi generik seperti `"scene"` di-strip (menjadi fallback).
 - Bahasa dramatis di-strip dari posisi.
 
-**Body detail logic:**
+### Body detail logic:
 - `TRANSIENT_YOU_DETAIL_PATTERN`: detail sementara seperti `holding`, `touching`, `stroking`, `tilted`, `resting`.
 - Detail transien diganti jika:
   - Scene berpindah.
@@ -139,6 +192,20 @@ Cara kerja:
 - Detail kontak objek (`holding cup`, `pulling blanket`) diganti ke detail settled (`hands on lap`, `hands lowered`) jika narasi tidak lagi mendukung kontak.
 - Detail kontak fisik (`stroking head`) bisa diganti ke detail pasif saat movement terjadi.
 - Detail interaksi visible (`cleaning`, `wiping`, `brushing`) dipertahankan selama narasi terbaru mendukung.
+
+### Gender/Apparent Race Stability
+
+Gender dan Apparent Race harus stabil. Stage hanya mengubah `gender` atau `apparentRace` jika ada evidence jelas seperti:
+- `{{user}}` memakai skill Shapeshift
+- `{{user}}` memakai disguise/illusion
+- `{{user}}` berubah bentuk secara naratif
+- `{{user}}` sendiri menyatakan perubahan bentuk
+
+Jika tidak ada evidence, pertahankan state sebelumnya.
+
+### Weapons & Important Items Rules
+
+Status User menyimpan senjata dan item penting yang dibawa. Item tidak boleh tiba-tiba hilang tanpa evidence. Item hanya berubah jika ada evidence jelas: ditinggalkan, diberikan ke NPC, dicuri, jatuh, terbakar, rusak, dibuang, disimpan, dipakai/habis, atau dipindahkan lokasi.
 
 ---
 
@@ -467,7 +534,8 @@ Stage melakukan format narasi ringan:
 Debug UI (di `Stage.tsx` render) saat ini: **Debug UI V1.7**.
 
 Debug UI menampilkan:
-- Current state: Location, Time, You, NPC, Thread, Wallet, Pending NPC Debug, Pending Memory Command.
+- Current state: Location, Time, You (compact), NPC, Thread, Wallet, Pending NPC Debug, Pending Memory Command.
+- **Status User**: Panel detail yang menampilkan gender, apparentRace, clothing lengkap (upper, lower, footwear, outerwear, accessories), weapons, dan important items. Data ini berasal dari state `userStatus` dan tidak di-inject ke LLM.
 - NPC Memory cards: semua NPC yang tersimpan dengan detail lengkap.
 - Debug Logs terpisah per kategori:
   - **NPC Memory Log**: command memory, perubahan jumlah memory, entry yang added/removed/changed.
@@ -529,6 +597,7 @@ Location berubah jika:
     npcMemory: Record<string, NpcMemoryEntry>;
     pendingNpcDebugQuery: string | null;
     pendingNpcMemoryCommand: string | null;
+    userStatus: UserStatusState;
 }
 ```
 

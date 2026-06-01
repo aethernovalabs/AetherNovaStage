@@ -2,6 +2,28 @@ import type {Character} from "@chub-ai/stages-ts";
 
 export type TimeOfDay = "Morning" | "Afternoon" | "Evening" | "Night";
 
+export interface UserStatusState {
+  gender: string;
+  apparentRace: string;
+  clothing: {
+    upper?: string;
+    lower?: string;
+    footwear?: string;
+    outerwear?: string;
+    accessories?: string[];
+  };
+  weapons: Array<{
+    name: string;
+    location: string;
+    status?: string;
+  }>;
+  importantItems: Array<{
+    name: string;
+    location: string;
+    status?: string;
+  }>;
+}
+
 export interface AetherNovaMessageState {
     location: string;
     timeOfDay: TimeOfDay;
@@ -14,6 +36,7 @@ export interface AetherNovaMessageState {
     npcMemory: NpcMemoryStore;
     pendingNpcDebugQuery: string | null;
     pendingNpcMemoryCommand: string | null;
+    userStatus: UserStatusState;
 }
 
 export interface NpcMemoryEntry {
@@ -331,6 +354,14 @@ const TIME_OF_DAYS: TimeOfDay[] = ["Morning", "Afternoon", "Evening", "Night"];
 const HEADER_DIVIDER = "***";
 const NPC_MEMORY_COMMAND_PATTERN = /(?:[\[【]\s*)?npc[\s_-]*memory\s+((?:delete|remove|clearfacts|clear\s+facts|clear|set|update|add\s+fact|addfact|relation\s+event|relationship\s+event|relationship|relation|behavior\s+score|behavior|mood|show)\s*:?\s*[^\n\]】]+)(?:[\]】])?/gi;
 
+const DEFAULT_USER_STATUS: UserStatusState = {
+  gender: "Unknown",
+  apparentRace: "Human",
+  clothing: {},
+  weapons: [],
+  importantItems: [],
+};
+
 const DEFAULT_STATE: AetherNovaMessageState = {
     location: "Unknown Region - Current Place - Active Area",
     timeOfDay: "Morning",
@@ -343,6 +374,7 @@ const DEFAULT_STATE: AetherNovaMessageState = {
     npcMemory: {},
     pendingNpcDebugQuery: null,
     pendingNpcMemoryCommand: null,
+    userStatus: { ...DEFAULT_USER_STATUS },
 };
 
 const RACE_KEYWORDS = [
@@ -1389,7 +1421,7 @@ export function coerceHeaderState(
     fallback: AetherNovaMessageState = DEFAULT_STATE,
 ): AetherNovaMessageState {
     if (incomingState == null || typeof incomingState !== "object") {
-        return {...fallback};
+        return { ...fallback, userStatus: { ...fallback.userStatus } };
     }
 
     const raw = incomingState as Partial<AetherNovaMessageState> & {time?: string};
@@ -1398,12 +1430,14 @@ export function coerceHeaderState(
     const walletState = coerceWalletState(raw, fallback);
     const npc = normalizeNpcLine(raw.npc ?? "", fallback.npc);
     const npcMemory = updateNpcMemory(coerceNpcMemory(raw.npcMemory, fallback.npcMemory), npc, fallback.location);
+    const youLine = normalizeYouLine(raw.you ?? "", fallback.you, "", {trustRawStatus: true});
+    const userStatus = coerceUserStatus(raw.userStatus, youLine);
 
     return {
         location: normalizeLocation(raw.location ?? "", fallback.location),
         timeOfDay: timeOfDayForClock(clock),
         clock,
-        you: normalizeYouLine(raw.you ?? "", fallback.you, "", {trustRawStatus: true}),
+        you: youLine,
         npc,
         thread: normalizeThreadLine(raw.thread ?? "", fallback.thread, ""),
         wallet: walletState.value,
@@ -1411,6 +1445,7 @@ export function coerceHeaderState(
         npcMemory,
         pendingNpcDebugQuery: normalizePendingNpcDebugQuery(raw.pendingNpcDebugQuery),
         pendingNpcMemoryCommand: normalizePendingNpcMemoryCommand(raw.pendingNpcMemoryCommand),
+        userStatus,
     };
 }
 
@@ -1446,6 +1481,434 @@ export function buildStageDirections(state: AetherNovaMessageState, userMessage:
     return parts.join("\n");
 }
 
+const GARMENT_NAMES = [
+  "shirt", "blouse", "tunic", "jacket", "coat", "cloak", "mantle", "cape",
+  "hood", "pants", "trousers", "jeans", "shorts", "skirt", "leggings",
+  "boots", "shoes", "sandals", "gloves", "mask", "veil", "hat", "cap",
+  "helmet", "apron", "vest", "corset", "sash", "belt", "scarf", "shawl",
+  "wrap", "dress", "gown", "robe", "uniform", "armor", "armour", "sleeve",
+  "sleeves", "collar", "hem", "cuff", "cuffs", "waistband",
+  "underwear", "bra", "panties", "boxers", "briefs",
+];
+
+const WEAPON_KEYWORDS = [
+  "sword", "blade", "dagger", "knife", "staff", "bow", "arrow", "axe",
+  "hammer", "mace", "spear", "lance", "whip", "shield", "wand", "scepter",
+  "rapier", "scimitar", "katana", "halberd", "polearm", "scythe", "club",
+  "flail", "crossbow", "dart", "shuriken", "chakram", "saber",
+];
+
+const ITEM_KEYWORDS = [
+  "pendant", "necklace", "ring", "brooch", "pin", "amulet", "talisman",
+  "charm", "bracelet", "bangle", "earring", "crown", "tiara", "medal",
+  "badge", "document", "letter", "scroll", "book", "map", "note",
+  "journal", "diary", "key", "lockpick", "potion", "vial", "herb",
+  "ingredient", "pouch", "bag", "sack", "bottle", "flask", "lantern",
+  "torch", "rope",
+];
+
+const OBJECT_DAMAGE_WORDS = [
+  "door", "table", "wall", "window", "floor", "ground", "object", "barrel",
+  "crate", "chair", "bench", "desk", "shelf", "cabinet", "gate", "fence",
+  "stone", "rock", "boulder", "pillar", "column", "statue", "post",
+  "rail", "railing", "counter", "wood", "plank", "beam", "brick",
+];
+
+function coerceUserStatus(raw: unknown, youLine: string): UserStatusState {
+  if (raw == null || typeof raw !== "object") {
+    const parsed = parseIdentityStatus(youLine);
+    const identity = splitIdentity(parsed.identity, "Unknown", "Human");
+    return {
+      gender: identity.left,
+      apparentRace: identity.right,
+      clothing: {},
+      weapons: [],
+      importantItems: [],
+    };
+  }
+
+  const r = raw as Partial<UserStatusState>;
+  const parsed = parseIdentityStatus(youLine);
+  const identity = splitIdentity(parsed.identity, r.gender ?? "Unknown", r.apparentRace ?? "Human");
+
+  return {
+    gender: identity.left || r.gender || "Unknown",
+    apparentRace: identity.right || r.apparentRace || "Human",
+    clothing: coerceClothing(r.clothing),
+    weapons: Array.isArray(r.weapons) ? r.weapons.filter((w) => w && typeof w.name === "string") : [],
+    importantItems: Array.isArray(r.importantItems) ? r.importantItems.filter((i) => i && typeof i.name === "string") : [],
+  };
+}
+
+function coerceClothing(raw: unknown): UserStatusState["clothing"] {
+  if (raw == null || typeof raw !== "object") return {};
+  const c = raw as Partial<UserStatusState["clothing"]>;
+  const result: UserStatusState["clothing"] = {};
+  if (typeof c.upper === "string" && c.upper.length > 0) result.upper = c.upper;
+  if (typeof c.lower === "string" && c.lower.length > 0) result.lower = c.lower;
+  if (typeof c.footwear === "string" && c.footwear.length > 0) result.footwear = c.footwear;
+  if (typeof c.outerwear === "string" && c.outerwear.length > 0) result.outerwear = c.outerwear;
+  if (Array.isArray(c.accessories)) {
+    const filtered = c.accessories.filter((a): a is string => typeof a === "string" && a.length > 0);
+    if (filtered.length > 0) result.accessories = filtered;
+  }
+  return result;
+}
+
+function updateUserStatus(
+  previous: UserStatusState,
+  youLine: string,
+  context: string,
+): UserStatusState {
+  const parsed = parseIdentityStatus(youLine);
+  const identity = splitIdentity(parsed.identity, previous.gender, previous.apparentRace);
+  const gender = identity.left || previous.gender;
+  const apparentRace = identity.right || previous.apparentRace;
+  const narrativeContext = nonDialogueEvidenceContext(context).toLowerCase();
+  const clothing = updateUserClothing(previous.clothing, parsed.status, narrativeContext);
+  const weapons = updateUserWeapons(previous.weapons, narrativeContext);
+  const importantItems = updateUserItems(previous.importantItems, narrativeContext);
+  return { gender, apparentRace, clothing, weapons, importantItems };
+}
+
+function updateUserClothing(
+  previous: UserStatusState["clothing"],
+  youStatus: string,
+  narrativeContext: string,
+): UserStatusState["clothing"] {
+  const clothing = { ...previous };
+  for (const key of Object.keys(clothing) as Array<keyof UserStatusState["clothing"]>) {
+    if (clothing[key] === "none" || clothing[key] === "removed") {
+      delete clothing[key];
+    }
+  }
+  if (clothing.accessories != null) {
+    clothing.accessories = clothing.accessories.filter((a) => a !== "none" && a !== "removed");
+    if (clothing.accessories.length === 0) delete clothing.accessories;
+  }
+
+  const youParts = youStatus.split(";").map((s) => s.trim()).filter(Boolean);
+  const youClothingRaw = youParts[0] ?? "";
+  const hasConcreteGarmentInYouLine = GARMENT_NAMES.some((g) =>
+    new RegExp(`\\b${escapeRegExp(g)}\\b`, "i").test(youClothingRaw),
+  );
+
+  if (hasConcreteGarmentInYouLine && !/regular clothing/i.test(youClothingRaw)) {
+    const prevUpper = clothing.upper ?? "";
+    const prevMatchesPrev = GARMENT_NAMES.some((g) =>
+      new RegExp(`\\b${escapeRegExp(g)}\\b`, "i").test(prevUpper),
+    );
+    if (!prevMatchesPrev || !sameText(youClothingRaw, prevUpper)) {
+      clothing.upper = youClothingRaw;
+    }
+  }
+
+  if (isObjectDamageOnly(narrativeContext)) {
+    return clothing;
+  }
+
+  if (containsAnyCue(narrativeContext, CLOTHING_REMOVAL_CUES)) {
+    const upperVal = clothing.upper;
+    if (upperVal != null && typeof upperVal === "string") {
+      const slotWords = upperVal.toLowerCase().split(/\s+/);
+      if (slotWords.some((w) => w.length > 3 && narrativeContext.includes(w))) {
+        const removalDetail = extractGarmentRemovalDetail(narrativeContext, upperVal);
+        if (removalDetail != null) clothing.upper = removalDetail;
+      }
+    }
+    const outerVal = clothing.outerwear;
+    if (outerVal != null && typeof outerVal === "string") {
+      const slotWords = outerVal.toLowerCase().split(/\s+/);
+      if (slotWords.some((w) => w.length > 3 && narrativeContext.includes(w))) {
+        const removalDetail = extractGarmentRemovalDetail(narrativeContext, outerVal);
+        if (removalDetail != null) clothing.outerwear = removalDetail;
+      }
+    }
+  }
+
+  if (
+    containsAnyCue(narrativeContext, CLOTHING_DAMAGE_CUES) &&
+    GARMENT_NAMES.some((g) => new RegExp(`\\b${escapeRegExp(g)}\\b`, "i").test(narrativeContext))
+  ) {
+    for (const entry of [["upper", clothing.upper] as const, ["lower", clothing.lower] as const, ["outerwear", clothing.outerwear] as const, ["footwear", clothing.footwear] as const]) {
+      const slot = entry[0] as "upper" | "lower" | "outerwear" | "footwear";
+      const slotVal = entry[1];
+      if (slotVal != null && typeof slotVal === "string") {
+        const slotWords = slotVal.toLowerCase().split(/\s+/);
+        const garmentMentioned = GARMENT_NAMES.some(
+          (g) => slotWords.includes(g) && new RegExp(`\\b${escapeRegExp(g)}\\b`).test(narrativeContext),
+        );
+        if (garmentMentioned) {
+          const damaged = applyClothingDamage(slotVal, narrativeContext);
+          if (damaged != null) {
+            if (slot === "upper") clothing.upper = damaged;
+            else if (slot === "lower") clothing.lower = damaged;
+            else if (slot === "outerwear") clothing.outerwear = damaged;
+            else if (slot === "footwear") clothing.footwear = damaged;
+          }
+        }
+      }
+    }
+  }
+
+  if (
+    containsAnyCue(narrativeContext, CLOTHING_CHANGE_CUES) &&
+    GARMENT_NAMES.some((g) => new RegExp(`\\b${escapeRegExp(g)}\\b`, "i").test(narrativeContext))
+  ) {
+    for (const garment of GARMENT_NAMES) {
+      const re = new RegExp(`\\b${escapeRegExp(garment)}\\b`, "i");
+      if (re.test(narrativeContext)) {
+        const slot = inferClothingSlot(garment);
+        if (slot != null && slot !== "accessories") {
+          const newDesc = extractNewGarmentDesc(narrativeContext, garment);
+          if (newDesc != null) {
+            if (slot === "upper") clothing.upper = newDesc;
+            else if (slot === "lower") clothing.lower = newDesc;
+            else if (slot === "outerwear") clothing.outerwear = newDesc;
+            else if (slot === "footwear") clothing.footwear = newDesc;
+          }
+        } else if (slot === "accessories") {
+          if (!clothing.accessories) clothing.accessories = [];
+          const newAcc = extractNewGarmentDesc(narrativeContext, garment);
+          if (newAcc != null && !clothing.accessories.includes(newAcc)) {
+            clothing.accessories.push(newAcc);
+          }
+        }
+      }
+    }
+  }
+
+  return clothing;
+}
+
+function isObjectDamageOnly(context: string): boolean {
+  const hasGarment = GARMENT_NAMES.some(
+    (g) => new RegExp(`\\b${escapeRegExp(g)}\\b`, "i").test(context),
+  );
+  if (hasGarment) return false;
+  const hasObjectDamage = OBJECT_DAMAGE_WORDS.some(
+    (w) => new RegExp(`\\b${escapeRegExp(w)}\\b`, "i").test(context),
+  );
+  const hasDamageCue = CLOTHING_DAMAGE_CUES.some(
+    (cue) => new RegExp(`\\b${escapeRegExp(cue)}\\b`, "i").test(context),
+  );
+  const hasUserAction = /\{\{user\}\}|\byou\b/i.test(context);
+  return hasObjectDamage && hasDamageCue && hasUserAction;
+}
+
+function inferClothingSlot(garment: string): keyof UserStatusState["clothing"] | null {
+  const lower = garment.toLowerCase();
+  if (["pants", "trousers", "jeans", "shorts", "skirt", "leggings", "boxers", "briefs", "panties", "underwear"].includes(lower)) {
+    return "lower";
+  }
+  if (["boots", "shoes", "sandals"].includes(lower)) {
+    return "footwear";
+  }
+  if (["cloak", "mantle", "cape", "jacket", "coat", "outerwear", "armor", "armour", "hood", "vest"].includes(lower)) {
+    return "outerwear";
+  }
+  if (lower === "belt" || lower === "sash" || lower === "scarf" || lower === "gloves" || lower === "hat" || lower === "cap") {
+    return "accessories";
+  }
+  return "upper";
+}
+
+function extractGarmentRemovalDetail(context: string, currentGarment: string): string | null {
+  if (/\b(?:remove|removes|removed|take off|takes off|took off|strip|strips|stripped)\b/i.test(context)) {
+    return "removed";
+  }
+  return null;
+}
+
+function applyClothingDamage(currentGarment: string, context: string): string | null {
+  const damageWords = [
+    "burned", "burnt", "scorched", "torn", "ripped", "shredded", "slashed",
+    "bloody", "bloodied", "stained", "soaked", "wet", "muddy", "damaged",
+    "destroyed", "frayed", "singed", "loose", "loosened", "baggy",
+    "caught", "snagged", "stuck", "hooked", "tangled", "slipping",
+    "untucked", "unbuttoned", "unfastened", "torn sleeve",
+  ];
+  const foundDamage = damageWords.find((w) => new RegExp(`\\b${escapeRegExp(w)}\\b`, "i").test(context));
+  if (foundDamage == null) return null;
+  const lowerGarment = currentGarment.toLowerCase();
+  for (const garment of GARMENT_NAMES) {
+    if (lowerGarment.includes(garment) && new RegExp(`\\b${escapeRegExp(garment)}\\b`, "i").test(context)) {
+      if (lowerGarment.includes(foundDamage)) return null;
+      return `${foundDamage} ${currentGarment}`;
+    }
+  }
+  if (new RegExp(`\\b${escapeRegExp(foundDamage)}\\b`, "i").test(context)) {
+    const garmentMention = GARMENT_NAMES.find((g) =>
+      new RegExp(`\\b${escapeRegExp(g)}\\b`, "i").test(context),
+    );
+    if (garmentMention && lowerGarment.includes(garmentMention)) {
+      return `${foundDamage} ${currentGarment}`;
+    }
+  }
+  return null;
+}
+
+function extractNewGarmentDesc(context: string, garment: string): string | null {
+  const re = new RegExp(
+    `(?:wear|wears|wearing|wore|put on|puts on|dressed in|clad in|don|dons|donned|change into|changes into|changed into|slip into|slips into|slipped into)\\s+(?:a\\s+|an\\s+|the\\s+)?([^.;,\n]{2,60}?)\\b${escapeRegExp(garment)}\\b`,
+    "i",
+  );
+  const match = re.exec(context);
+  if (match != null) {
+    const desc = cleanFragment(match[1] + garment);
+    if (desc.length > 0 && desc.length <= 80) return desc;
+  }
+  const simpleRe = new RegExp(
+    `(?:wear|wears|wearing|wore|put on|puts on|dressed in|clad in|don|dons|donned)\\s+(?:a\\s+|an\\s+|the\\s+)?([^.;,\n]{2,80})`,
+    "i",
+  );
+  const simpleMatch = simpleRe.exec(context);
+  if (simpleMatch != null) {
+    const desc = cleanFragment(simpleMatch[1]);
+    if (desc.length > 0 && desc.length <= 80 && GARMENT_NAMES.some((g) => desc.toLowerCase().includes(g))) {
+      return desc;
+    }
+  }
+  const wearPattern = new RegExp("\\b(?:wearing|wears|wore)\\s+(?:his|her|their|a|an|the)?\\s*([^.;,\\n]{2,80})", "i");
+  const wearMatch = wearPattern.exec(context);
+  if (wearMatch != null) {
+    const desc = cleanFragment(wearMatch[1]);
+    if (GARMENT_NAMES.some((g) => desc.toLowerCase().includes(g)) && desc.length <= 80) {
+      return desc;
+    }
+  }
+  return null;
+}
+
+function updateUserWeapons(
+  previous: UserStatusState["weapons"],
+  narrativeContext: string,
+): UserStatusState["weapons"] {
+  const weapons = previous.filter((w) => w.status !== "destroyed" && w.status !== "removed" && w.status !== "lost");
+  const weaponMentions = WEAPON_KEYWORDS.filter((w) =>
+    new RegExp(`\\b${escapeRegExp(w)}\\b`, "i").test(narrativeContext),
+  );
+  const damageCues = ["destroyed", "broken", "shattered", "lost", "dropped", "falls?\\s+", "leave", "leaves", "left", "handed over", "given away", "thrown", "threw", "abandoned", "discarded"];
+  const removeCues = ["leave", "leaves", "left", "handed over", "give", "gives", "gave", "drop", "drops", "dropped", "throw", "throws", "threw", "put away", "stow", "stows", "stowed", "sheathe", "sheathes", "sheathed"];
+
+  for (const weapon of weaponMentions) {
+    const existing = weapons.find((w) => sameText(w.name, weapon));
+    const hasDamageCue = damageCues.some((c) => new RegExp(`\\b${escapeRegExp(c)}\\b`, "i").test(narrativeContext));
+    const hasRemoveCue = removeCues.some((c) => new RegExp(`\\b${escapeRegExp(c)}\\b`, "i").test(narrativeContext));
+    if (existing != null && (hasDamageCue || hasRemoveCue)) {
+      existing.status = hasDamageCue ? "destroyed" : "removed";
+      continue;
+    }
+    if (existing != null) {
+      const location = extractWeaponLocation(narrativeContext, weapon);
+      if (location != null) existing.location = location;
+      continue;
+    }
+    const addCue = /\b(?:hold|holds|holding|carry|carries|carrying|wield|wields|wielding|draw|draws|drew|pull|pulls|pulled|grip|grips|gripping|grasp|grasps|grasping|with|and|,\s*)\b/i;
+    if (addCue.test(narrativeContext)) {
+      const location = extractWeaponLocation(narrativeContext, weapon) || `in ${getDefaultWeaponLocation(weapon)}`;
+      weapons.push({ name: weapon, location, status: "intact" });
+    }
+  }
+
+  return weapons;
+}
+
+function extractWeaponLocation(context: string, weapon: string): string | null {
+  const re = new RegExp(
+    `${escapeRegExp(weapon)}\\s+(?:in|on|at|behind|under|beneath|beside|against|across|over|upon)\\s+([^.;,\\n]{2,40})`,
+    "i",
+  );
+  const match = re.exec(context);
+  if (match != null) {
+    return cleanFragment(match[1]);
+  }
+  const beforeRe = new RegExp(
+    `(?:in|on|at|behind|under|beneath|beside|against|across)\\s+([^.;,\\n]{2,40})\\s+${escapeRegExp(weapon)}`,
+    "i",
+  );
+  const beforeMatch = beforeRe.exec(context);
+  if (beforeMatch != null) {
+    return cleanFragment(beforeMatch[1]);
+  }
+  return null;
+}
+
+function getDefaultWeaponLocation(weapon: string): string {
+  const small = ["dagger", "knife", "dart", "shuriken"];
+  if (small.includes(weapon.toLowerCase())) {
+    return "{{user}}'s belt";
+  }
+  return "{{user}}'s hand";
+}
+
+function updateUserItems(
+  previous: UserStatusState["importantItems"],
+  narrativeContext: string,
+): UserStatusState["importantItems"] {
+  const items = previous.filter((i) => i.status !== "destroyed" && i.status !== "removed" && i.status !== "lost");
+  const itemMentions = ITEM_KEYWORDS.filter((w) =>
+    new RegExp(`\\b${escapeRegExp(w)}\\b`, "i").test(narrativeContext),
+  );
+
+  const removeCues = [
+    "leave", "leaves", "left", "handed over", "give", "gives", "gave",
+    "drop", "drops", "dropped", "throw", "throws", "threw",
+    "lost", "loses", "lose", "stolen", "stole",
+    "put away", "stow", "stows", "stowed", "store", "stores", "stored",
+  ];
+  const damageCues = [
+    "destroyed", "broken", "shattered", "burns", "burned", "burnt",
+    "ashes", "ash", "consumed", "melted", "crushed", "torn", "ripped",
+  ];
+
+  for (const item of itemMentions) {
+    const existing = items.find((i) => sameText(i.name, item));
+    const hasDamageCue = damageCues.some((c) => new RegExp(`\\b${escapeRegExp(c)}\\b`, "i").test(narrativeContext));
+    const hasRemoveCue = removeCues.some((c) => new RegExp(`\\b${escapeRegExp(c)}\\b`, "i").test(narrativeContext));
+    if (existing != null) {
+      if (hasDamageCue) {
+        existing.status = "destroyed";
+        continue;
+      }
+      if (hasRemoveCue) {
+        existing.status = "removed";
+        continue;
+      }
+      const location = extractItemLocation(narrativeContext, item);
+      if (location != null) existing.location = location;
+      continue;
+    }
+    const addCue = /\b(?:hold|holds|holding|carry|carries|carrying|with|wear|wears|wearing|around|about)\b/i;
+    if (addCue.test(narrativeContext)) {
+      const location = extractItemLocation(narrativeContext, item) || `in {{user}}'s possession`;
+      items.push({ name: item, location, status: "intact" });
+    }
+  }
+
+  return items;
+}
+
+function extractItemLocation(context: string, item: string): string | null {
+  const re = new RegExp(
+    `${escapeRegExp(item)}\\s+(?:in|on|at|behind|under|beneath|beside|against|around|about|upon|inside)\\s+([^.;,\\n]{2,40})`,
+    "i",
+  );
+  const match = re.exec(context);
+  if (match != null) {
+    return cleanFragment(match[1]);
+  }
+  const beforeRe = new RegExp(
+    `(?:in|on|at|behind|under|beneath|beside|against|around|about|inside)\\s+([^.;,\\n]{2,40})\\s+${escapeRegExp(item)}`,
+    "i",
+  );
+  const beforeMatch = beforeRe.exec(context);
+  if (beforeMatch != null) {
+    return cleanFragment(beforeMatch[1]);
+  }
+  return null;
+}
+
 export function normalizeAetherNovaResponse(
     content: string,
     previousState: AetherNovaMessageState,
@@ -1461,11 +1924,12 @@ export function normalizeAetherNovaResponse(
         correctionContext,
         previousState.walletInitialized === true,
     );
+    const youLine = normalizeYouLine(extracted.youLine ?? "", previousState.you, correctionContext, {sceneChanged});
     const state: AetherNovaMessageState = {
         location: timeLocation.location,
         timeOfDay: timeLocation.timeOfDay,
         clock: timeLocation.clock,
-        you: normalizeYouLine(extracted.youLine ?? "", previousState.you, correctionContext, {sceneChanged}),
+        you: youLine,
         npc: normalizeNpcLine(extracted.npcLine ?? "", previousState.npc, correctionContext, {sceneChanged}),
         thread: normalizeThreadLine(extracted.threadLine ?? "", previousState.thread, correctionContext),
         wallet: wallet.value,
@@ -1473,6 +1937,7 @@ export function normalizeAetherNovaResponse(
         npcMemory: previousState.npcMemory,
         pendingNpcDebugQuery: null,
         pendingNpcMemoryCommand: previousState.pendingNpcMemoryCommand,
+        userStatus: updateUserStatus(previousState.userStatus, youLine, correctionContext),
     };
     state.npcMemory = updateNpcMemory(previousState.npcMemory, state.npc, `${state.location}\n${correctionContext}`);
     const debugQuery = previousState.pendingNpcDebugQuery ?? debugNpcQuery(context);

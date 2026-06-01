@@ -3,6 +3,7 @@ import {InitialData, LoadResponse, Message, StageBase, StageResponse} from "@chu
 import {
     AetherNovaMessageState,
     NpcMemoryEntry,
+    UserStatusState,
     applyNpcMemoryCommands,
     buildStageDirections,
     coerceHeaderState,
@@ -349,13 +350,18 @@ function AetherNovaDebugPanel({
 
             <section className="aether-debug-grid" aria-label="Current header state">
                 <DebugMetric label="Location" value={`${snapshot.state.location} | ${snapshot.state.timeOfDay} | ${snapshot.state.clock}`} />
-                <DebugMetric label="You" value={snapshot.state.you} />
+                <DebugMetric label="You (compact)" value={snapshot.state.you} />
                 <DebugMetric label="NPC" value={snapshot.state.npc} />
                 <DebugMetric label="Thread" value={snapshot.state.thread} />
                 <DebugMetric label="Wallet" value={snapshot.state.wallet} />
                 <DebugMetric label="Pending NPC Debug" value={snapshot.state.pendingNpcDebugQuery ?? "None"} />
                 <DebugMetric label="Pending Memory Command" value={snapshot.state.pendingNpcMemoryCommand ?? "None"} />
             </section>
+
+            <details className="aether-debug-details" open>
+                <summary>Status User</summary>
+                <UserStatusPanel status={snapshot.state.userStatus} />
+            </details>
 
             <section className="aether-debug-section">
                 <div className="aether-debug-section-title">
@@ -626,6 +632,67 @@ function NpcMemoryEditor({
     );
 }
 
+function UserStatusPanel({status}: {status: UserStatusState}): ReactElement {
+  const clothingParts: string[] = [];
+  if (status.clothing.upper) clothingParts.push(`Upper: ${status.clothing.upper}`);
+  if (status.clothing.lower) clothingParts.push(`Lower: ${status.clothing.lower}`);
+  if (status.clothing.footwear) clothingParts.push(`Footwear: ${status.clothing.footwear}`);
+  if (status.clothing.outerwear) clothingParts.push(`Outerwear: ${status.clothing.outerwear}`);
+  if (status.clothing.accessories && status.clothing.accessories.length > 0) {
+    clothingParts.push(`Accessories: ${status.clothing.accessories.join(", ")}`);
+  }
+
+  return (
+    <div className="aether-user-status">
+      <div className="aether-user-status-row">
+        <span className="aether-user-status-label">Gender:</span>
+        <span>{status.gender}</span>
+      </div>
+      <div className="aether-user-status-row">
+        <span className="aether-user-status-label">Race:</span>
+        <span>{status.apparentRace}</span>
+      </div>
+      {clothingParts.length > 0 && (
+        <div className="aether-user-status-section">
+          <span className="aether-user-status-label">Clothing:</span>
+          <ul className="aether-user-status-list">
+            {clothingParts.map((part) => (
+              <li key={part}>{part}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {status.weapons.length > 0 && (
+        <div className="aether-user-status-section">
+          <span className="aether-user-status-label">Weapons:</span>
+          <ul className="aether-user-status-list">
+            {status.weapons.map((w) => (
+              <li key={w.name}>
+                {w.name} — {w.location}{w.status ? ` — ${w.status}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {status.importantItems.length > 0 && (
+        <div className="aether-user-status-section">
+          <span className="aether-user-status-label">Important Items:</span>
+          <ul className="aether-user-status-list">
+            {status.importantItems.map((item) => (
+              <li key={item.name}>
+                {item.name} — {item.location}{item.status ? ` — ${item.status}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {clothingParts.length === 0 && status.weapons.length === 0 && status.importantItems.length === 0 && (
+        <p className="aether-debug-empty compact">No detailed status data yet.</p>
+      )}
+    </div>
+  );
+}
+
 function DebugMetric({label, value}: {label: string; value: string}): ReactElement {
     return (
         <article className="aether-debug-metric">
@@ -753,6 +820,11 @@ function headerStateChangeDetails(previous: AetherNovaMessageState, next: Aether
         formatDebugFieldChange("Wallet", previous.wallet, next.wallet),
     ].filter(Boolean);
 
+    const userStatusChanged = JSON.stringify(previous.userStatus ?? {}) !== JSON.stringify(next.userStatus ?? {});
+    if (userStatusChanged) {
+        details.push("Status User: changed");
+    }
+
     return details.length > 0 ? details : ["No tracked header field changed."];
 }
 
@@ -836,6 +908,10 @@ function changedStateFields(previous: AetherNovaMessageState, next: AetherNovaMe
 
     if (JSON.stringify(previous.npcMemory ?? {}) !== JSON.stringify(next.npcMemory ?? {})) {
         changed.push("npcMemory");
+    }
+
+    if (JSON.stringify(previous.userStatus ?? {}) !== JSON.stringify(next.userStatus ?? {})) {
+        changed.push("userStatus");
     }
 
     return changed;
