@@ -35,11 +35,13 @@ export {parseWalletAmounts, formatWallet, walletToCopper, copperToWallet} from "
 export {coerceNpcMemory, updateNpcMemory, buildNpcMemoryDirections} from "./npcMemory/updateNpcMemory";
 export {npcHeaderMemoryEntries, npcMemoryKeysFromHeader, npcSpeakerNamesFromState} from "./npcMemory/npcMemoryState";
 export {NPC_CANON_REGISTRY, findNpcCanonByNameOrAlias} from "./npcMemory/npcCanonRegistry";
+export {applyNpcMemoryCommands} from "./npcMemory/npcMemoryCommands";
 
 export {coerceUserStatus, updateUserStatus} from "./userStatus/userStatusState";
 
 export {createDefaultState, defaultNpcStatusForRace} from "./state/defaultState";
 export {coerceHeaderState, createInitialHeaderState} from "./state/coerceHeaderState";
+export {prepareAetherNovaStateForPrompt, buildStageDirections} from "./state/stageDirections";
 
 export {normalizeAetherNovaResponse, debugNpcQuery} from "./response/normalizeAetherNovaResponse";
 export {extractHeader} from "./response/extractHeader";

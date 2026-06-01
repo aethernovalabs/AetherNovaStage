@@ -1,8 +1,112 @@
 # Aether Nova Stage Reference — Cara Kerja
 
-Dokumen ini menjelaskan cara kerja setiap sistem di Stage Aether Nova berdasarkan implementasi aktual di `src/Stage.tsx` dan `src/aetherNovaHeader.ts`.
+Dokumen ini menjelaskan cara kerja setiap sistem di Stage Aether Nova berdasarkan implementasi aktual di `src/Stage.tsx` dan modul di `src/aetherNova/`.
 
 Stage ini adalah **system teknis Chub Stage** untuk menjaga konsistensi output AI dalam chat RP panjang.
+
+---
+
+## File Map / Project Structure
+
+```
+src/
+├── Stage.tsx                      # Entry point: React component extending StageBase
+│                                  #   – Semua import dari ./aetherNova (barrel)
+│
+├── aetherNova/                    # Source of truth untuk semua logic (modular)
+│   ├── index.ts                   # Barrel re-export — Stage.tsx hanya import dari sini
+│   ├── types.ts                   # Semua tipe (TimeOfDay, AetherNovaMessageState, dll)
+│   ├── constants.ts               # Konstanta bersama (DEFAULT_STATE, regex patterns, dll)
+│   │
+│   ├── header/                    # Normalisasi header fields
+│   │   ├── headerBuilder.ts       #   formatHeader()
+│   │   ├── locationConstants.ts   #   Konstanta lokasi
+│   │   ├── normalizeClock.ts      #   normalizeClock / timeOfDayForClock / asTimeOfDay
+│   │   ├── normalizeLocation.ts   #   normalizeLocation / normalizeLocationTimeLine
+│   │   ├── normalizeNpcLine.ts    #   normalizeNpcLine / normalizeNpcEntry
+│   │   ├── normalizeYouLine.ts    #   normalizeYouLine / normalizeStatus / parseIdentityStatus
+│   │   └── statusConstants.ts     #   Konstanta status
+│   │
+│   ├── thread/                    # Thread inference & lock
+│   │   ├── normalizeThreadLine.ts #   normalizeThreadLine + semua fungsi inferensi
+│   │   ├── threadWaitingLock.ts   #   applyThreadWaitingLock
+│   │   ├── threadConstants.ts     #   Konstanta thread
+│   │   └── threadInference.ts     #   Re-export backward compat dari normalizeThreadLine
+│   │
+│   ├── wallet/                    # Wallet tracking
+│   │   ├── normalizeWalletLine.ts #   normalizeWalletLine / coerceWalletState
+│   │   ├── walletMath.ts          #   parseWalletAmounts / formatWallet / walletToCopper
+│   │   ├── walletConstants.ts     #   Konstanta wallet
+│   │   └── detectWalletTransaction.ts # Re-export backward compat
+│   │
+│   ├── npcMemory/                 # NPC Memory (storage, inference, commands)
+│   │   ├── npcCanonRegistry.ts    #   NPC_CANON_REGISTRY / findNpcCanonByNameOrAlias
+│   │   ├── npcMemoryState.ts      #   npcHeaderMemoryEntries / npcMemoryKeysFromHeader / dll
+│   │   ├── npcMemoryHelpers.ts    #   formatNpcMemoryForPrompt / buildNpcDebug* / dll
+│   │   ├── npcMemoryInference.ts  #   inferNpcMood / inferNpcBehaviorEvidence / dll
+│   │   ├── updateNpcMemory.ts     #   coerceNpcMemory / updateNpcMemory / buildNpcMemoryDirections
+│   │   └── npcMemoryCommands.ts   #   applyNpcMemoryCommands
+│   │
+│   ├── narrative/                 # Narrative formatting
+│   │   ├── normalizeNarrativeFormat.ts # normalizeNarrativeFormat
+│   │   ├── dialogueFormatter.ts   #   Dialogue formatting helpers
+│   │   └── italicRules.ts         #   Aturan italic
+│   │
+│   ├── response/                  # Response processing pipeline
+│   │   ├── normalizeAetherNovaResponse.ts # normalizeAetherNovaResponse / debugNpcQuery
+│   │   ├── extractHeader.ts       #   extractHeader / readHeaderBlock
+│   │   └── formatResponse.ts      #   formatResponse
+│   │
+│   ├── state/                     # State management
+│   │   ├── coerceHeaderState.ts   #   createInitialHeaderState / coerceHeaderState
+│   │   ├── defaultState.ts        #   createDefaultState / defaultNpcStatusForRace
+│   │   ├── stageDirections.ts     #   prepareAetherNovaStateForPrompt / buildStageDirections
+│   │   └── stateMerge.ts          #   normalizePendingNpcDebugQuery / dll
+│   │
+│   ├── userStatus/                # User status tracking
+│   │   ├── userStatusState.ts     #   coerceUserStatus / updateUserStatus
+│   │   ├── clothingClassifier.ts  #   hasGarmentKeyword / inferClothingSlot / dll
+│   │   ├── itemTracker.ts         #   updateUserWeapons / updateUserItems
+│   │   └── compactYouStatus.ts    #   (dead code, legacy)
+│   │
+│   ├── utils/                     # Utility functions
+│   │   ├── text.ts                #   cleanFragment / cleanHeaderText / sameText / dll
+│   │   ├── regex.ts               #   escapeRegExp / containsAnyCue
+│   │   ├── split.ts               #   splitTopLevel
+│   │   ├── nonDialogue.ts         #   nonDialogueEvidenceContext
+│   │   └── clamp.ts               #   clamp
+│   │
+│   └── ui/                        # Debug UI
+│       ├── DebugPanel.tsx         #   Component React untuk debug
+│       ├── debugUtils.ts          #   Helper functions debug
+│       └── types.ts               #   Tipe debug
+│
+├── App.tsx                        # Root React component
+├── index.ts                       # Entry barrel (re-export Stage)
+├── main.tsx                       # Entry point React
+├── TestRunner.tsx                 # Test UI
+└── assets/                        # Static assets
+```
+
+### Ringkasan Alur Import
+
+```
+Stage.tsx
+  └── ./aetherNova/index.ts (barrel)
+        ├── types.ts
+        ├── constants.ts
+        ├── utils/*
+        ├── state/*
+        ├── header/*
+        ├── thread/*
+        ├── wallet/*
+        ├── npcMemory/*
+        ├── userStatus/*
+        ├── narrative/*
+        └── response/*
+```
+
+Tidak ada lagi file monolith. Semua logika dipecah ke ~40 file modular.
 
 ---
 
@@ -12,9 +116,9 @@ Stage adalah React component (`Stage.tsx`) yang mengimplementasikan `StageBase` 
 
 ### constructor()
 - Menerima `InitialData` berisi characters, config, dan messageState dari chat.
-- Memanggil `createInitialHeaderState()` yang meneruskan ke `coerceHeaderState()` untuk menormalkan state masuk atau membuat default.
-- Jika ada character aktif, stage menginfer race dari `character.description/personality/scenario/first_message` dan memakainya sebagai NPC default.
-- State default: `DEFAULT_STATE` — lokasi "Unknown Region", waktu "Morning | 09:00", You "Unknown - Human", NPC "None", Thread "None", Wallet "0G ; 0S ; 0C", walletInitialized false, npcMemory {}.
+- Memanggil `createInitialHeaderState()` dari `src/aetherNova/state/coerceHeaderState.ts` yang meneruskan ke `coerceHeaderState()` untuk menormalkan state masuk atau membuat default.
+- Fungsi `createDefaultState()` dari `src/aetherNova/state/defaultState.ts` membuat state default berdasarkan character (infer race dari `character.description/personality/scenario/first_message`).
+- State default: `DEFAULT_STATE` dari `src/aetherNova/constants.ts`.
 
 ### load()
 - Mengembalikan `success: true` dan `messageState` saat ini.
@@ -506,9 +610,34 @@ Boundary penting:
 
 ### Injection Rules (`buildNpcMemoryDirections`)
 Hanya NPC memory context yang diinject ke prompt LLM. Header state (`Location`, `Time`, `You`, `NPC`, `Thread`, `Wallet`) tidak diinject — hanya disimpan internal stage untuk koreksi header respons LLM.
-1. **NPC di header aktif** → inject FULL memory: Name, Role/Title, Race, Physical Extra, Current Mood, Behavior, Relationship, OnlyKnows, Important Relationship Events.
-2. **NPC hanya disebut di pesan user** → inject IDENTITY ONLY: Name, Role/Title, Race, Physical Extra. Mood, Relationship, Behavior, OnlyKnows, dan Relationship Events TIDAK diinject (knowledge firewall).
+
+**Format compact:**
+```text
+[NPC Memory Context]
+Present NPCs (full memory):
+- Name: Aveline Montreval | Role/Title: Crown Princess of Solmeryn | Race: Human | Current Mood: relieved, suspicious | Last Interaction Tone: warm | Behavior toward {{user}}: None stable yet | Relationship with {{user}}: stranger | OnlyKnows: {{user}} told Aveline to gather co-conspirators
+Mentioned-only NPCs (identity only):
+- Name: Aldric Vance | Role/Title: Lord | Race: Human
+```
+
+1. **NPC di header aktif** → inject FULL memory dengan label lengkap:
+   - Wajib: `Name`, `Role/Title`, `Race`, `Current Mood`, `Last Interaction Tone`, `Behavior toward {{user}}`, `Relationship with {{user}}`.
+   - `Behavior toward {{user}}: None stable yet` tetap di-inject jika belum ada behavior stabil.
+   - `Relationship with {{user}}: stranger` tetap di-inject untuk full memory.
+   - `Physical Extra` hanya di-inject jika bukan `none`/kosong.
+   - `OnlyKnows` hanya di-inject jika ada isi.
+   - `Important Relationship Events` hanya di-inject jika ada isi.
+2. **NPC hanya disebut di pesan user** → inject IDENTITY ONLY: `Name`, `Role/Title`, `Race`. `Physical Extra` hanya jika bukan `none`. Mood, Relationship, Behavior, OnlyKnows, dan Relationship Events TIDAK diinject (knowledge firewall).
 3. **NPC tidak ada di header dan tidak disebut** → data tetap disimpan, tidak diinject. Injection dibatasi 4 NPC per kategori.
+4. Jika role/title tidak diketahui, Stage menulis `Role/Title: unknown`.
+5. Section kosong tidak di-inject (tidak ada `[NPC Memory Context]` jika semua section kosong).
+
+**Field yang dihilangkan jika kosong/default:**
+- `Physical Extra: none` → dihilangkan
+- `OnlyKnows: None recorded` → dihilangkan
+- `Important Relationship Events: None recorded` → dihilangkan
+- `Behavior toward {{user}}: None stable yet` → **tetap ada** (wajib)
+- `Relationship with {{user}}: stranger` → **tetap ada** (wajib)
 
 ### Commands Manual
 Command dideteksi dengan regex `NPC_MEMORY_COMMAND_PATTERN` di mana pun dalam pesan user, lalu dihapus sebelum dikirim ke LLM.

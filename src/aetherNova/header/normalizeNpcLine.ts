@@ -3,7 +3,7 @@ import {DEFAULT_STATE} from "../constants";
 import {
     CLOTHING_CHANGE_CUES, CLOTHING_REMOVAL_CUES, CLOTHING_DAMAGE_CUES,
 } from "./statusConstants";
-import {cleanLabeledValue, isNoNpcValue, isPlaceholder, sameText, cleanFragment} from "../utils/text";
+import {cleanFragment, cleanLabeledValue, isNoNpcValue, isPlaceholder, sameText} from "../utils/text";
 import {containsAnyCue} from "../utils/regex";
 import {splitTopLevel} from "../utils/split";
 import {defaultNpcStatusForRace} from "../state/defaultState";

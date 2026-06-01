@@ -1,5 +1,5 @@
 import type {NormalizeStatusOptions} from "../types";
-import {DEFAULT_STATE, CLOTHING_DAMAGE_WORDS, CLOTHING_SLOT_PATTERN, GARMENT_NAMES, TRANSIENT_YOU_DETAIL_PATTERN} from "../constants";
+import {DEFAULT_STATE, CLOTHING_DAMAGE_WORDS, CLOTHING_SLOT_PATTERN, BODY_RACIAL_DETAIL_PATTERN, GARMENT_NAMES, TRANSIENT_YOU_DETAIL_PATTERN} from "../constants";
 import {cleanFragment, cleanHeaderText, cleanLabeledValue, isPlaceholder, sameText, limitWords} from "../utils/text";
 import {containsAnyCue, escapeRegExp} from "../utils/regex";
 import {splitTopLevel} from "../utils/split";
@@ -12,6 +12,7 @@ import {
     DETAIL_OBJECT_INTERACTION_CUES, DETAIL_SETTLED_BODY_CUES,
     DETAIL_POSTURE_CHANGE_CUES, DETAIL_CONTACT_ACTION_CUES,
 } from "./statusConstants";
+import {LOCATION_TRANSITION_CUES} from "./locationConstants";
 import {VAGUE_STATUS_PATTERN, USER_FORBIDDEN_DETAIL_PATTERN} from "../constants";
 
 export function parseIdentityStatus(rawValue: string): {identity: string; status: string} {
@@ -255,7 +256,6 @@ function statusPartLooksLikePosition(value: string): boolean {
 }
 
 function statusPartLooksLikeDetail(value: string): boolean {
-    const BODY_RACIAL_DETAIL_PATTERN = /\b(eye|eyes|gaze|tail|tails|ear|ears|wing|wings|horn|horns|halo|fang|fangs|claw|claws|scale|scales|hand|hands|palm|palms|finger|fingers|arm|arms|elbow|elbows|head|face|cheek|cheeks|forehead|chin|mouth|nose|hair|shoulder|shoulders|back|body|torso|waist|hip|hips|knee|knees|posture|voice|weapon|sword|blade|staff)\b/i;
     return BODY_RACIAL_DETAIL_PATTERN.test(value);
 }
 
@@ -619,8 +619,14 @@ export function normalizeStatus(
         : (statusChangeIsSupported(rawClothing, fallbackClothing, clothingContext, "clothing", kind) ? rawClothing : fallbackClothing);
     const fallbackDetail = normalizeDetail(fallbackParts[2] ?? defaultParts[2], defaultParts[2], kind);
     const rawDetail = normalizeDetail(rawParts[2] ?? fallbackDetail, fallbackDetail, kind);
+    const detail = rawDetail;
 
-    return `${clothing}; ${position}; ${rawDetail}`;
+    return `${clothing}; ${position}; ${detail}`;
+}
+
+function contextSuggestsSceneShift(context: string): boolean {
+    const lowerContext = context.toLowerCase();
+    return containsAnyCue(lowerContext, LOCATION_TRANSITION_CUES);
 }
 
 function inferYouClothingFromContext(context: string): string | null {
@@ -707,6 +713,184 @@ function anomalyIsRevealed(context: string): boolean {
             || lowerContext.includes("known")
             || lowerContext.includes("learned")
             || lowerContext.includes("discovered"));
+}
+
+function meaningfulDetailWords(value: string): string[] {
+    return cleanFragment(value)
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((word) => word.length > 3 && !["visible", "still", "steady", "hand", "left", "right"].includes(word));
+}
+
+function youDetailHasCurrentEvidence(detail: string, context: string): boolean {
+    const lowerContext = context.toLowerCase();
+    const hasBodyPartCue = containsAnyCue(lowerContext, DETAIL_BODY_PART_CUES);
+    const hasContactActionCue = containsAnyCue(lowerContext, DETAIL_CONTACT_ACTION_CUES);
+
+    if (!hasBodyPartCue && !hasContactActionCue) {
+        return false;
+    }
+
+    return meaningfulDetailWords(detail).some((word) => lowerContext.includes(word));
+}
+
+function isTransientYouDetail(value: string): boolean {
+    const clean = cleanFragment(value);
+    return TRANSIENT_YOU_DETAIL_PATTERN.test(clean)
+        || /\b(hand|hands|arm|arms|elbow|elbows|head|shoulder|shoulders|back)\b.*\b(on|upon|against|over|around|resting|braced|pressed)\b/i.test(clean);
+}
+
+function isTransientObjectYouDetail(value: string): boolean {
+    const clean = cleanFragment(value).toLowerCase();
+
+    return containsAnyCue(clean, DETAIL_BODY_PART_CUES)
+        && containsAnyCue(clean, DETAIL_OBJECT_INTERACTION_CUES)
+        && containsAnyCue(clean, [
+            "holding",
+            "gripping",
+            "grasping",
+            "clutching",
+            "pulling",
+            "tugging",
+            "drawing",
+            "lifting",
+            "lowering",
+            "releasing",
+            "released",
+            "release",
+            "placing",
+            "placed",
+            "setting",
+            "set down",
+            "sliding",
+            "slid",
+            "pushing",
+            "pushed",
+        ]);
+}
+
+function isSettledYouDetailCandidate(candidate: string): boolean {
+    const lowerCandidate = candidate.toLowerCase();
+
+    return containsAnyCue(lowerCandidate, DETAIL_BODY_PART_CUES)
+        && containsAnyCue(lowerCandidate, DETAIL_SETTLED_BODY_CUES);
+}
+
+function visibleYouInteractionDetailIsSupported(candidate: string, context: string): boolean {
+    const lowerCandidate = candidate.toLowerCase();
+    const lowerContext = context.toLowerCase();
+    const candidateHasAction = containsAnyCue(lowerCandidate, DETAIL_VISIBLE_INTERACTION_CUES);
+    const contextHasAction = containsAnyCue(lowerContext, DETAIL_VISIBLE_INTERACTION_CUES);
+
+    if (!candidateHasAction || !contextHasAction) {
+        return false;
+    }
+
+    const candidateHasBodyTarget = containsAnyCue(lowerCandidate, DETAIL_BODY_PART_CUES);
+    const contextHasBodyTarget = containsAnyCue(lowerContext, DETAIL_BODY_PART_CUES);
+    const candidateHasObjectTarget = containsAnyCue(lowerCandidate, DETAIL_OBJECT_INTERACTION_CUES);
+    const contextHasObjectTarget = containsAnyCue(lowerContext, DETAIL_OBJECT_INTERACTION_CUES);
+    const candidateWords = meaningfulDetailWords(candidate);
+    const mentionsSameTarget = candidateWords.some((word) => containsAnyCue(lowerContext, [word]));
+
+    return (candidateHasBodyTarget && contextHasBodyTarget)
+        || (candidateHasObjectTarget && contextHasObjectTarget)
+        || mentionsSameTarget;
+}
+
+function postureYouDetailIsSupported(candidate: string, context: string): boolean {
+    const lowerCandidate = candidate.toLowerCase();
+    const lowerContext = context.toLowerCase();
+
+    if (!containsAnyCue(lowerContext, DETAIL_POSTURE_CHANGE_CUES)) {
+        return false;
+    }
+
+    const candidateHasPostureCue = containsAnyCue(lowerCandidate, DETAIL_POSTURE_CHANGE_CUES);
+    const candidateHasBodyCue = containsAnyCue(lowerCandidate, DETAIL_BODY_PART_CUES);
+    const candidateWords = meaningfulDetailWords(candidate);
+    const mentionsSameTarget = candidateWords.some((word) => containsAnyCue(lowerContext, [word]));
+
+    return candidateHasPostureCue || (candidateHasBodyCue && mentionsSameTarget);
+}
+
+function settledYouDetailIsSupported(candidate: string, context: string): boolean {
+    const lowerCandidate = candidate.toLowerCase();
+    const lowerContext = context.toLowerCase();
+
+    if (!isSettledYouDetailCandidate(candidate)) {
+        return false;
+    }
+
+    return containsAnyCue(lowerContext, POSITION_CHANGE_CUES)
+        || containsAnyCue(lowerContext, LOCATION_TRANSITION_CUES)
+        || containsAnyCue(lowerContext, DETAIL_SETTLED_BODY_CUES);
+}
+
+function staleObjectInteractionCanYieldToSettledCandidate(candidate: string, previous: string, context: string): boolean {
+    return isTransientObjectYouDetail(previous)
+        && !youDetailHasCurrentEvidence(previous, context)
+        && isSettledYouDetailCandidate(candidate);
+}
+
+function staleYouDetailCanYieldToCandidate(candidate: string, previous: string, context: string): boolean {
+    if (!isTransientYouDetail(previous) || youDetailHasCurrentEvidence(previous, context)) {
+        return false;
+    }
+
+    return isGenericStatusPart(candidate)
+        || visibleYouInteractionDetailIsSupported(candidate, context)
+        || settledYouDetailIsSupported(candidate, context)
+        || staleObjectInteractionCanYieldToSettledCandidate(candidate, previous, context)
+        || postureYouDetailIsSupported(candidate, context)
+        || meaningfulDetailWords(candidate).some((word) => containsAnyCue(context, [word]));
+}
+
+function staleYouDetailShouldReset(
+    detail: string,
+    previousDetail: string,
+    position: string,
+    previousPosition: string,
+    context: string,
+    sceneChanged: boolean,
+): boolean {
+    if (!sameText(detail, previousDetail) || !isTransientYouDetail(previousDetail)) {
+        return false;
+    }
+
+    const positionChanged = !sameText(position, previousPosition);
+    if (!sceneChanged && !positionChanged && !contextSuggestsSceneShift(context)) {
+        return false;
+    }
+
+    return !youDetailHasCurrentEvidence(previousDetail, context);
+}
+
+function youDetailChangeIsSupported(candidate: string, previous: string, context: string): boolean {
+    if (sameText(candidate, previous) || isGenericStatusPart(previous)) {
+        return true;
+    }
+
+    const lowerContext = context.toLowerCase();
+    const lowerCandidate = candidate.toLowerCase();
+
+    if (CLOTHING_DAMAGE_WORDS.test(lowerCandidate) && CLOTHING_DAMAGE_CUES.some((cue) => lowerContext.includes(cue))) {
+        return true;
+    }
+
+    if (visibleYouInteractionDetailIsSupported(candidate, context)) {
+        return true;
+    }
+
+    if (postureYouDetailIsSupported(candidate, context)) {
+        return true;
+    }
+
+    if (staleObjectInteractionCanYieldToSettledCandidate(candidate, previous, context)) {
+        return true;
+    }
+
+    return meaningfulDetailWords(candidate).some((word) => lowerContext.includes(word));
 }
 
 export function normalizeYouLine(

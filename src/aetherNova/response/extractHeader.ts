@@ -13,7 +13,7 @@ function isHeaderDivider(value: string): boolean {
     return clean === HEADER_DIVIDER || /^_{3,}$/.test(clean);
 }
 
-function readHeaderBlock(lines: string[], start: number): HeaderBlock | null {
+export function readHeaderBlock(lines: string[], start: number): HeaderBlock | null {
     let locationLine: string | null = null;
     let youLine: string | null = null;
     let npcLine: string | null = null;

@@ -169,7 +169,3 @@ export interface RelationshipUpdate {
     relationshipWithUser: string[];
     events: string[];
 }
-
-export type DebugCategory = "lifecycle" | "npcMemory" | "headerFormat" | "narrativeFormat" | "walletThread" | "system" | "injection";
-
-export type GeneralStatusKind = "you" | "npc";

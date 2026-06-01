@@ -1,5 +1,5 @@
 import type {Character} from "@chub-ai/stages-ts";
-import type {AetherNovaMessageState, UserStatusState} from "../types";
+import type {AetherNovaMessageState} from "../types";
 import {DEFAULT_STATE} from "../constants";
 import {cleanFragment} from "../utils/text";
 import {createDefaultState} from "./defaultState";
@@ -23,7 +23,7 @@ export function createInitialHeaderState(
 
 export function coerceHeaderState(
     incomingState: unknown,
-    fallback: AetherNovaMessageState = DEFAULT_STATE as AetherNovaMessageState,
+    fallback: AetherNovaMessageState = DEFAULT_STATE,
 ): AetherNovaMessageState {
     if (incomingState == null || typeof incomingState !== "object") {
         return { ...fallback, userStatus: { ...fallback.userStatus } };
@@ -41,7 +41,7 @@ export function coerceHeaderState(
     const lockedWaiting = normalizeLockedWaitingThreads(raw.lockedWaitingThreads);
     const {updatedThread} = applyThreadWaitingLock(
       normalizeThreadLine(raw.thread ?? "", fallback.thread, ""),
-      { ...fallback, lockedWaitingThreads: lockedWaiting } as AetherNovaMessageState,
+      { ...fallback, lockedWaitingThreads: lockedWaiting },
       "",
     );
 
@@ -60,5 +60,5 @@ export function coerceHeaderState(
         userStatus,
         lockedWaitingThreads: lockedWaiting,
         manualEditOverrides: normalizeManualEditOverrides(raw.manualEditOverrides),
-    } as AetherNovaMessageState;
+    };
 }

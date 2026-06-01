@@ -1,8 +1,43 @@
 import type {UserStatusState} from "../types";
-import {GARMENT_NAMES, OBJECT_DAMAGE_WORDS} from "../constants";
+import {GARMENT_NAMES, OBJECT_DAMAGE_WORDS, POSTURE_BODY_KEYWORDS} from "../constants";
 import {CLOTHING_CHANGE_CUES, CLOTHING_DAMAGE_CUES, CLOTHING_REMOVAL_CUES} from "../header/statusConstants";
+import {looksLikeClothingSlot} from "../header/normalizeYouLine";
 import {escapeRegExp, containsAnyCue} from "../utils/regex";
-import {cleanFragment, sameText} from "../utils/text";
+import {cleanFragment, sameText, isPlaceholder} from "../utils/text";
+
+export function hasGarmentKeyword(value: string): boolean {
+  return GARMENT_NAMES.some((g) => new RegExp(`\\b${escapeRegExp(g)}\\b`, "i").test(value));
+}
+
+export function hasPostureBodyKeyword(value: string): boolean {
+  return POSTURE_BODY_KEYWORDS.some((kw) => new RegExp(`\\b${escapeRegExp(kw)}\\b`, "i").test(value));
+}
+
+export function isOnlyPostureBodyDetail(value: string): boolean {
+  const clean = cleanFragment(value);
+  if (isPlaceholder(clean)) return false;
+  if (hasGarmentKeyword(clean)) return false;
+  return hasPostureBodyKeyword(clean);
+}
+
+export function containsObjectDamageWithoutUserGarment(context: string): boolean {
+  const hasGarment = GARMENT_NAMES.some((g) => new RegExp(`\\b${escapeRegExp(g)}\\b`, "i").test(context));
+  if (hasGarment) return false;
+  const objectWords = ["door", "table", "wall", "window", "floor", "ground", "barrel", "crate", "chair", "bench", "desk", "gate", "fence", "stone", "rock", "pillar", "column"];
+  const damageCues = ["crack", "break", "shatter", "splinter", "burst", "destroy", "smash"];
+  const mentionsObject = objectWords.some((w) => new RegExp(`\\b${escapeRegExp(w)}\\b`, "i").test(context));
+  const mentionsDamage = damageCues.some((c) => new RegExp(`\\b${escapeRegExp(c)}\\w*\\b`, "i").test(context));
+  const mentionsUser = /\{\{user\}\}|\byou\b/i.test(context);
+  return mentionsObject && mentionsDamage && mentionsUser;
+}
+
+export function isValidClothingContent(value: string): boolean {
+  const clean = cleanFragment(value);
+  if (isPlaceholder(clean)) return false;
+  if (isOnlyPostureBodyDetail(clean)) return false;
+  if (/^[A-Z][a-z]+\s+(?:posture|stance|body|expression|gaze|eyes?)\b/i.test(clean)) return false;
+  return hasGarmentKeyword(clean) || looksLikeClothingSlot(clean);
+}
 
 export function coerceClothing(raw: unknown): UserStatusState["clothing"] {
   if (raw == null || typeof raw !== "object") return {};

@@ -1,7 +1,7 @@
 import type {Character} from "@chub-ai/stages-ts";
 import type {AetherNovaMessageState} from "../types";
-import {DEFAULT_STATE, RACE_KEYWORDS} from "../constants";
-import {cleanFragment} from "../utils/text";
+import {DEFAULT_STATE} from "../constants";
+import {cleanFragment, inferRace} from "../utils/text";
 
 export function defaultNpcStatusForRace(race: string): string {
     const lower = race.toLowerCase();
@@ -9,21 +9,27 @@ export function defaultNpcStatusForRace(race: string): string {
     if (lower.includes("kitsune")) {
         return "Regular clothing; Standing nearby; tails still, ears attentive";
     }
+
     if (lower.includes("catkin")) {
         return "Regular clothing; Standing nearby; ears attentive, tail still";
     }
+
     if (lower.includes("dragonkin")) {
         return "Regular clothing; Standing nearby; wings settled, tail still, horns visible";
     }
+
     if (lower.includes("angel")) {
         return "Regular clothing; Standing nearby; wings settled, halo visible";
     }
+
     if (lower.includes("demon")) {
         return "Regular clothing; Standing nearby; horns visible, tail still, eyes alert";
     }
+
     if (lower.includes("vampire")) {
         return "Regular clothing; Standing nearby; fangs hidden, eyes alert";
     }
+
     if (lower.includes("pixie") || lower.includes("fey")) {
         return "Regular clothing; Standing nearby; wings still, faint glow visible";
     }
@@ -31,22 +37,11 @@ export function defaultNpcStatusForRace(race: string): string {
     return "Regular clothing; Standing nearby; posture attentive";
 }
 
-function inferRace(character: Character): string {
-    const searchable = [
-        character.description,
-        character.personality,
-        character.scenario,
-        character.first_message,
-    ].join(" ").toLowerCase();
-
-    return RACE_KEYWORDS.find((race) => searchable.includes(race.toLowerCase())) ?? "Human";
-}
-
 export function createDefaultState(characters: Record<string, Character>): AetherNovaMessageState {
     const character = Object.values(characters).find((entry) => !entry.isRemoved && entry.name.trim().length > 0);
 
     if (character == null) {
-        return {...DEFAULT_STATE} as AetherNovaMessageState;
+        return {...DEFAULT_STATE};
     }
 
     const race = inferRace(character);
@@ -55,5 +50,5 @@ export function createDefaultState(characters: Record<string, Character>): Aethe
     return {
         ...DEFAULT_STATE,
         npc: `${name} - ${race} (${defaultNpcStatusForRace(race)})`,
-    } as AetherNovaMessageState;
+    };
 }

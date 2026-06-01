@@ -155,6 +155,11 @@ export function inferBareDialogueSpeaker(line: string, state: NarrativeFormatSta
     return state.npcNames.length === 1 ? state.npcNames[0] : null;
 }
 
+export function isLeadingActionBeatBeforeDialogue(value: string): boolean {
+    const match = value.match(/^\*([^*\n]{2,180})\*\s+".*$/);
+    return match != null && looksLikeInlineNarrationBeat(match[1]);
+}
+
 export function formatInlineNarrationInDialogue(value: string): string {
     return value.replace(/(^|[\s([{])'([^'\n]{2,180})'(?=$|[\s).,!?:;\]}])/g, (match, prefix: string, inner: string) => {
         const clean = inner.trim();

@@ -1,8 +1,10 @@
 import type {AetherNovaMessageState, NormalizedWallet} from "../types";
-import {DEFAULT_STATE} from "../constants";
-import {parseWalletAmounts, formatWallet} from "./walletMath";
-import {inferWalletFromContext} from "./detectWalletTransaction";
-import {cleanLabeledValue} from "../utils/text";
+import {DEFAULT_STATE, WALLET_AMOUNT_PATTERN} from "../constants";
+import {parseWalletAmounts, formatWallet, walletToCopper, copperToWallet, inferWalletFromContext} from "./walletMath";
+import {walletExpenseTransactionIsSupported, walletIncomeTransactionIsSupported, walletLossTransactionIsSupported, walletContextIsPriceDiscussionOnly} from "./walletMath";
+import {cleanLabeledValue, sameText} from "../utils/text";
+import {containsAnyCue} from "../utils/regex";
+import {WALLET_MONEY_CUES} from "./walletConstants";
 import {nonDialogueEvidenceContext} from "../utils/nonDialogue";
 
 export function coerceWalletState(
@@ -60,4 +62,25 @@ export function normalizeWalletValue(value: string): string | null {
 
 export function walletTransactionEvidenceContext(context: string): string {
     return nonDialogueEvidenceContext(context);
+}
+
+export function walletChangeIsSupported(candidate: string, previousWallet: string, context: string): boolean {
+    if (sameText(candidate, previousWallet)) {
+        return true;
+    }
+
+    if (walletContextIsPriceDiscussionOnly(context)) {
+        return false;
+    }
+
+    const lowerContext = context.toLowerCase();
+    const hasMoneyCue = containsAnyCue(lowerContext, WALLET_MONEY_CUES) || WALLET_AMOUNT_PATTERN.test(context);
+
+    return hasMoneyCue
+        && (
+            walletExpenseTransactionIsSupported(context)
+            || walletIncomeTransactionIsSupported(context)
+            || walletLossTransactionIsSupported(context)
+            || containsAnyCue(lowerContext, ["received payment", "payment received", "has been paid", "was paid"])
+        );
 }

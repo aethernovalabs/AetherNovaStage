@@ -1,9 +1,9 @@
 import type {AetherNovaMessageState} from "../types";
-import {DEFAULT_STATE} from "../constants";
+import {DEFAULT_STATE, CLOCK_PATTERN, TIME_OF_DAYS} from "../constants";
 import {cleanFragment, cleanHeaderText, sameText, isPlaceholder} from "../utils/text";
 import {containsAnyCue} from "../utils/regex";
 import {LOCATION_TRANSITION_CUES, LOCATION_SCENE_ANCHOR_CUES, LOCATION_STOP_WORDS} from "./locationConstants";
-import {CLOCK_PATTERN} from "../constants";
+import {normalizeClock, timeOfDayForClock, asTimeOfDay} from "./normalizeClock";
 
 function splitLocation(value: string): string[] {
     return cleanFragment(value).split(/\s+-\s+/).map(cleanFragment).filter(Boolean);
@@ -76,44 +76,49 @@ function locationChangeIsSupported(candidate: string, previous: string, context:
     return LOCATION_TRANSITION_CUES.some((cue) => lowerContext.includes(cue));
 }
 
-export function normalizeLocation(rawLocation: string, previousLocation: string, context: string = ""): string {
-    const parts = splitLocation(previousLocation);
-    const currentParts = splitLocation(rawLocation);
-
-    if (isPlaceholder(rawLocation) || rawLocation.toLowerCase().includes("main location")) {
-        return previousLocation;
-    }
-
-    let candidate: string;
-
-    if (currentParts.length >= 3) {
-        candidate = [currentParts[0], currentParts[1], currentParts.slice(2).join(" - ")].join(" - ");
-    } else if (currentParts.length === 2) {
-        const detailedArea = sameText(currentParts[0], parts[0]) && sameText(currentParts[1], parts[1])
-            ? parts[2]
-            : "Active Area";
-        candidate = [currentParts[0], currentParts[1], detailedArea].join(" - ");
-    } else if (currentParts.length === 1) {
-        if (previousLocation.toLowerCase().includes(currentParts[0].toLowerCase())) {
-            candidate = previousLocation;
-        } else {
-            candidate = [currentParts[0], "Current Place", "Active Area"].join(" - ");
-        }
-    } else {
-        candidate = previousLocation;
-    }
-
-    return locationChangeIsSupported(candidate, previousLocation, context) ? candidate : previousLocation;
+function looksLikeLocationTimeLine(value: string): boolean {
+    const lower = value.toLowerCase();
+    return value.includes("|")
+        && (CLOCK_PATTERN.test(value) || TIME_OF_DAYS.some((timeOfDay) => lower.includes(timeOfDay.toLowerCase())));
 }
 
-import {normalizeClock, timeOfDayForClock, asTimeOfDay} from "./normalizeClock";
+export function normalizeLocation(rawLocation: string, previousLocation: string, context: string = ""): string {
+    const clean = cleanHeaderText(rawLocation).replace(/^(?:location|time)\s*:\s*/i, "");
+    const previous = previousLocation || DEFAULT_STATE.location;
+
+    if (isPlaceholder(clean) || clean.toLowerCase().includes("main location")) {
+        return previous;
+    }
+
+    const previousParts = splitLocation(previous);
+    const parts = splitLocation(clean);
+    let candidate: string;
+
+    if (parts.length >= 3) {
+        candidate = [parts[0], parts[1], parts.slice(2).join(" - ")].join(" - ");
+    } else if (parts.length === 2) {
+        const detailedArea = sameText(parts[0], previousParts[0]) && sameText(parts[1], previousParts[1])
+            ? previousParts[2]
+            : "Active Area";
+        candidate = [parts[0], parts[1], detailedArea].join(" - ");
+    } else if (parts.length === 1) {
+        if (previous.toLowerCase().includes(parts[0].toLowerCase())) {
+            candidate = previous;
+        } else {
+            candidate = [parts[0], "Current Place", "Active Area"].join(" - ");
+        }
+    } else {
+        candidate = previous;
+    }
+
+    return locationChangeIsSupported(candidate, previous, context) ? candidate : previous;
+}
 
 export function normalizeLocationTimeLine(
     rawLine: string | null,
     previousState: AetherNovaMessageState,
     context: string,
 ): Pick<AetherNovaMessageState, "location" | "timeOfDay" | "clock"> {
-
     if (rawLine == null || isPlaceholder(rawLine)) {
         return {
             location: previousState.location,

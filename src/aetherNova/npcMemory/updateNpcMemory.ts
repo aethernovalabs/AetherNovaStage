@@ -1,7 +1,13 @@
 import type {NpcMemoryStore, NpcMemoryEntry, AetherNovaMessageState} from "../types";
 import {cleanFragment} from "../utils/text";
 import {findNpcCanonByNameOrAlias} from "./npcCanonRegistry";
-import {npcMemoryKey, resolveNpcMemoryKey, npcHeaderMemoryEntries, npcMemoryKeysFromHeader, npcMemoryKeysMentionedInText} from "./npcMemoryState";
+import {
+    npcMemoryKey,
+    resolveNpcMemoryKey,
+    npcHeaderMemoryEntries,
+    npcMemoryKeysFromHeader,
+    npcMemoryKeysMentionedInText,
+} from "./npcMemoryState";
 import {
     cleanNpcMemoryName,
     cleanMemoryField,
@@ -12,6 +18,8 @@ import {
     normalizeRelationshipList,
     normalizeMemoryTextList,
     completeNpcMemoryName,
+    isEmptyNpcMemoryValue,
+    formatNpcMemoryForPrompt,
 } from "./npcMemoryHelpers";
 import {
     inferNpcRoleTitle,
@@ -25,11 +33,6 @@ import {
     mergeKnownFacts,
     inferNpcOnlyKnows,
 } from "./npcMemoryInference";
-
-function formatMemoryLabels(values: string[], fallback: string): string {
-    const labels = values.map((value) => cleanMemoryLabel(value, "")).filter(Boolean);
-    return labels.length > 0 ? labels.join(", ") : fallback;
-}
 
 function normalizeNpcMemoryEntry(value: unknown): NpcMemoryEntry | null {
     if (value == null || typeof value !== "object") {
@@ -112,7 +115,7 @@ export function buildNpcMemoryDirections(state: AetherNovaMessageState, userMess
     const lines: string[] = [];
 
     if (presentEntries.length > 0) {
-        lines.push("NPC Memory Context: Include full memory for present NPCs as in-story knowledge:");
+        lines.push("[NPC Memory Context]");
         lines.push("Present NPCs (full memory):");
         for (const entry of presentEntries.slice(0, 4)) {
             lines.push(`- ${formatNpcMemoryForPrompt(entry, true)}`);
@@ -120,35 +123,13 @@ export function buildNpcMemoryDirections(state: AetherNovaMessageState, userMess
     }
 
     if (mentionedEntries.length > 0) {
-        lines.push("Mentioned-only NPCs (identity only — do not inject Mood, Relationship, Behavior, OnlyKnows, or Relationship Events unless they enter the scene/header):");
+        lines.push("Mentioned-only NPCs (identity only):");
         for (const entry of mentionedEntries.slice(0, 4)) {
             lines.push(`- ${formatNpcMemoryForPrompt(entry, false)}`);
         }
     }
 
     return lines.join("\n");
-}
-
-export function formatNpcMemoryForPrompt(entry: NpcMemoryEntry, includeFull: boolean): string {
-    const parts = [
-        `Name: ${entry.name}`,
-        `Role/Title: ${entry.roleTitle}`,
-        `Race: ${entry.race}`,
-        `Physical Extra: ${entry.physicalExtra}`,
-    ];
-
-    if (includeFull) {
-        parts.push(`Current Mood: ${entry.currentMood}`);
-        if (entry.lastInteractionTone != null) {
-            parts.push(`Last Interaction Tone: ${entry.lastInteractionTone}`);
-        }
-        parts.push(`Behavior toward {{user}}: ${formatMemoryLabels(entry.behaviorTowardUser, "None stable yet")}`);
-        parts.push(`Relationship with {{user}}: ${formatMemoryLabels(entry.relationshipWithUser, "stranger")}`);
-        parts.push(`OnlyKnows: ${entry.onlyKnows.length > 0 ? entry.onlyKnows.join(" ; ") : "None recorded"}`);
-        parts.push(`Important Relationship Events: ${entry.relationshipEvents.length > 0 ? entry.relationshipEvents.slice(-3).join(" ; ") : "None recorded"}`);
-    }
-
-    return parts.join(" | ");
 }
 
 export function updateNpcMemory(previousMemory: NpcMemoryStore, npcLine: string, context: string): NpcMemoryStore {

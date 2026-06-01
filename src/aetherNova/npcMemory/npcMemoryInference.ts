@@ -87,6 +87,32 @@ const MOOD_ONLY_TRAITS = new Set([
     "nervous",
 ]);
 
+const STABLE_BEHAVIOR_CANDIDATES = new Set([
+    "protective",
+    "possessive",
+    "playful",
+    "teasing",
+    "formal",
+    "suspicious",
+    "hostile",
+    "affectionate",
+    "cold",
+    "loyal",
+    "obedient",
+    "defiant",
+    "respectful",
+    "arrogant",
+    "cautious",
+    "manipulative",
+    "jealous",
+    "dismissive",
+    "brave",
+    "fearful",
+    "secure",
+    "humble",
+    "reckless",
+]);
+
 function getOppositeReduction(evidenceWeight: number): number {
     if (evidenceWeight >= 1) return 0.5;
     if (evidenceWeight >= 0.5) return 0.25;

@@ -1,3 +1,5 @@
+import {cleanFragment} from "./text";
+
 export function splitTopLevel(value: string, separator: string): string[] {
     const parts: string[] = [];
     let current = "";
@@ -24,4 +26,8 @@ export function splitTopLevel(value: string, separator: string): string[] {
     }
 
     return parts;
+}
+
+export function splitLocation(value: string): string[] {
+    return cleanFragment(value).split(/\s+-\s+/).map(cleanFragment).filter(Boolean);
 }

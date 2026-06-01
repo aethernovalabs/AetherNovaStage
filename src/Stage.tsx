@@ -9,7 +9,7 @@ import {
     debugNpcQuery,
     normalizeAetherNovaResponse,
     prepareAetherNovaStateForPrompt,
-} from "./aetherNovaHeader";
+} from "./aetherNova";
 import type {DebugCategory, DebugEvent, DebugSnapshot} from "./aetherNova/ui/types";
 import {
     countNpcMemory,

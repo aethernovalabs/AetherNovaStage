@@ -1,5 +1,5 @@
 import type {TimeOfDay} from "../types";
-import {CLOCK_PATTERN, DEFAULT_STATE} from "../constants";
+import {CLOCK_PATTERN, TIME_OF_DAYS, DEFAULT_STATE} from "../constants";
 
 export function normalizeClock(rawValue: string, fallbackClock: string): string {
     const match = rawValue.match(CLOCK_PATTERN) ?? fallbackClock.match(CLOCK_PATTERN);
@@ -32,6 +32,5 @@ export function timeOfDayForClock(clock: string): TimeOfDay {
 
 export function asTimeOfDay(value: string): TimeOfDay | null {
     const lower = value.trim().toLowerCase();
-    const TIME_OF_DAYS: TimeOfDay[] = ["Morning", "Afternoon", "Evening", "Night"];
     return TIME_OF_DAYS.find((timeOfDay) => timeOfDay.toLowerCase() === lower) ?? null;
 }
