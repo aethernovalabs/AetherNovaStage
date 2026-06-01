@@ -580,7 +580,26 @@ interface NpcMemoryEntry {
   - **Role/Title**: Jika NPC ada di canon registry, pakai canonical role. Jika tidak, infer dari konteks sekitar nama NPC (pattern title before/after name).
   - **Race**: Jika NPC ada di canon registry, pakai canonical race. Jika tidak, pertahankan dari state lama jika tidak ada data baru.
   - **Physical Extra**: Jika NPC ada di canon registry, pakai canonical physicalExtra (AI tidak bisa overwrite). Jika tidak, deteksi dari status/konteks: `nine tails`, `animal ears`, dll.
-   - **Current Mood**: Boleh berisi beberapa tag sementara dalam satu string (comma-separated, maksimal 6 label). Contoh: `"tense, defensive, suspicious"`. Mood bisa mencatat mood (sad, happy, angry) dan temporary attitude (possessive, defensive, shy, jealous, suspicious, envious, proud, wise, teasing). Mood tidak mengubah relationship atau behavior. Deteksi menggunakan `extractTraitsFromText()` yang membaca seluruh konteks naratif + status header dengan negation guard.
+   - **Current Mood (Scene-Active)**: Boleh berisi beberapa tag sementara dalam satu string (comma-separated, maksimal 6 label). Contoh: `"tense, defensive, suspicious"`. Mood bisa mencatat mood (sad, happy, angry) dan temporary attitude (possessive, defensive, shy, jealous, suspicious, envious, proud, wise, teasing, watchful, cautious, authoritative, commanding, stern, controlled, composed). Deteksi menggunakan `extractTraitsFromText()` yang membaca seluruh konteks naratif + status header dengan negation guard, suppression guard, dan evidence gate.
+
+     Aturan scene-active:
+     - **Scene-active rebuild**: Jika latest response memiliki cukup mood evidence (≥ 2 label), Stage membangun ulang `currentMood` dari evidence terbaru. Mood lama tidak dipertahankan.
+     - **Weak evidence**: Jika hanya 1 mood label baru, Stage menggabungkan dengan mood sebelumnya, tetapi tag yang dibantah oleh konteks terbaru tetap disaring.
+     - **Fallback**: Jika tidak ada evidence mood baru, Stage mempertahankan mood sebelumnya.
+
+     **Contradicted tag suppression**: Frasa berikut menekan mood tag tertentu:
+     - `lost its teasing edge`, `no longer teasing` → `teasing` dan `playful` disupresi.
+     - `not amused`, `amusement faded` → `amused` disupresi.
+     - `not afraid`, `fearless` → `afraid`/`fearful` disupresi.
+     - `not cold`, `without coldness` → `cold` disupresi.
+
+     **Evidence gate — `afraid`/`fearful`**: Membutuhkan direct fear evidence: `afraid`, `frightened`, `terrified`, `scared`, `panic`, `dread`, dll. Tension/kewaspadaan tanpa fear langsung → `cautious`/`watchful`, bukan `afraid`.
+
+     **Evidence gate — `cold`**: Membutuhkan direct coldness evidence: `coldly`, `icy`, `emotionless`, `chilling`, dll. Formal/stern/controlled/authoritative → `formal`/`stern`/`controlled`/`authoritative`, bukan `cold`.
+
+     **`lastInteractionTone`**: Mengikuti tone interaksi terbaru yang paling dominan berdasarkan prioritas: `hostile` > `authoritative` > `protective` > `tense` > `serious` > `playful` > `warm` > `calm` > `curious` > `formal` > `controlled` > `watchful` > `soft` > `cold`.
+
+     Mood **tidak** mengubah relationship atau behavior. `behaviorScores` dan `behaviorTowardUser` tetap stabil dan hysteresis-based.
    - **Behavior Scores** (`updateBehaviorScores`):
      - **Tidak ada global decay**. Score tidak berubah jika tidak ada evidence baru.
      - Score naik jika ada evidence behavior sesuai evidence weight baru (weak +0.1, medium +0.5, strong +1).
@@ -644,7 +663,7 @@ interface NpcMemoryEntry {
       - Dirty-field tracking: hanya field yang berubah yang dikirim dalam command `npc memory set`, field lain fallback ke nilai sebelumnya.
 
 Boundary penting:
-- `currentMood` boleh berubah setiap response, tapi **tidak otomatis mengubah behavior atau relationship**.
+- `currentMood` adalah **scene-active** — dibangun ulang dari evidence scene terbaru jika cukup bukti. Tidak membawa mood lama yang sudah dibantah narasi. Tapi **tidak otomatis mengubah behavior atau relationship**.
 - `behaviorTowardUser` stabil dan tidak flicker karena hysteresis.
 - `relationshipWithUser` hanya berubah lewat event besar (bukan mood, bukan sekali interaksi).
 - NPC marah tidak otomatis menjadi `enemy`.

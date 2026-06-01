@@ -61,6 +61,42 @@ const NEGATION_CONTRAST_PATTERNS = [
     /\bmore\s+\w+\s+than\s+\w+/i,
 ];
 
+const SUPPRESSED_MOOD_PHRASES: Array<{pattern: RegExp; suppressedTags: string[]}> = [
+    {pattern: /\b(lost its teasing edge|no longer teasing|without teasing|teasing faded|teasing vanished)\b/i, suppressedTags: ["teasing", "playful"]},
+    {pattern: /\b(not amused|without amusement|amusement faded|not laughing|no hint of amusement)\b/i, suppressedTags: ["amused"]},
+    {pattern: /\b(not afraid|without fear|fear faded|fearless|no fear|not fearful)\b/i, suppressedTags: ["afraid", "fearful"]},
+    {pattern: /\b(not cold|not out of coldness|not coldly|without coldness)\b/i, suppressedTags: ["cold"]},
+    {pattern: /\b(no hostility|not hostile|without hostility)\b/i, suppressedTags: ["hostile"]},
+];
+
+function detectSuppressedMoodTags(context: string): Set<string> {
+    const suppressed = new Set<string>();
+    const lower = context.toLowerCase();
+    for (const {pattern, suppressedTags} of SUPPRESSED_MOOD_PHRASES) {
+        if (pattern.test(lower)) {
+            for (const tag of suppressedTags) {
+                suppressed.add(tag);
+            }
+        }
+    }
+    return suppressed;
+}
+
+function hasRequiredEvidence(tag: string, context: string): boolean {
+    if (tag === "afraid" || tag === "fearful") {
+        const directFear = /\b(afraid|fearful|frightened|terrified|scared|fear\s+flickered|voice\s+trembled\s+in\s+fear|stepped\s+back\s+in\s+fear|eyes\s+widened\s+with\s+fear|panic|dread)\b/i;
+        return directFear.test(context);
+    }
+    if (tag === "cold") {
+        const directCold = /\b(coldly|icy|emotionless|chilling|cold\s+disdain|cold\s+contempt|warmth\s+(?:vanished|drained)|detached\s+and\s+cold|frosty|chillingly)\b/i;
+        if (directCold.test(context)) return true;
+        const formalEvidence = /\b(formal|stern|authoritative|commanding|composed|controlled|chin\s+lifted)\b/i;
+        if (formalEvidence.test(context)) return false;
+        return true;
+    }
+    return true;
+}
+
 const MOOD_ONLY_TRAITS = new Set([
     "happy",
     "sad",
@@ -85,6 +121,12 @@ const MOOD_ONLY_TRAITS = new Set([
     "tired",
     "worried",
     "nervous",
+    "watchful",
+    "stern",
+    "controlled",
+    "composed",
+    "authoritative",
+    "commanding",
 ]);
 
 const STABLE_BEHAVIOR_CANDIDATES = new Set([
@@ -232,7 +274,7 @@ function extractTraitsFromText(
         {label: "afraid", pattern: /\b(afraid|scared|fearful|terrified|frightened|panicked|shaken|alarmed)\b/, weight: 1, requiresUserTarget: false},
         {label: "curious", pattern: /\b(curious|intrigued|interested|studying|examining|peers? closer|leans? closer|inquisitive)\b/, weight: 1, requiresUserTarget: false},
         {label: "embarrassed", pattern: /\b(embarrassed|flustered|blush|bashful|shy|flustered|mortified)\b/, weight: 1, requiresUserTarget: false},
-        {label: "amused", pattern: /\b(amused|laughs?|chuckles?|smirks?|grins?|smiling)\b/, weight: 1, requiresUserTarget: false},
+        {label: "amused", pattern: /\b(amused|laughs?|chuckles?|smirks?|grins?|smiling|lips? curled|arched brow|arch(?:ed)?\s+brow)\b/, weight: 1, requiresUserTarget: false},
         {label: "confused", pattern: /\b(confused|puzzled|uncertain|bewildered|tilts? head|frowns?|baffled)\b/, weight: 1, requiresUserTarget: false},
         {label: "excited", pattern: /\b(excited|eager|enthusiastic|animated|beams?|brightens?|thrilled)\b/, weight: 1, requiresUserTarget: false},
         {label: "solemn", pattern: /\b(solemn|grave|serious|somber|pensive|contemplative|sober)\b/, weight: 1, requiresUserTarget: false},
@@ -265,6 +307,12 @@ function extractTraitsFromText(
         {label: "dismissive", pattern: /\b(dismissive|dismisses?|dismissed|brushes?\s+off|waves?\s+off|ignores?|ignored)\b/, weight: 1, requiresUserTarget: false},
         {label: "defensive", pattern: /\b(defensive|defense|defend|defends?|defended|defending|guard\s+(?:stance|position))\b/, weight: 1, requiresUserTarget: false},
         {label: "relaxed", pattern: /\b(relaxed|at ease|unwind|loose|unclenched|settling\s+in)\b/, weight: 1, requiresUserTarget: false},
+        {label: "watchful", pattern: /\b(watchful|observant|monitoring|surveying|scanning)\b/, weight: 1, requiresUserTarget: false},
+        {label: "authoritative", pattern: /\b(authoritative|authority|commands?\s+(?!\w+ing)|ordering\s+(?!food|drink)|step aside|you heard me|i said)\b/, weight: 2, requiresUserTarget: false},
+        {label: "commanding", pattern: /\b(commanding|giving orders|issues?\s+orders|in charge)\b/, weight: 2, requiresUserTarget: false},
+        {label: "stern", pattern: /\b(stern|strict|firm|unsmiling|unyielding|jaw\s+set)\b/, weight: 1, requiresUserTarget: false},
+        {label: "controlled", pattern: /\b(controlled|composed|measured|restrained|contained|voice\s+level)\b/, weight: 1, requiresUserTarget: false},
+        {label: "composed", pattern: /\b(composed|poised|collected|unruffled|gathered)\b/, weight: 1, requiresUserTarget: false},
     ];
 
     for (const trait of traitPatterns) {
@@ -298,16 +346,27 @@ function extractTraitsFromText(
     return results;
 }
 
-function mergeMultiTagMood(previousMood: string, newMoodLabels: string[]): string {
+function mergeMultiTagMood(
+    previousMood: string,
+    newMoodLabels: string[],
+    rebuildFromNew: boolean,
+    suppressedTags: Set<string>,
+): string {
     if (newMoodLabels.length === 0) {
         return previousMood;
     }
 
-    if (previousMood === "unknown" || previousMood === "neutral") {
-        return newMoodLabels.slice(0, 6).join(", ");
+    if (previousMood === "unknown" || previousMood === "neutral" || rebuildFromNew) {
+        const result = newMoodLabels
+            .map((l) => cleanMemoryLabel(l, ""))
+            .filter(Boolean)
+            .slice(0, 6);
+        return result.length > 0 ? result.join(", ") : previousMood;
     }
 
-    const previous = previousMood.split(/\s*,\s*/).map((m) => m.toLowerCase().trim()).filter(Boolean);
+    const previous = previousMood.split(/\s*,\s*/)
+        .map((m) => m.toLowerCase().trim())
+        .filter(Boolean);
     const merged: string[] = [];
     const seen = new Set<string>();
 
@@ -320,10 +379,12 @@ function mergeMultiTagMood(previousMood: string, newMoodLabels: string[]): strin
     }
 
     for (const label of previous) {
-        if (!seen.has(label)) {
-            merged.push(label);
-            seen.add(label);
+        const clean = cleanMemoryLabel(label, "");
+        if (clean.length === 0 || seen.has(clean) || suppressedTags.has(clean)) {
+            continue;
         }
+        merged.push(clean);
+        seen.add(clean);
     }
 
     return merged.slice(0, 6).join(", ");
@@ -462,36 +523,87 @@ export function inferNpcMood(headerEntry: NpcHeaderMemoryEntry, previous: NpcMem
     const statusText = (headerEntry.status ?? "").toLowerCase();
 
     const traits = extractTraitsFromText(headerEntry.name, context, headerEntry.status ?? "", {});
+    const suppressedTags = detectSuppressedMoodTags(fullContext);
+
     const moodLabels = traits
         .filter((t) => !detectNegation(searchable, t.label))
+        .filter((t) => !suppressedTags.has(t.label))
+        .filter((t) => hasRequiredEvidence(t.label, fullContext))
         .map((t) => t.label);
 
-    let tone = previous?.lastInteractionTone ?? "neutral";
     const toneMap: Record<string, string> = {
         angry: "tense", annoyed: "tense", tense: "tense", hostile: "tense",
         sad: "soft", afraid: "tense", embarrassed: "soft", relieved: "warm",
         amused: "playful", playful: "playful", teasing: "playful",
-        cold: "cold", formal: "cold",
+        cold: "cold",
         curious: "curious", confused: "uncertain",
         calm: "calm", relaxed: "calm",
         excited: "warm", happy: "warm", affectionate: "warm",
         solemn: "serious", serious: "serious",
         jealous: "tense", suspicious: "tense", defensive: "tense",
         protective: "protective", possessive: "protective",
+        watchful: "watchful", cautious: "watchful",
+        authoritative: "authoritative", commanding: "authoritative",
+        stern: "authoritative", formal: "formal",
+        controlled: "controlled", composed: "controlled",
     };
 
-    if (moodLabels.length > 0) {
-        tone = toneMap[moodLabels[0]] ?? tone;
-    }
+    const tonePriority = [
+        "hostile",
+        "authoritative",
+        "protective",
+        "tense",
+        "serious",
+        "playful",
+        "warm",
+        "calm",
+        "curious",
+        "formal",
+        "controlled",
+        "watchful",
+        "soft",
+        "uncertain",
+        "neutral",
+        "cold",
+    ];
+
+    let tone = previous?.lastInteractionTone ?? "neutral";
 
     if (moodLabels.length > 0) {
-        const merged = mergeMultiTagMood(previous?.currentMood ?? "unknown", moodLabels);
+        const toneCandidates = moodLabels.map((l) => toneMap[l]).filter(Boolean);
+        const uniqueTones = [...new Set(toneCandidates)];
+        for (const priority of tonePriority) {
+            if (uniqueTones.includes(priority)) {
+                tone = priority;
+                break;
+            }
+        }
+    }
+
+    if (moodLabels.length >= 2) {
+        const fresh = moodLabels
+            .map((l) => cleanMemoryLabel(l, ""))
+            .filter(Boolean)
+            .slice(0, 6);
+        return {currentMood: fresh.join(", "), lastInteractionTone: tone};
+    }
+
+    if (moodLabels.length === 1) {
+        const merged = mergeMultiTagMood(
+            previous?.currentMood ?? "unknown",
+            moodLabels,
+            false,
+            suppressedTags,
+        );
         return {currentMood: merged, lastInteractionTone: tone};
     }
 
-    const statusMoodMatch = /\b(angry|annoyed|sad|happy|calm|curious|nervous|excited|bored|tired|confused|worried|relaxed|serious|playful|shy|cold|distant|possessive|defensive|suspicious|jealous|proud|teasing)\b/i.exec(statusText);
+    const statusMoodMatch = /\b(angry|annoyed|sad|happy|calm|curious|nervous|excited|bored|tired|confused|worried|relaxed|serious|playful|shy|cold|distant|possessive|defensive|suspicious|jealous|proud|teasing|watchful|cautious|authoritative|commanding|stern|controlled|composed)\b/i.exec(statusText);
     if (statusMoodMatch != null) {
-        return {currentMood: statusMoodMatch[1].toLowerCase(), lastInteractionTone: tone};
+        const statusLabel = statusMoodMatch[1].toLowerCase();
+        if (!suppressedTags.has(statusLabel) && hasRequiredEvidence(statusLabel, fullContext)) {
+            return {currentMood: statusLabel, lastInteractionTone: tone};
+        }
     }
 
     return {
