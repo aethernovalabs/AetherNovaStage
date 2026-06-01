@@ -2,7 +2,7 @@ import type {AetherNovaMessageState, NpcMemoryCommand, NpcMemoryCommandUpdates, 
 import {NPC_MEMORY_COMMAND_PATTERN} from "../constants";
 import {coerceNpcMemory} from "./updateNpcMemory";
 import {resolveNpcMemoryKey, npcMemoryKey} from "./npcMemoryState";
-import {cleanNpcMemoryName, cleanMemoryField, cleanMemoryLabel, cleanFactText, formatMemoryLabels, formatBehaviorScores, normalizeMemoryLabelList, normalizeRelationshipList, normalizeBehaviorScores, ensureBehaviorScoresForStableLabels, applyBehaviorScoreDeltas, clampBehaviorScore, mergeUniqueList, mergeBehaviorScores, completeNpcMemoryName, isEmptyNpcMemoryValue} from "./npcMemoryHelpers";
+import {cleanNpcMemoryName, cleanMemoryField, cleanMemoryLabel, cleanFactText, formatMemoryLabels, formatBehaviorScores, normalizeMemoryLabelList, normalizeRelationshipList, normalizeBehaviorScores, ensureBehaviorScoresForStableLabels, applyBehaviorScoreDeltas, clampBehaviorScore, mergeUniqueList, mergeBehaviorScores, completeNpcMemoryName, isEmptyNpcMemoryValue, isPersistableNpcMemoryName} from "./npcMemoryHelpers";
 import {mergeKnownFacts, stableBehaviorLabels} from "./npcMemoryInference";
 import {findNpcCanonByNameOrAlias} from "./npcCanonRegistry";
 import {cleanFragment, normalizeLineEndings} from "../utils/text";
@@ -323,6 +323,10 @@ function applyNpcMemoryCommand(memory: NpcMemoryStore, command: NpcMemoryCommand
     const canon = findNpcCanonByNameOrAlias(command.target);
     const canonName = canon != null ? canon.name : name;
     const canonKey = npcMemoryKey(canonName);
+
+    if (canon == null && !isPersistableNpcMemoryName(canonName)) {
+        return {memory: next, message: `NPC memory command: ${canonName} looks like a generic/group NPC and was not saved.`};
+    }
 
     const entry: NpcMemoryEntry = {
         name: canonName,

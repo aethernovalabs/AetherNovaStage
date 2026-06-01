@@ -212,6 +212,8 @@ const GENERIC_NPC_BLOCKLIST = new Set([
     "page boy",
     "palace guards",
     "palace guard",
+    "crown guards",
+    "crown guard",
     "royal guards",
     "royal guard",
     "city guards",
@@ -245,7 +247,30 @@ const GENERIC_NPC_BLOCKLIST = new Set([
     "a palace guard",
 ]);
 
+const GENERIC_NPC_COUNT_WORDS = new Set([
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "dozen",
+    "couple",
+    "pair",
+    "few",
+    "several",
+    "many",
+    "multiple",
+]);
+
 const GENERIC_NPC_WORDS = new Set([
+    ...GENERIC_NPC_COUNT_WORDS,
     "king",
     "queen",
     "prince",
@@ -296,11 +321,24 @@ const GENERIC_NPC_WORDS = new Set([
     "villagers",
     "old",
     "young",
+    "crown",
     "royal",
+    "imperial",
     "palace",
+    "castle",
+    "court",
     "city",
     "town",
     "village",
+    "gate",
+    "temple",
+    "throne",
+    "house",
+    "household",
+    "inner",
+    "outer",
+    "upper",
+    "lower",
     "master",
     "mistress",
     "apprentice",
@@ -317,6 +355,10 @@ const GENERIC_NPC_WORDS = new Set([
     "an",
     "the",
 ]);
+
+function isGenericNpcCountWord(word: string): boolean {
+    return GENERIC_NPC_COUNT_WORDS.has(word.toLowerCase()) || /^\d+$/.test(word);
+}
 
 export function isPersistableNpcMemoryName(name: string): boolean {
     const clean = cleanNpcMemoryName(name);
@@ -337,7 +379,12 @@ export function isPersistableNpcMemoryName(name: string): boolean {
         return false;
     }
 
-    for (const word of words) {
+    const meaningfulWords = words.filter((word, index) => index > 0 || !isGenericNpcCountWord(word));
+    if (meaningfulWords.length < 2) {
+        return false;
+    }
+
+    for (const word of meaningfulWords) {
         const w = word.toLowerCase();
         if (!GENERIC_NPC_WORDS.has(w)) {
             return true;

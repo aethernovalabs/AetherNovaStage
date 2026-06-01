@@ -711,6 +711,7 @@ NPC generic atau group tidak dipersist ke `npcMemory`.
 
 **Contoh yang diabaikan (tidak masuk npcMemory):**
 - `Palace Guards x6`, `Page Boy`, `Royal Guards`
+- `Two Crown Guards`, `Crown Guards`, `3 Palace Guards`
 - `City Guards x4`, `Handmaidens`, `Nobles`, `Servants`
 - `A Palace Guard`, `The Herald`, `A Messenger`
 - `Old Merchant`, `Aldric's Guard`
@@ -722,6 +723,7 @@ NPC generic atau group tidak dipersist ke `npcMemory`.
 **Helper:**
 - `isPersistableNpcMemoryName(name)` mengecek apakah nama NPC layak dipersist.
 - Filter diterapkan di `updateNpcMemory()` dan `coerceNpcMemory()`.
+- Command manual `npc memory set` juga menolak nama generic/group jika bukan NPC canon, agar UI/command tidak menyimpan side NPC tanpa nama personal.
 
 ### Injection Rules (`buildNpcMemoryDirections`)
 Hanya NPC memory context yang diinject ke prompt LLM. Header state (`Location`, `Time`, `You`, `NPC`, `Thread`, `Wallet`) tidak diinject — hanya disimpan internal stage untuk koreksi header respons LLM.
