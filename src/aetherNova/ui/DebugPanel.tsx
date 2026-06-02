@@ -521,6 +521,21 @@ export function AetherNovaDebugPanel({
                 )}
             </section>
 
+            <details className="aether-debug-details">
+                <summary>Stage Prompt Directions</summary>
+                <pre>{snapshot.lastStageDirections || "No stage directions captured yet."}</pre>
+            </details>
+
+            <details className="aether-debug-details">
+                <summary>Last System Message</summary>
+                <pre>{snapshot.lastSystemMessage || "No system debug message captured yet."}</pre>
+            </details>
+
+            <details className="aether-debug-details">
+                <summary>Latest User Message</summary>
+                <pre>{snapshot.latestUserMessage || "No pending user message."}</pre>
+            </details>
+
             <section className="aether-debug-section">
                 <div className="aether-debug-section-title">
                     <h2>Debug Logs</h2>
@@ -540,21 +555,6 @@ export function AetherNovaDebugPanel({
                     ))}
                 </div>
             </section>
-
-            <details className="aether-debug-details">
-                <summary>Stage Directions</summary>
-                <pre>{snapshot.lastStageDirections || "No stage directions captured yet."}</pre>
-            </details>
-
-            <details className="aether-debug-details">
-                <summary>Last System Message</summary>
-                <pre>{snapshot.lastSystemMessage || "No system debug message captured yet."}</pre>
-            </details>
-
-            <details className="aether-debug-details">
-                <summary>Latest User Message</summary>
-                <pre>{snapshot.latestUserMessage || "No pending user message."}</pre>
-            </details>
             {pendingConfirm != null ? (
                 <ConfirmDialog
                     request={pendingConfirm}

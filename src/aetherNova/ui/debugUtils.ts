@@ -143,37 +143,6 @@ export function formatDebugScores(scores: Record<string, number>): string {
     return entries.length > 0 ? entries.map(([label, score]) => `${label}:${score}`).join(", ") : "none";
 }
 
-export function headerStateChangeDetails(previous: AetherNovaMessageState, next: AetherNovaMessageState): string[] {
-    const details = [
-        formatDebugFieldChange("Location", previous.location, next.location),
-        formatDebugFieldChange("Time", `${previous.timeOfDay} | ${previous.clock}`, `${next.timeOfDay} | ${next.clock}`),
-        formatDebugFieldChange("You", previous.you, next.you),
-        formatDebugFieldChange("NPC", previous.npc, next.npc),
-        formatDebugFieldChange("Thread", previous.thread, next.thread),
-        formatDebugFieldChange("Wallet", previous.wallet, next.wallet),
-    ].filter(Boolean);
-
-    const userStatusChanged = JSON.stringify(previous.userStatus ?? {}) !== JSON.stringify(next.userStatus ?? {});
-    if (userStatusChanged) {
-        details.push("Status User: changed");
-    }
-
-    return details.length > 0 ? details : ["No tracked header field changed."];
-}
-
-export function narrativeFormatDetails(originalContent: string, normalizedContent: string, changedFields: string[]): string[] {
-    return [
-        `Original chars: ${originalContent.length}`,
-        `Normalized chars: ${normalizedContent.length}`,
-        normalizedContent !== originalContent
-            ? "Modified message returned to chat. This can include header repair, narrative italics, speaker labels, or quote/action cleanup."
-            : "No modified message returned.",
-        changedFields.length > 0
-            ? `Stage state changed too: ${changedFields.join(", ")}`
-            : "Stage state did not change.",
-    ];
-}
-
 export function npcMemoryChangeDetails(previous: NpcMemoryStore, next: NpcMemoryStore): string[] {
     const previousKeys = Object.keys(previous ?? {});
     const nextKeys = Object.keys(next ?? {});
@@ -189,41 +158,6 @@ export function npcMemoryChangeDetails(previous: NpcMemoryStore, next: NpcMemory
     ].filter(Boolean);
 
     return details.length > 0 ? details : ["NPC memory unchanged."];
-}
-
-export function walletThreadSummary(previous: AetherNovaMessageState, next: AetherNovaMessageState): string {
-    const walletChanged = previous.wallet !== next.wallet;
-    const threadChanged = previous.thread !== next.thread;
-    const lockChanged = JSON.stringify(previous.lockedThreadItems ?? []) !== JSON.stringify(next.lockedThreadItems ?? []);
-
-    if (walletChanged && (threadChanged || lockChanged)) {
-        return "wallet and thread changed";
-    }
-    if (walletChanged) {
-        return "wallet changed";
-    }
-    if (threadChanged || lockChanged) {
-        return "thread changed";
-    }
-    return "wallet and thread unchanged";
-}
-
-export function walletThreadDetails(previous: AetherNovaMessageState, next: AetherNovaMessageState): string[] {
-    const details = [
-        formatDebugFieldChange("Wallet", previous.wallet, next.wallet),
-        formatDebugFieldChange("Thread", previous.thread, next.thread),
-        formatDebugFieldChange(
-            "Locked Thread Items",
-            (previous.lockedThreadItems ?? []).join(" ; ") || "None",
-            (next.lockedThreadItems ?? []).join(" ; ") || "None",
-        ),
-    ].filter(Boolean);
-
-    return details.length > 0 ? details : ["No wallet/thread change accepted."];
-}
-
-export function formatDebugFieldChange(label: string, previous: string, next: string): string {
-    return previous === next ? "" : `${label}: ${previous} -> ${next}`;
 }
 
 export function countNpcMemory(state: AetherNovaMessageState): number {

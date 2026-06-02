@@ -19,11 +19,7 @@ import {
     writePendingDebugQuery,
     readPendingDebugQuery,
     clearPendingDebugQuery,
-    headerStateChangeDetails,
-    narrativeFormatDetails,
     npcMemoryChangeDetails,
-    walletThreadSummary,
-    walletThreadDetails,
     changedStateFields,
     deepMergeUserStatus,
 } from "./aetherNova/ui/debugUtils";
@@ -81,6 +77,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 
     async beforePrompt(userMessage: Message): Promise<Partial<StageResponse<ChatStateType, MessageStateType>>> {
         const originalUserMessage = userMessage.content;
+        const previousNpcMemory = this.state.npcMemory;
         const previousNpcMemoryCount = countNpcMemory(this.state);
         const debugQuery = debugNpcQuery(originalUserMessage);
         if (debugQuery != null) {
@@ -114,22 +111,16 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             `directions injected (${this.lastStageDirections.length} chars); debug request: ${debugQuery ?? "none"}; memory command: ${pendingMemoryCommand != null ? "pending" : "none"}`,
         );
         if (this.lastStageDirections.length > 0) {
-            const injectionLines = this.lastStageDirections.split("\n");
-            const summary = injectionLines.length > 0 ? injectionLines[0] : "";
-            this.pushDebugEvent("injection", "stageDirections", `${injectionLines.length} lines, ${this.lastStageDirections.length} chars`, [this.lastStageDirections]);
+            const promptLines = this.lastStageDirections.split("\n");
+            this.pushDebugEvent("stagePrompt", "beforePrompt", `${promptLines.length} lines, ${this.lastStageDirections.length} chars`, [this.lastStageDirections]);
         }
-        this.pushDebugEvent(
-            "npcMemory",
-            "beforePrompt",
-            `NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}; command applied: ${commandResult.applied ? "yes" : "no"}; pending reapply: ${pendingMemoryCommand != null ? "yes" : "no"}`,
-            [
-                `Debug query: ${debugQuery ?? "none"}`,
-                `Cleaned user message chars: ${this.latestUserMessage.length}`,
-                commandSystemMessage.length > 0 ? `System message:\n${commandSystemMessage}` : "System message: none",
-            ],
-        );
-        if (commandSystemMessage.length > 0) {
-            this.pushDebugEvent("system", "beforePrompt", "systemMessage returned from NPC memory command", [commandSystemMessage]);
+        if (JSON.stringify(previousNpcMemory ?? {}) !== JSON.stringify(this.state.npcMemory ?? {})) {
+            this.pushDebugEvent(
+                "npcMemory",
+                "beforePrompt",
+                `NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}`,
+                npcMemoryChangeDetails(previousNpcMemory, this.state.npcMemory),
+            );
         }
 
         return {
@@ -169,39 +160,57 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         this.state = finalState;
         this.lastModifiedMessageChanged = normalized.content !== botMessage.content;
         this.lastSystemMessage = joinSystemMessages(normalized.systemMessage, afterResponseCommand?.systemMessage);
-        const headerDetails = headerStateChangeDetails(previousState, this.state);
-        const trackedHeaderChanged = headerDetails.some((detail) => detail.includes(" -> "));
         this.pushDebugEvent(
             "lifecycle",
             "afterResponse",
             `response ${this.lastModifiedMessageChanged ? "modified" : "unchanged"}; changed: ${changedFields.length > 0 ? changedFields.join(", ") : "none"}; NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}; memory command reapply ${afterResponseCommand?.applied === true ? "yes" : "no"}; system debug ${this.lastSystemMessage.length > 0 ? "sent" : "none"}`,
         );
-        this.pushDebugEvent(
-            "headerFormat",
+        this.pushFieldChange("location", "afterResponse", "Location", previousState.location, this.state.location);
+        this.pushFieldChange("time", "afterResponse", "Time", `${previousState.timeOfDay} | ${previousState.clock}`, `${this.state.timeOfDay} | ${this.state.clock}`);
+        this.pushFieldChange(
+            "youLine",
             "afterResponse",
-            trackedHeaderChanged ? `${headerDetails.length} tracked header field(s) changed` : "tracked header fields unchanged",
-            headerDetails,
+            "You",
+            previousState.you,
+            this.state.you,
+            JSON.stringify(previousState.userStatus ?? {}) !== JSON.stringify(this.state.userStatus ?? {})
+                ? ["Status User details changed."]
+                : undefined,
         );
-        this.pushDebugEvent(
-            "narrativeFormat",
+        this.pushFieldChange("npcLine", "afterResponse", "NPC", previousState.npc, this.state.npc);
+        this.pushFieldChange(
+            "threadLine",
             "afterResponse",
-            `response ${this.lastModifiedMessageChanged ? "modified" : "unchanged"}; chars ${botMessage.content.length} -> ${normalized.content.length}`,
-            narrativeFormatDetails(botMessage.content, normalized.content, changedFields),
+            "Thread",
+            previousState.thread,
+            this.state.thread,
+            JSON.stringify(previousState.lockedThreadItems ?? []) !== JSON.stringify(this.state.lockedThreadItems ?? [])
+                ? [
+                    `Locked before: ${(previousState.lockedThreadItems ?? []).join(" ; ") || "None"}`,
+                    `Locked after: ${(this.state.lockedThreadItems ?? []).join(" ; ") || "None"}`,
+                ]
+                : undefined,
         );
-        this.pushDebugEvent(
-            "npcMemory",
-            "afterResponse",
-            `NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}; command reapply: ${afterResponseCommand?.applied === true ? "yes" : "no"}`,
-            npcMemoryChangeDetails(previousNpcMemory, this.state.npcMemory),
-        );
-        this.pushDebugEvent(
-            "walletThread",
-            "afterResponse",
-            walletThreadSummary(previousState, this.state),
-            walletThreadDetails(previousState, this.state),
-        );
-        if (this.lastSystemMessage.length > 0) {
-            this.pushDebugEvent("system", "afterResponse", "systemMessage returned after response", [this.lastSystemMessage]);
+        this.pushFieldChange("walletLine", "afterResponse", "Wallet", previousState.wallet, this.state.wallet);
+        if (this.lastModifiedMessageChanged) {
+            this.pushDebugEvent(
+                "narrative",
+                "afterResponse",
+                `response modified; chars ${botMessage.content.length} -> ${normalized.content.length}`,
+                [
+                    `Original chars: ${botMessage.content.length}`,
+                    `Normalized chars: ${normalized.content.length}`,
+                    changedFields.length > 0 ? `State changed: ${changedFields.join(", ")}` : "State did not change.",
+                ],
+            );
+        }
+        if (JSON.stringify(previousNpcMemory ?? {}) !== JSON.stringify(this.state.npcMemory ?? {})) {
+            this.pushDebugEvent(
+                "npcMemory",
+                "afterResponse",
+                `NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}`,
+                npcMemoryChangeDetails(previousNpcMemory, this.state.npcMemory),
+            );
         }
         this.latestUserMessage = "";
         this.latestNpcMemoryCommandMessage = "";
@@ -210,7 +219,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         return {
             stageDirections: null,
             messageState: this.state,
-            modifiedMessage: normalized.content,
+            modifiedMessage: this.lastModifiedMessageChanged ? normalized.content : null,
             systemMessage: this.lastSystemMessage.length > 0 ? this.lastSystemMessage : null,
             error: null,
             chatState: null,
@@ -294,7 +303,32 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         ].slice(0, 120);
     }
 
+    private pushFieldChange(
+        category: DebugCategory,
+        label: string,
+        fieldName: string,
+        previous: string,
+        next: string,
+        extraDetails?: string[],
+    ): void {
+        if (previous === next && (extraDetails == null || extraDetails.length === 0)) {
+            return;
+        }
+
+        this.pushDebugEvent(
+            category,
+            label,
+            `${fieldName} changed`,
+            [
+                `Before: ${previous}`,
+                `After: ${next}`,
+                ...(extraDetails ?? []),
+            ],
+        );
+    }
+
     private applyUiNpcMemoryCommand(command: string): DebugSnapshot {
+        const previousNpcMemory = this.state.npcMemory;
         const result = applyNpcMemoryCommands(this.state, command);
         this.state = {
             ...result.state,
@@ -303,9 +337,8 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         if (result.systemMessage != null) {
             this.lastSystemMessage = result.systemMessage;
         }
-        this.pushDebugEvent("npcMemory", "uiMemory", result.systemMessage ?? "No NPC memory command applied.", [`Command: ${command}`]);
-        if (result.systemMessage != null) {
-            this.pushDebugEvent("system", "uiMemory", "systemMessage returned from debug UI command", [result.systemMessage]);
+        if (JSON.stringify(previousNpcMemory ?? {}) !== JSON.stringify(this.state.npcMemory ?? {})) {
+            this.pushDebugEvent("npcMemory", "uiMemory", result.systemMessage ?? "NPC memory changed.", [`Command: ${command}`]);
         }
         return this.createDebugSnapshot();
     }

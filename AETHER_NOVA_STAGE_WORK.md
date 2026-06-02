@@ -807,7 +807,7 @@ Stage melakukan format narasi ringan:
 
 ## 10. Debug UI System
 
-Debug UI (di `Stage.tsx` render) saat ini: **Aether Nova Stage UI V1.8**.
+Debug UI (di `Stage.tsx` render) saat ini: **Aether Nova Stage UI V1.9**.
 
 Debug UI menampilkan:
 - Current state: Location, Time, You (compact), NPC, Thread, Wallet, Pending NPC Debug, Pending Memory Command.
@@ -818,18 +818,22 @@ Debug UI menampilkan:
 - **Confirm destructive actions**: Aksi yang menghapus/clear data UI meminta konfirmasi lebih dulu (`Clear Logs`, clear log per kategori, `Clear Facts`, dan `Delete` NPC memory) lewat dialog custom React di dalam Stage, bukan `window.confirm()`, agar tetap bekerja di webview/platform yang memblokir dialog browser native.
 - Manual edits yang dilakukan melalui UI disimpan di `manualEditOverrides` dan dipertahankan saat swipe/jump serta melalui normalisasi.
 - NPC Memory cards: semua NPC yang tersimpan dengan detail lengkap. Setiap kartu NPC punya tombol **Minimize/Expand** untuk menyembunyikan detail panjang; daftar kartu yang diminimize disimpan di `localStorage` key `aether-nova-stage.collapsedNpcCards`.
+- Stage Prompt Directions: isi `stageDirections` terbaru yang diinject ke prompt, ditampilkan di atas Debug Logs.
 - Debug Logs terpisah per kategori:
-  - **NPC Memory Log**: command memory, perubahan jumlah memory, entry yang added/removed/changed.
-  - **Format Header Log**: field header yang berubah (`Location`, `Time`, `You`, `NPC`, `Thread`, `Wallet`) dengan detail before → after.
-  - **Format Narrative Log**: apakah response dimodifikasi, perubahan panjang teks, dan catatan apakah header ikut berubah.
-  - **Wallet / Thread Log**: fokus pada perubahan wallet dan thread.
-  - **Lifecycle Log**: `init`, `load`, `setState`, `beforePrompt`, `afterResponse`.
-  - **System Message Log**: system message yang dikirim balik oleh stage.
-- Stage Directions: isi `stageDirections` yang diinject ke prompt.
-- Last System Message: system message terakhir. Bagian ini masih berguna untuk melihat pesan mentah terakhir yang dikirim stage, walau observasi utama sekarang ada di **System Message Log**.
+  - **Stage Prompt To LLM Log**: history prompt/stageDirections yang diberikan kepada LLM.
+  - **NPC Memory Log**: perubahan nyata pada NPC memory.
+  - **Location Log**: perubahan location yang dilakukan stage.
+  - **Time Log**: perubahan `timeOfDay` dan `clock` yang dilakukan stage.
+  - **You Line Log**: perubahan line `You` dan detail `Status User`.
+  - **NPC Line Log**: perubahan line `NPC`.
+  - **Thread Line Log**: perubahan thread dan lock thread manual.
+  - **Wallet Line Log**: perubahan wallet.
+  - **Narrative Log**: perubahan format narasi saat response dimodifikasi.
+  - **Lifecycle Log**: `init`, `load`, `setState`, `beforePrompt`, `afterResponse`, dan edit UI.
+- Last System Message: system message terakhir yang dikirim stage.
 - Latest User Message: pesan user terbaru (setelah command dihapus).
 
-Debug Logs menyimpan maksimal 120 event terbaru. Tombol **Clear Logs** di header menghapus semua log sementara. Setiap box log juga punya tombol **Clear** untuk menghapus kategori itu saja, tanpa menghapus state utama atau NPC Memory.
+Debug Logs berada di bagian paling bawah UI dan menyimpan maksimal 120 event terbaru. Tombol **Clear Logs** di header menghapus semua log sementara. Setiap box log juga punya tombol **Clear** untuk menghapus kategori itu saja, tanpa menghapus state utama atau NPC Memory. Stage tidak mencatat log field jika output LLM sudah benar dan tidak perlu dikoreksi untuk field itu.
 
 Debug UI juga bisa mengatur NPC Memory:
 - **Create NPC Memory**: membuat memory NPC baru dari form.

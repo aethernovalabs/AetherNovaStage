@@ -1,18 +1,31 @@
 import type {AetherNovaMessageState} from "../types";
 
 export const DEBUG_STORAGE_KEY = "aether-nova-stage.pendingNpcDebugQuery";
-export const DEBUG_UI_VERSION = "V1.8";
+export const DEBUG_UI_VERSION = "V1.9";
 
-export type DebugCategory = "lifecycle" | "npcMemory" | "headerFormat" | "narrativeFormat" | "walletThread" | "system" | "injection";
+export type DebugCategory =
+    | "stagePrompt"
+    | "npcMemory"
+    | "location"
+    | "time"
+    | "youLine"
+    | "npcLine"
+    | "threadLine"
+    | "walletLine"
+    | "narrative"
+    | "lifecycle";
 
 export const DEBUG_LOG_GROUPS: Array<{category: DebugCategory; title: string; emptyText: string; defaultOpen?: boolean}> = [
-    {category: "npcMemory", title: "NPC Memory Log", emptyText: "No NPC memory activity yet.", defaultOpen: true},
-    {category: "headerFormat", title: "Format Header Log", emptyText: "No header formatting activity yet.", defaultOpen: true},
-    {category: "narrativeFormat", title: "Format Narrative Log", emptyText: "No narrative formatting activity yet."},
-    {category: "walletThread", title: "Wallet / Thread Log", emptyText: "No wallet or thread activity yet."},
+    {category: "stagePrompt", title: "Stage Prompt To LLM Log", emptyText: "No stage prompt sent to the LLM yet.", defaultOpen: true},
+    {category: "npcMemory", title: "NPC Memory Log", emptyText: "No NPC memory changes yet.", defaultOpen: true},
+    {category: "location", title: "Location Log", emptyText: "No location changes yet."},
+    {category: "time", title: "Time Log", emptyText: "No time changes yet."},
+    {category: "youLine", title: "You Line Log", emptyText: "No You line changes yet."},
+    {category: "npcLine", title: "NPC Line Log", emptyText: "No NPC line changes yet."},
+    {category: "threadLine", title: "Thread Line Log", emptyText: "No thread line changes yet."},
+    {category: "walletLine", title: "Wallet Line Log", emptyText: "No wallet changes yet."},
+    {category: "narrative", title: "Narrative Log", emptyText: "No narrative formatting changes yet."},
     {category: "lifecycle", title: "Lifecycle Log", emptyText: "No lifecycle activity yet."},
-    {category: "system", title: "System Message Log", emptyText: "No system messages captured yet."},
-    {category: "injection", title: "Stage Injection (prompt to LLM) Log", emptyText: "No stage injection captured yet.", defaultOpen: true},
 ];
 
 export interface DebugEvent {
