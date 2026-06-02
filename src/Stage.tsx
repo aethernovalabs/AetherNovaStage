@@ -9,6 +9,8 @@ import {
     debugNpcQuery,
     normalizeAetherNovaResponse,
     prepareAetherNovaStateForPrompt,
+    synchronizeLockedThreadItems,
+    waitingThreadItemsFromThread,
 } from "./aetherNova";
 import type {DebugCategory, DebugEvent, DebugSnapshot} from "./aetherNova/ui/types";
 import {
@@ -232,9 +234,24 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 
     private applyStateEdit(patch: Partial<AetherNovaMessageState & {userStatusPatch?: Partial<UserStatusState>}>): DebugSnapshot {
         const {userStatusPatch, ...statePatch} = patch;
+        const nextThread = statePatch.thread ?? this.state.thread;
+        const lockedWaitingThreads = statePatch.thread != null
+            ? waitingThreadItemsFromThread(statePatch.thread)
+            : this.state.lockedWaitingThreads;
+        const terminalThreadGraceItems = statePatch.thread != null
+            ? []
+            : this.state.terminalThreadGraceItems;
+        const lockedThreadItems = statePatch.lockedThreadItems != null
+            ? synchronizeLockedThreadItems(nextThread, statePatch.lockedThreadItems)
+            : statePatch.thread != null
+                ? synchronizeLockedThreadItems(nextThread, this.state.lockedThreadItems ?? [])
+                : this.state.lockedThreadItems;
         this.state = {
             ...this.state,
             ...statePatch,
+            lockedWaitingThreads,
+            lockedThreadItems,
+            terminalThreadGraceItems,
             manualEditOverrides: {
                 ...(this.state.manualEditOverrides ?? {}),
                 ...(statePatch.location != null ? {location: statePatch.location} : {}),
@@ -300,4 +317,3 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         return this.createDebugSnapshot();
     }
 }
-

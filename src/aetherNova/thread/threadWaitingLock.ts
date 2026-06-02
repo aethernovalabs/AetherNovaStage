@@ -94,3 +94,90 @@ export function applyThreadWaitingLock(
 export function isWaitingThreadItem(value: string): boolean {
   return THREAD_WAITING_PATTERNS.some((p) => p.test(value));
 }
+
+export function waitingThreadItemsFromThread(value: string): string[] {
+  const lockedItems: string[] = [];
+
+  for (const item of splitThreadItems(value)) {
+    if (!isWaitingThreadItem(item)) {
+      continue;
+    }
+
+    if (!lockedItems.some((lockedItem) => threadItemsOverlap(lockedItem, item))) {
+      lockedItems.push(item);
+    }
+  }
+
+  return lockedItems;
+}
+
+function terminalItemsFromThreadLine(value: string): string[] {
+  return value
+    .split(/\s*;\s*/g)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0 && isTerminalThreadItem(item));
+}
+
+function manualLockIsCompleted(lockedItem: string, rawThreadLine: string): boolean {
+  if (isTerminalThreadItem(lockedItem)) {
+    return true;
+  }
+
+  return terminalItemsFromThreadLine(rawThreadLine).some((item) => threadItemsOverlap(item, lockedItem));
+}
+
+export function synchronizeLockedThreadItems(thread: string, lockedThreadItems: string[]): string[] {
+  const currentItems = splitThreadItems(thread);
+  const synchronized: string[] = [];
+
+  for (const lockedItem of lockedThreadItems) {
+    if (isTerminalThreadItem(lockedItem)) {
+      continue;
+    }
+
+    const currentMatch = currentItems.find((item) => threadItemsOverlap(item, lockedItem));
+    if (currentMatch == null) {
+      continue;
+    }
+
+    if (!synchronized.some((item) => threadItemsOverlap(item, currentMatch))) {
+      synchronized.push(currentMatch);
+    }
+  }
+
+  return synchronized;
+}
+
+export function applyThreadItemLocks(
+  currentThread: string,
+  previousState: AetherNovaMessageState,
+  rawThreadLine: string,
+): {updatedThread: string; updatedLockedThreadItems: string[]} {
+  const currentItems = splitThreadItems(currentThread);
+  const previousLocked = previousState.lockedThreadItems ?? [];
+  const activeLocks: string[] = [];
+
+  for (const lockedItem of previousLocked) {
+    if (manualLockIsCompleted(lockedItem, rawThreadLine)) {
+      continue;
+    }
+
+    const currentMatch = currentItems.find((item) => threadItemsOverlap(item, lockedItem));
+    const activeItem = currentMatch ?? lockedItem;
+    if (!activeLocks.some((item) => threadItemsOverlap(item, activeItem))) {
+      activeLocks.push(activeItem);
+    }
+  }
+
+  let resultThread = currentThread;
+  for (const lockedItem of activeLocks) {
+    if (!currentItems.some((item) => threadItemsOverlap(item, lockedItem))) {
+      const separator = resultThread === "None" || resultThread.length === 0 ? "" : " ; ";
+      resultThread = resultThread === "None" || resultThread.length === 0
+        ? lockedItem
+        : `${resultThread}${separator}${lockedItem}`;
+    }
+  }
+
+  return {updatedThread: resultThread, updatedLockedThreadItems: activeLocks};
+}

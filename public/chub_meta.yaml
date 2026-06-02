@@ -80,6 +80,18 @@ state_schema:
         type:
           - string
           - 'null'
+      lockedThreadItems:
+        type: array
+        items:
+          type: string
+      lockedWaitingThreads:
+        type: array
+        items:
+          type: string
+      terminalThreadGraceItems:
+        type: array
+        items:
+          type: string
   chat:
     type: object
     properties: {}

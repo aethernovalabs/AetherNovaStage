@@ -10,6 +10,7 @@ export function prepareAetherNovaStateForPrompt(
     return {
         ...state,
         lockedWaitingThreads: state.lockedWaitingThreads,
+        lockedThreadItems: state.lockedThreadItems,
         manualEditOverrides: state.manualEditOverrides,
         npcMemory: updateNpcMemory(state.npcMemory, state.npc, state.location),
         pendingNpcDebugQuery: debugNpcQuery(userMessage),

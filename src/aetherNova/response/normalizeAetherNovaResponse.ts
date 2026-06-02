@@ -7,7 +7,7 @@ import {normalizeWalletLine} from "../wallet/normalizeWalletLine";
 import {normalizeYouLine} from "../header/normalizeYouLine";
 import {normalizeNpcLine} from "../header/normalizeNpcLine";
 import {normalizeThreadLine, splitThreadItems, isTerminalThreadItem, threadItemsOverlap} from "../thread/normalizeThreadLine";
-import {applyThreadWaitingLock} from "../thread/threadWaitingLock";
+import {applyThreadItemLocks, applyThreadWaitingLock} from "../thread/threadWaitingLock";
 import {updateUserStatus} from "../userStatus/userStatusState";
 import {updateNpcMemory} from "../npcMemory/updateNpcMemory";
 import {buildNpcDebugFooter} from "../npcMemory/npcMemoryHelpers";
@@ -64,10 +64,15 @@ export function normalizeAetherNovaResponse(
     const npc = normalizeNpcLine(extracted.npcLine ?? "", previousState.npc, correctionContext, {sceneChanged});
     const thread = normalizeThreadLine(extracted.threadLine ?? "", previousState.thread, correctionContext, npc);
     const {updatedThread, updatedLockedThreads} = applyThreadWaitingLock(thread, previousState, correctionContext);
+    const {updatedThread: lockedThread, updatedLockedThreadItems} = applyThreadItemLocks(
+        updatedThread,
+        previousState,
+        extracted.threadLine ?? "",
+    );
     const previousGrace = previousState.terminalThreadGraceItems ?? [];
     const {thread: finalThread, newGrace: terminalGraceItems} = applyTerminalGrace(
         extracted.threadLine ?? "",
-        updatedThread,
+        lockedThread,
         previousGrace,
     );
     const state: AetherNovaMessageState = {
@@ -84,6 +89,7 @@ export function normalizeAetherNovaResponse(
         pendingNpcMemoryCommand: previousState.pendingNpcMemoryCommand,
         userStatus: updateUserStatus(previousState.userStatus, youLine, correctionContext),
         lockedWaitingThreads: updatedLockedThreads,
+        lockedThreadItems: updatedLockedThreadItems,
         terminalThreadGraceItems: terminalGraceItems,
         manualEditOverrides: previousState.manualEditOverrides,
     };

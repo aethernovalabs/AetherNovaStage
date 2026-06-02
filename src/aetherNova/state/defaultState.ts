@@ -1,7 +1,6 @@
 import type {Character} from "@chub-ai/stages-ts";
 import type {AetherNovaMessageState} from "../types";
 import {DEFAULT_STATE} from "../constants";
-import {cleanFragment, inferRace} from "../utils/text";
 
 export function defaultNpcStatusForRace(race: string): string {
     const lower = race.toLowerCase();
@@ -38,17 +37,9 @@ export function defaultNpcStatusForRace(race: string): string {
 }
 
 export function createDefaultState(characters: Record<string, Character>): AetherNovaMessageState {
-    const character = Object.values(characters).find((entry) => !entry.isRemoved && entry.name.trim().length > 0);
-
-    if (character == null) {
-        return {...DEFAULT_STATE};
-    }
-
-    const race = inferRace(character);
-    const name = cleanFragment(character.name) || "Unknown NPC";
-
+    void characters;
     return {
         ...DEFAULT_STATE,
-        npc: `${name} - ${race} (${defaultNpcStatusForRace(race)})`,
+        userStatus: {...DEFAULT_STATE.userStatus},
     };
 }

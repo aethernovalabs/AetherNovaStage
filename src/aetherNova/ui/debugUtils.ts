@@ -194,14 +194,15 @@ export function npcMemoryChangeDetails(previous: NpcMemoryStore, next: NpcMemory
 export function walletThreadSummary(previous: AetherNovaMessageState, next: AetherNovaMessageState): string {
     const walletChanged = previous.wallet !== next.wallet;
     const threadChanged = previous.thread !== next.thread;
+    const lockChanged = JSON.stringify(previous.lockedThreadItems ?? []) !== JSON.stringify(next.lockedThreadItems ?? []);
 
-    if (walletChanged && threadChanged) {
+    if (walletChanged && (threadChanged || lockChanged)) {
         return "wallet and thread changed";
     }
     if (walletChanged) {
         return "wallet changed";
     }
-    if (threadChanged) {
+    if (threadChanged || lockChanged) {
         return "thread changed";
     }
     return "wallet and thread unchanged";
@@ -211,6 +212,11 @@ export function walletThreadDetails(previous: AetherNovaMessageState, next: Aeth
     const details = [
         formatDebugFieldChange("Wallet", previous.wallet, next.wallet),
         formatDebugFieldChange("Thread", previous.thread, next.thread),
+        formatDebugFieldChange(
+            "Locked Thread Items",
+            (previous.lockedThreadItems ?? []).join(" ; ") || "None",
+            (next.lockedThreadItems ?? []).join(" ; ") || "None",
+        ),
     ].filter(Boolean);
 
     return details.length > 0 ? details : ["No wallet/thread change accepted."];
@@ -238,6 +244,10 @@ export function changedStateFields(previous: AetherNovaMessageState, next: Aethe
         "pendingNpcMemoryCommand",
     ];
     const changed = fields.filter((field) => previous[field] !== next[field]).map(String);
+
+    if (JSON.stringify(previous.lockedThreadItems ?? []) !== JSON.stringify(next.lockedThreadItems ?? [])) {
+        changed.push("lockedThreadItems");
+    }
 
     if (JSON.stringify(previous.npcMemory ?? {}) !== JSON.stringify(next.npcMemory ?? {})) {
         changed.push("npcMemory");

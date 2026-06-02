@@ -11,6 +11,7 @@ import {
     formatDebugList,
     formatDebugScores,
 } from "./debugUtils";
+import {isTerminalThreadItem, threadItemsOverlap} from "../thread/normalizeThreadLine";
 
 const DEBUG_UI_MINIMIZED_STORAGE_KEY = "aether-nova-stage.debugUiMinimized";
 const DEBUG_UI_COLLAPSED_NPCS_STORAGE_KEY = "aether-nova-stage.collapsedNpcCards";
@@ -30,6 +31,26 @@ type ConfirmRequest = {
     danger?: boolean;
     onConfirm: () => void;
 };
+
+function cleanThreadItem(value: string): string {
+    return value.trim().replace(/\s+/g, " ");
+}
+
+function threadItemsForDisplay(value: string): string[] {
+    const clean = cleanThreadItem(value);
+    if (clean.length === 0 || clean.toLowerCase() === "none") {
+        return [];
+    }
+
+    return clean
+        .split(/\s*;\s*/g)
+        .map(cleanThreadItem)
+        .filter((item) => item.length > 0);
+}
+
+function threadItemIsLocked(item: string, lockedItems: string[]): boolean {
+    return lockedItems.some((lockedItem) => threadItemsOverlap(lockedItem, item));
+}
 
 function readMinimizedPreference(): boolean {
     try {
@@ -121,6 +142,20 @@ export function AetherNovaDebugPanel({
         setEditingSection(null);
         setEditForm({});
         setEditUserStatusClothing({});
+    };
+
+    const toggleThreadLock = (item: string): void => {
+        if (isTerminalThreadItem(item)) {
+            return;
+        }
+
+        const lockedItems = snapshot.state.lockedThreadItems ?? [];
+        const isLocked = threadItemIsLocked(item, lockedItems);
+        const nextLocks = isLocked
+            ? lockedItems.filter((lockedItem) => !threadItemsOverlap(lockedItem, item))
+            : [...lockedItems, item];
+
+        setSnapshot(onStateEdit({lockedThreadItems: nextLocks}));
     };
 
     const toggleMinimized = (): void => {
@@ -262,9 +297,10 @@ export function AetherNovaDebugPanel({
                     onChange={setEditForm}
                     onSave={() => saveEdit({npc: editForm.npc ?? snapshot.state.npc})}
                 />
-                <EditableMetric
+                <ThreadMetric
                     label="Thread"
                     value={snapshot.state.thread}
+                    lockedItems={snapshot.state.lockedThreadItems ?? []}
                     editing={editingSection === "thread"}
                     fields={[
                         {key: "thread", label: "Thread items", value: snapshot.state.thread, multiline: true},
@@ -274,6 +310,7 @@ export function AetherNovaDebugPanel({
                     onCancel={cancelEdit}
                     onChange={setEditForm}
                     onSave={() => saveEdit({thread: editForm.thread ?? snapshot.state.thread})}
+                    onToggleLock={toggleThreadLock}
                 />
                 <EditableMetric
                     label="Wallet"
@@ -751,6 +788,94 @@ function EditableMetric({
             <span>{label}</span>
             <p>{value}</p>
             <button type="button" className="aether-edit-trigger" onClick={onEdit}>Edit</button>
+        </article>
+    );
+}
+
+function LockIcon({locked}: {locked: boolean}): ReactElement {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d={locked
+                ? "M7 10V8a5 5 0 0 1 10 0v2h1.5A1.5 1.5 0 0 1 20 11.5v8A1.5 1.5 0 0 1 18.5 21h-13A1.5 1.5 0 0 1 4 19.5v-8A1.5 1.5 0 0 1 5.5 10H7Zm2 0h6V8a3 3 0 0 0-6 0v2Z"
+                : "M7 10V8a5 5 0 0 1 9.3-2.55l-1.73 1A3 3 0 0 0 9 8v2h9.5A1.5 1.5 0 0 1 20 11.5v8A1.5 1.5 0 0 1 18.5 21h-13A1.5 1.5 0 0 1 4 19.5v-8A1.5 1.5 0 0 1 5.5 10H7Z"}
+            />
+        </svg>
+    );
+}
+
+function ThreadMetric({
+    label,
+    value,
+    lockedItems,
+    editing,
+    fields,
+    editForm,
+    onEdit,
+    onCancel,
+    onChange,
+    onSave,
+    onToggleLock,
+}: {
+    label: string;
+    value: string;
+    lockedItems: string[];
+    editing: boolean;
+    fields: EditableMetricField[];
+    editForm: Record<string, string>;
+    onEdit: () => void;
+    onCancel: () => void;
+    onChange: (form: Record<string, string>) => void;
+    onSave: () => void;
+    onToggleLock: (item: string) => void;
+}): ReactElement {
+    if (editing) {
+        return (
+            <EditableMetric
+                label={label}
+                value={value}
+                editing={editing}
+                fields={fields}
+                editForm={editForm}
+                onEdit={onEdit}
+                onCancel={onCancel}
+                onChange={onChange}
+                onSave={onSave}
+            />
+        );
+    }
+
+    const items = threadItemsForDisplay(value);
+
+    return (
+        <article className="aether-debug-metric aether-thread-metric">
+            <span>{label}</span>
+            <button type="button" className="aether-edit-trigger" onClick={onEdit}>Edit</button>
+            {items.length === 0 ? (
+                <p>None</p>
+            ) : (
+                <ol className="aether-thread-list" aria-label="Thread missions">
+                    {items.map((item) => {
+                        const locked = threadItemIsLocked(item, lockedItems);
+                        const terminal = isTerminalThreadItem(item);
+                        return (
+                            <li key={item} className={locked ? "is-locked" : undefined}>
+                                <button
+                                    type="button"
+                                    className={locked ? "aether-thread-lock is-active" : "aether-thread-lock"}
+                                    aria-label={locked ? `Unlock mission: ${item}` : `Lock mission: ${item}`}
+                                    aria-pressed={locked}
+                                    disabled={terminal}
+                                    title={terminal ? "Mission already ended" : locked ? "Unlock mission" : "Lock mission"}
+                                    onClick={() => onToggleLock(item)}
+                                >
+                                    <LockIcon locked={locked} />
+                                </button>
+                                <span>{item}</span>
+                            </li>
+                        );
+                    })}
+                </ol>
+            )}
         </article>
     );
 }

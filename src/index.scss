@@ -114,6 +114,7 @@ html, body, #root {
 .aether-debug-header-actions button,
 .aether-debug-details summary button,
 .aether-edit-trigger,
+.aether-thread-lock,
 .aether-edit-actions button,
 .aether-debug-log-panel summary button {
   min-height: 30px;
@@ -131,6 +132,7 @@ html, body, #root {
 .aether-debug-header-actions button:hover,
 .aether-debug-details summary button:hover,
 .aether-edit-trigger:hover,
+.aether-thread-lock:hover,
 .aether-edit-actions button:hover,
 .aether-debug-log-panel summary button:hover {
   border-color: rgba(215, 180, 106, 0.52);
@@ -238,6 +240,71 @@ html, body, #root {
   min-height: 26px;
   padding: 4px 7px;
   font-size: 0.72rem;
+}
+
+.aether-thread-metric {
+  grid-column: span 2;
+}
+
+.aether-thread-list {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.aether-thread-list li {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 38px;
+  padding: 6px;
+  border: 1px solid rgba(245, 242, 234, 0.1);
+  border-radius: 6px;
+  background: #141718 !important;
+}
+
+.aether-thread-list li.is-locked {
+  border-color: rgba(215, 180, 106, 0.42);
+  background: #1d1b15 !important;
+}
+
+.aether-thread-list li > span {
+  min-width: 0;
+  color: #f5f2ea;
+  font-size: 0.83rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-transform: none;
+}
+
+.aether-thread-lock {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+}
+
+.aether-thread-lock svg {
+  width: 17px;
+  height: 17px;
+  fill: currentColor;
+}
+
+.aether-thread-lock.is-active {
+  color: #17150e;
+  border-color: rgba(215, 180, 106, 0.8);
+  background: #d7b46a !important;
+}
+
+.aether-thread-lock:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .aether-debug-section {
@@ -806,6 +873,10 @@ html, body, #root {
   .aether-edit-form,
   .aether-user-status-editor {
     grid-template-columns: 1fr;
+  }
+
+  .aether-thread-metric {
+    grid-column: 1 / -1;
   }
 
   .aether-debug-event-main {

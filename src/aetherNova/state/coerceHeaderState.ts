@@ -8,11 +8,11 @@ import {normalizeClock, timeOfDayForClock} from "../header/normalizeClock";
 import {normalizeYouLine} from "../header/normalizeYouLine";
 import {normalizeNpcLine} from "../header/normalizeNpcLine";
 import {normalizeThreadLine} from "../thread/normalizeThreadLine";
-import {applyThreadWaitingLock} from "../thread/threadWaitingLock";
+import {applyThreadItemLocks, applyThreadWaitingLock, synchronizeLockedThreadItems, waitingThreadItemsFromThread} from "../thread/threadWaitingLock";
 import {coerceWalletState} from "../wallet/normalizeWalletLine";
 import {updateNpcMemory, coerceNpcMemory} from "../npcMemory/updateNpcMemory";
 import {coerceUserStatus} from "../userStatus/userStatusState";
-import {normalizePendingNpcDebugQuery, normalizePendingNpcMemoryCommand, normalizeLockedWaitingThreads, normalizeManualEditOverrides, normalizeTerminalGraceItems} from "./stateMerge";
+import {normalizePendingNpcDebugQuery, normalizePendingNpcMemoryCommand, normalizeLockedWaitingThreads, normalizeLockedThreadItems, normalizeManualEditOverrides, normalizeTerminalGraceItems} from "./stateMerge";
 
 export function createInitialHeaderState(
     characters: Record<string, Character>,
@@ -39,12 +39,33 @@ export function coerceHeaderState(
     const userStatus = coerceUserStatus(raw.userStatus, youLine);
 
     const lockedWaiting = normalizeLockedWaitingThreads(raw.lockedWaitingThreads);
+    const lockedThreadItems = normalizeLockedThreadItems(raw.lockedThreadItems);
     const terminalGrace = normalizeTerminalGraceItems(raw.terminalThreadGraceItems);
-    const {updatedThread} = applyThreadWaitingLock(
-      normalizeThreadLine(raw.thread ?? "", fallback.thread, ""),
-      { ...fallback, lockedWaitingThreads: lockedWaiting },
-      "",
-    );
+    const manualEditOverrides = normalizeManualEditOverrides(raw.manualEditOverrides);
+    const normalizedThread = normalizeThreadLine(raw.thread ?? "", fallback.thread, "");
+    const threadWasManuallyEdited = manualEditOverrides?.thread != null
+        && typeof raw.thread === "string"
+        && cleanFragment(raw.thread) === cleanFragment(manualEditOverrides.thread);
+    const {updatedThread, updatedLockedThreads} = threadWasManuallyEdited
+      ? {
+          updatedThread: normalizedThread,
+          updatedLockedThreads: waitingThreadItemsFromThread(normalizedThread),
+        }
+      : applyThreadWaitingLock(
+          normalizedThread,
+          { ...fallback, lockedWaitingThreads: lockedWaiting },
+          "",
+        );
+    const {updatedThread: lockedThread, updatedLockedThreadItems} = threadWasManuallyEdited
+      ? {
+          updatedThread,
+          updatedLockedThreadItems: synchronizeLockedThreadItems(updatedThread, lockedThreadItems),
+        }
+      : applyThreadItemLocks(
+          updatedThread,
+          { ...fallback, lockedThreadItems },
+          raw.thread ?? "",
+        );
 
     return {
         location: normalizeLocation(raw.location ?? "", fallback.location),
@@ -52,15 +73,16 @@ export function coerceHeaderState(
         clock,
         you: youLine,
         npc,
-        thread: updatedThread,
+        thread: lockedThread,
         wallet: walletState.value,
         walletInitialized: walletState.initialized,
         npcMemory,
         pendingNpcDebugQuery: normalizePendingNpcDebugQuery(raw.pendingNpcDebugQuery),
         pendingNpcMemoryCommand: normalizePendingNpcMemoryCommand(raw.pendingNpcMemoryCommand),
         userStatus,
-        lockedWaitingThreads: lockedWaiting,
+        lockedWaitingThreads: updatedLockedThreads,
+        lockedThreadItems: updatedLockedThreadItems,
         terminalThreadGraceItems: terminalGrace,
-        manualEditOverrides: normalizeManualEditOverrides(raw.manualEditOverrides),
+        manualEditOverrides,
     };
 }

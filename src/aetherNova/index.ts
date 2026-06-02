@@ -27,7 +27,7 @@ export {normalizeNpcLine} from "./header/normalizeNpcLine";
 export {formatHeader} from "./header/headerBuilder";
 
 export {normalizeThreadLine} from "./thread/normalizeThreadLine";
-export {applyThreadWaitingLock} from "./thread/threadWaitingLock";
+export {applyThreadItemLocks, applyThreadWaitingLock, synchronizeLockedThreadItems, waitingThreadItemsFromThread} from "./thread/threadWaitingLock";
 
 export {coerceWalletState, normalizeWalletLine} from "./wallet/normalizeWalletLine";
 export {parseWalletAmounts, formatWallet, walletToCopper, copperToWallet} from "./wallet/walletMath";

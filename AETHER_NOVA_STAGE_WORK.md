@@ -117,7 +117,7 @@ Stage adalah React component (`Stage.tsx`) yang mengimplementasikan `StageBase` 
 ### constructor()
 - Menerima `InitialData` berisi characters, config, dan messageState dari chat.
 - Memanggil `createInitialHeaderState()` dari `src/aetherNova/state/coerceHeaderState.ts` yang meneruskan ke `coerceHeaderState()` untuk menormalkan state masuk atau membuat default.
-- Fungsi `createDefaultState()` dari `src/aetherNova/state/defaultState.ts` membuat state default berdasarkan character (infer race dari `character.description/personality/scenario/first_message`).
+- Fungsi `createDefaultState()` dari `src/aetherNova/state/defaultState.ts` memakai state netral (`NPC: None`, `Thread: None`) agar stage tidak mengunci character utama sebagai NPC/thread default sebelum ada evidence dari header/narasi.
 - State default: `DEFAULT_STATE` dari `src/aetherNova/constants.ts`.
 
 ### load()
@@ -408,6 +408,16 @@ Cara kerja:
 3. **Restore pada swipe**: `coerceHeaderState()` memanggil `applyThreadWaitingLock()` untuk mengembalikan item waiting yang masih dikunci ke thread state, sehingga user tidak kehilangan thread waiting saat swipe/jump.
 4. **Resolusi hanya oleh LLM**: Item waiting hanya dihapus dari lock jika ada `THREAD_WAITING_RESOLUTION_PATTERNS` dalam narasi: `arrive`, `meet`, `meets`, `met`, `found`, `speak`, `finish`, `complete`, `done`, `resolved`, `resolved:`, `(Resolved)`. Atau jika ada thread item dengan status `resolved`/`completed`/`done` yang cocok.
 5. **Privasi thread (OnlyKnows/Secret)**: Thread items dengan `(Only X knows)` atau `(Secret)` tetap dipertahankan saat lock restoration — marker privasi tidak di-strip.
+6. **Manual edit clear**: Jika user mengedit Thread secara manual dari debug UI, `lockedWaitingThreads[]` disinkronkan ulang dari value Thread baru. Mengubah Thread ke `None` ikut membersihkan lock lama supaya stale waiting item tidak muncul kembali sebagai default.
+
+### Manual Thread Lock dari UI
+
+User bisa mengunci misi tertentu dari daftar Thread di Debug UI. Stage menyimpan pilihan ini di `lockedThreadItems[]` dan menjalankan `applyThreadItemLocks()` setelah normalisasi thread:
+
+1. Item yang dikunci user dipertahankan di `Thread` walau LLM tidak menuliskannya pada response berikutnya.
+2. Jika LLM menulis item yang overlap dengan status terminal (`Complete`, `Completed`, `Done`, `Finished`, `Failed`, `Abandoned`, `Cancelled`, dll), lock manual dilepas.
+3. Jika LLM menulis versi non-terminal yang overlap, lock disinkronkan ke versi terbaru agar status seperti `(Pending)` → `(Ongoing)` tetap terbawa.
+4. Edit manual Thread dari UI menyinkronkan ulang `lockedThreadItems[]`; mengubah Thread ke `None` ikut membersihkan lock manual yang tidak lagi ada di list.
 
 ---
 
@@ -803,6 +813,7 @@ Debug UI menampilkan:
 - Current state: Location, Time, You (compact), NPC, Thread, Wallet, Pending NPC Debug, Pending Memory Command.
 - **Minimize UI**: Header UI memiliki tombol **Minimize**. Saat ditekan, panel berubah menjadi mini bar ringkas di bagian atas frame dengan status `Idle/Modified`, versi UI, dan tombol **Open** untuk membuka kembali. Preferensi minimize disimpan di `localStorage` key `aether-nova-stage.debugUiMinimized`, sehingga mobile user tidak selalu tertutup panel debug besar.
 - **Edit Buttons**: Setiap field state utama (Location, You, NPC, Thread, Wallet, Status User) memiliki tombol **Edit**. Saat diklik, kartu edit melebar ke seluruh grid dan berubah menjadi form yang lebih nyaman. Field pendek memakai input, `timeOfDay` memakai select (`Morning/Midday/Afternoon/Evening/Night`), dan field panjang seperti `You`, `NPC`, dan `Thread` memakai textarea. User bisa mengubah value lalu **Save** (menerapkan edit ke state + mencatat di `manualEditOverrides`) atau **Cancel** (kembali ke tampilan baca).
+- **Thread Mission List**: Thread ditampilkan sebagai daftar misi per item ` ; `. Setiap item punya tombol gembok untuk menambah/menghapus lock manual di `lockedThreadItems[]`. Item terminal tidak bisa dikunci.
 - **Status User Editor**: Saat Edit Status User diklik, panel detail berubah menjadi form grid dengan input untuk Gender, Race, dan setiap slot pakaian (Upper, Lower, Footwear, Outerwear, Accessories). Weapons dan Important Items bisa diedit lewat textarea dengan format `name | location | status`; parser juga menerima pemisah `—` atau `-`.
 - **Confirm destructive actions**: Aksi yang menghapus/clear data UI meminta konfirmasi lebih dulu (`Clear Logs`, clear log per kategori, `Clear Facts`, dan `Delete` NPC memory) lewat dialog custom React di dalam Stage, bukan `window.confirm()`, agar tetap bekerja di webview/platform yang memblokir dialog browser native.
 - Manual edits yang dilakukan melalui UI disimpan di `manualEditOverrides` dan dipertahankan saat swipe/jump serta melalui normalisasi.
@@ -829,7 +840,7 @@ Debug UI juga bisa mengatur NPC Memory:
 Setiap aksi UI memakai command internal `npc memory ...`, mengubah state internal langsung, dan mengisi `pendingNpcMemoryCommand` agar efeknya diterapkan ulang pada lifecycle berikutnya.
 
 Debug diaktifkan dengan `position: ADJACENT` di `public/chub_meta.yaml`.
-Untuk production, ubah ke `position: NONE`.
+UI dipertahankan selama `debugUi` aktif; nonaktifkan lewat config jika stage perlu berjalan tanpa panel.
 
 ### NPC Debug Query
 User bisa mengetik `[debug: npc Name]` dalam pesan → stage inject data NPC sebagai stageDirections, lalu tampilkan sebagai system message footer setelah response.
@@ -869,6 +880,7 @@ Location berubah jika:
     pendingNpcMemoryCommand: string | null;
     userStatus: UserStatusState;
     lockedWaitingThreads?: string[];       // Thread items with waiting/rendezvous status, persisted until resolved
+    lockedThreadItems?: string[];          // User-selected thread items kept until terminal status appears
     terminalThreadGraceItems?: string[];   // Terminal items (Complete/Finished/Failed) shown once, then removed next response
     manualEditOverrides?: Record<string, string>;  // UI manual edit values, preserved across normalization
 }
@@ -929,12 +941,13 @@ Lock tidak akan mengembalikan thread yang sudah selesai. Thread rahasia (`Secret
 
 | File | Perubahan |
 |------|-----------|
-| `src/aetherNova/types.ts` | Menambah `terminalThreadGraceItems?: string[]` |
+| `src/aetherNova/types.ts` | Menambah `terminalThreadGraceItems?: string[]` dan `lockedThreadItems?: string[]` |
 | `src/aetherNova/thread/normalizeThreadLine.ts` | Evidence grounding (`isCandidateGroundedInEvidence`), threat/conditional guard (`isThreatOrConditionalStatement`, `isPastWarningStatement`), meeting auto-complete (`completeMeetingThreadItems`, `isMeetingThreadItemComplete`), parameter `npcLine` |
-| `src/aetherNova/thread/threadWaitingLock.ts` | Release lock untuk item terminal/meeting terselesaikan |
-| `src/aetherNova/response/normalizeAetherNovaResponse.ts` | Terminal grace (`applyTerminalGrace`), NPC line passing ke thread normalization |
-| `src/aetherNova/state/coerceHeaderState.ts` | Handle `terminalThreadGraceItems` |
-| `src/aetherNova/state/stateMerge.ts` | Normalize `terminalThreadGraceItems` |
+| `src/aetherNova/thread/threadWaitingLock.ts` | Release lock untuk item terminal/meeting terselesaikan dan manual thread item lock dari UI |
+| `src/aetherNova/response/normalizeAetherNovaResponse.ts` | Terminal grace (`applyTerminalGrace`), NPC line passing ke thread normalization, dan manual thread lock restore/release |
+| `src/aetherNova/state/coerceHeaderState.ts` | Handle `terminalThreadGraceItems` dan `lockedThreadItems` |
+| `src/aetherNova/state/stateMerge.ts` | Normalize `terminalThreadGraceItems` dan `lockedThreadItems` |
+| `src/aetherNova/ui/DebugPanel.tsx` | Thread ditampilkan sebagai mission list dengan tombol gembok per item |
 
 ---
 
