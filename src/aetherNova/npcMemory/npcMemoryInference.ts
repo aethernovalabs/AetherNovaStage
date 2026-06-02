@@ -27,7 +27,7 @@ const OPPOSITE_TRAIT_PAIRS: Record<string, string[]> = {
     playful: ["serious", "formal"],
     teasing: ["serious", "formal"],
     serious: ["playful", "teasing"],
-    formal: ["playful", "teasing"],
+    formal: ["playful", "teasing", "affectionate", "possessive", "jealous"],
     protective: ["hostile"],
     hostile: ["protective"],
     respectful: ["arrogant"],
@@ -155,10 +155,39 @@ const STABLE_BEHAVIOR_CANDIDATES = new Set([
     "reckless",
 ]);
 
+const ROMANTIC_VOLATILE_TRAITS = new Set(["affectionate", "possessive", "jealous"]);
+
+const BUSINESS_CONTEXT_PATTERN = /\b(?:business|deal|contract|payment|paid|price|coin|coins|wallet|commission|merchant|broker|client|customer|supplier|trade|transaction|negotiate|negotiation|bargain|market|job|work|service|professional|formal employment|business partner|partnership|agreement|invoice|fee|wage|salary)\b/i;
+const EXPLICIT_ROMANCE_CONTEXT_PATTERN = /\b(?:romantic|romance|lover|lovers?|i love you|love you too|confesses?\s+love|confession accepted|proposal accepted|marriage accepted|kiss(?:es|ed|ing)?|flirts?|flirting|desire|attraction|intimate|intimacy|courtship|date|dating|caress(?:es|ed|ing)?|cuddles?|loving)\b/i;
+const SOCIAL_STRESS_CONTEXT_PATTERN = /\b(?:angry|furious|rage|afraid|fearful|terrified|hostile|suspicious|wary|distrust|cautious|tense|threatens?|attacks?|betrays?|betrayal|argument|conflict)\b/i;
+
 function getOppositeReduction(evidenceWeight: number): number {
-    if (evidenceWeight >= 1) return 0.5;
-    if (evidenceWeight >= 0.5) return 0.25;
+    if (evidenceWeight >= 1) return 1;
+    if (evidenceWeight >= 0.5) return 0.5;
+    if (evidenceWeight > 0) return 0.2;
     return 0;
+}
+
+function reduceBehaviorScore(scores: Record<string, number>, label: string, amount: number): void {
+    const clean = cleanMemoryLabel(label, "");
+    if (clean.length === 0 || amount <= 0 || scores[clean] == null || scores[clean] <= 0) {
+        return;
+    }
+
+    const next = clampBehaviorScore(scores[clean] - amount);
+    if (next <= 0) {
+        delete scores[clean];
+    } else {
+        scores[clean] = next;
+    }
+}
+
+function hasBusinessContext(context: string): boolean {
+    return BUSINESS_CONTEXT_PATTERN.test(context);
+}
+
+function hasExplicitRomanceContext(context: string): boolean {
+    return EXPLICIT_ROMANCE_CONTEXT_PATTERN.test(context);
 }
 
 function isMoodOnlyTrait(label: string): boolean {
@@ -282,13 +311,13 @@ function extractTraitsFromText(
         {label: "bored", pattern: /\b(bored|uninterested|disinterested|listless|apathetic|yawns?)\b/, weight: 1, requiresUserTarget: false},
         {label: "worried", pattern: /\b(worried|concerned|anxious|apprehensive|troubled|uneasy)\b/, weight: 1, requiresUserTarget: false},
         {label: "protective", pattern: /\b(protects?|protected|guarding|guards?|defends?|defended|shields?|stands?\s+between|shield|guardian)\b/, weight: 2, requiresUserTarget: false},
-        {label: "possessive", pattern: /\b(possessive|possessively|mine|claim|claims?|claimed|belongs?\s+to\s+me|stak(?:e|es)?\s+claim)\b/, weight: 2, requiresUserTarget: false},
+        {label: "possessive", pattern: /\b(possessive|possessively|mine|claim|claims?|claimed|belongs?\s+to\s+me|stak(?:e|es)?\s+claim)\b/, weight: 2, requiresUserTarget: true},
         {label: "playful", pattern: /\b(playful|mischievous|whimsical|light.?hearted|banter|jest)\b/, weight: 1, requiresUserTarget: false},
         {label: "teasing", pattern: /\b(teasing|teases?|teased|teasingly|ribbing|chaffing)\b/, weight: 1, requiresUserTarget: false},
         {label: "formal", pattern: /\b(formal|protocol|courteous|proper|courtly|professional|cordial)\b/, weight: 1, requiresUserTarget: false},
         {label: "suspicious", pattern: /\b(suspicious|wary|guarded|distrust|cautious|skeptical|narrowed eyes|side-eye)\b/, weight: 1, requiresUserTarget: false},
         {label: "hostile", pattern: /\b(hostile|attacks?|attacked|threatens?|threatened|betray|orders?\s+(?:your|their)\s+capture|tries?\s+to\s+kill|aggressive)\b/, weight: 2, requiresUserTarget: false},
-        {label: "affectionate", pattern: /\b(affectionate|gentle|warm|tender|caress|hugs?|kisses?|loving|cuddles?)\b/, weight: 2, requiresUserTarget: false},
+        {label: "affectionate", pattern: /\b(affectionate|gentle|warm|tender|caress|hugs?|kisses?|loving|cuddles?)\b/, weight: 2, requiresUserTarget: true},
         {label: "cold", pattern: /\b(cold|distant|icy|unfriendly|detached|aloof|frosty|chilly)\b/, weight: 1, requiresUserTarget: false},
         {label: "loyal", pattern: /\b(loyal|devoted|faithful|steadfast|stands?\s+with|remains?\s+by\s+(?:your|{{user}})\s+side)\b/, weight: 2, requiresUserTarget: false},
         {label: "respectful", pattern: /\b(respectful|deferential|honors?|honour|reverent|obeisance|bows?|curtsey)\b/, weight: 1, requiresUserTarget: false},
@@ -297,7 +326,7 @@ function extractTraitsFromText(
         {label: "defiant", pattern: /\b(defiant|defies?|rebels?|rebellious|insubordinate|disobedient|challenges?)\b/, weight: 1, requiresUserTarget: false},
         {label: "fearful", pattern: /\b(fearful|frightened|terrified|trembling|quivering|cowering|timid)\b/, weight: 1, requiresUserTarget: false},
         {label: "brave", pattern: /\b(brave|courageous|fearless|valiant|undaunted|bold|intrepid)\b/, weight: 1, requiresUserTarget: false},
-        {label: "jealous", pattern: /\b(jealous|envy|envious|green.?eyed)\b/, weight: 1, requiresUserTarget: false},
+        {label: "jealous", pattern: /\b(jealous|envy|envious|green.?eyed)\b/, weight: 1, requiresUserTarget: true},
         {label: "proud", pattern: /\b(proud|pride|prideful|dignified)\b/, weight: 1, requiresUserTarget: false},
         {label: "wise", pattern: /\b(wise|sage|knowledgeable|insightful|perceptive|astute)\b/, weight: 1, requiresUserTarget: false},
         {label: "shy", pattern: /\b(shy|timid|bashful|reserved|withdrawn|reticent)\b/, weight: 1, requiresUserTarget: false},
@@ -327,6 +356,9 @@ function extractTraitsFromText(
 
         const matchSentence = sentences.find((sent) => trait.pattern.test(sent)) ?? searchable;
         const target = determineTraitTarget(matchSentence, trait.label, npcName, memory);
+        if (trait.requiresUserTarget && target !== "user") {
+            continue;
+        }
         let weight = trait.weight;
 
         if ((trait.label === "possessive" || trait.label === "protective") && target === "user") {
@@ -692,8 +724,12 @@ export function inferNpcBehaviorEvidence(headerEntry: NpcHeaderMemoryEntry, cont
     return mergeBehaviorEvidence(evidence);
 }
 
-export function updateBehaviorScores(previousScores: Record<string, number>, evidence: BehaviorEvidence[]): Record<string, number> {
+export function updateBehaviorScores(previousScores: Record<string, number>, evidence: BehaviorEvidence[], context: string = ""): Record<string, number> {
     const next: Record<string, number> = {};
+    const evidenceLabels = new Set(evidence.map((item) => cleanMemoryLabel(item.label, "")).filter(Boolean));
+    const businessContext = hasBusinessContext(context);
+    const explicitRomanceContext = hasExplicitRomanceContext(context);
+    const businessWithoutRomance = businessContext && !explicitRomanceContext;
 
     for (const [label, score] of Object.entries(previousScores)) {
         const clean = cleanMemoryLabel(label, "");
@@ -714,7 +750,15 @@ export function updateBehaviorScores(previousScores: Record<string, number>, evi
             continue;
         }
 
-        next[label] = clampBehaviorScore((next[label] ?? 0) + item.weight);
+        const weight = ROMANTIC_VOLATILE_TRAITS.has(label) && businessWithoutRomance
+            ? Math.min(item.weight, 0.1)
+            : item.weight;
+
+        if (weight <= 0) {
+            continue;
+        }
+
+        next[label] = clampBehaviorScore((next[label] ?? 0) + weight);
     }
 
     for (const item of evidence) {
@@ -736,9 +780,27 @@ export function updateBehaviorScores(previousScores: Record<string, number>, evi
         for (const oppositeLabel of opposites) {
             const cleanOpposite = cleanMemoryLabel(oppositeLabel, "");
             if (cleanOpposite.length > 0 && next[cleanOpposite] != null && next[cleanOpposite] > 0) {
-                next[cleanOpposite] = clampBehaviorScore(next[cleanOpposite] - reduction);
+                reduceBehaviorScore(next, cleanOpposite, reduction);
             }
         }
+    }
+
+    if (businessWithoutRomance) {
+        for (const label of ROMANTIC_VOLATILE_TRAITS) {
+            const wasWeaklyReinforced = evidenceLabels.has(label);
+            reduceBehaviorScore(next, label, wasWeaklyReinforced ? 0.25 : 0.75);
+        }
+    } else {
+        for (const label of ROMANTIC_VOLATILE_TRAITS) {
+            if (!evidenceLabels.has(label) && (next[label] ?? 0) >= 4) {
+                reduceBehaviorScore(next, label, 0.2);
+            }
+        }
+    }
+
+    if (!explicitRomanceContext && SOCIAL_STRESS_CONTEXT_PATTERN.test(context)) {
+        reduceBehaviorScore(next, "affectionate", 0.4);
+        reduceBehaviorScore(next, "possessive", 0.3);
     }
 
     return next;
@@ -771,6 +833,7 @@ export function inferNpcRelationshipUpdate(
     stableBehavior: string[],
 ): RelationshipUpdate {
     const searchable = npcSocialContext(headerEntry, context);
+    const businessWithoutRomance = hasBusinessContext(searchable) && !hasExplicitRomanceContext(searchable);
     let labels = previous?.relationshipWithUser?.length ? previous.relationshipWithUser : ["stranger"];
     const events: string[] = [];
     const addEvent = (nextLabels: string[], event: string): void => {
@@ -796,6 +859,7 @@ export function inferNpcRelationshipUpdate(
         && !/\b(?:joking|pretending|acting|lying|mind control|forced|coerced)\b/i.test(searchable)) {
         addEvent(["lover"], `${headerEntry.firstName} mutually confirmed romantic love with {{user}}.`);
     } else if (/\b(?:confesses? love|i love you|romantic tension|flirts?|blush(?:es|ing)?|desire|attraction)\b/i.test(searchable)
+        && !businessWithoutRomance
         && !/\b(?:i love you too|love you too|accepted (?:your|{{user}}'s) confession)\b/i.test(searchable)) {
         labels = addRelationshipModifier(labels, "romantic tension");
     }
@@ -948,7 +1012,7 @@ export function inferNpcOnlyKnows(headerEntry: NpcHeaderMemoryEntry, context: st
                 facts.push(filtered);
             }
         }
-        return mergeUniqueList(facts.map(cleanFactText).filter(Boolean), 4);
+        return mergeUniqueList(facts.map(cleanFactText).filter(Boolean));
     }
 
     // {{user}} and NPC did something together
@@ -1031,7 +1095,7 @@ export function inferNpcOnlyKnows(headerEntry: NpcHeaderMemoryEntry, context: st
 
     // General "I/you/{{user}} told NPC that ..." pattern across full context
     for (const sentence of npcMemorySentences(context)) {
-        const toldPattern = new RegExp(`\\b(?:i|you|\\{\\{user\\}\\})\\s+(?:told|tell|revealed|reveal|informed|inform)\\s+(?:${npcNameRegexSource(headerEntry.name)}|${npcNameRegexSource(firstName)}|him|her|them|you)\\b\\s*(?:that\\s+)?(.{4,120})`, "i");
+        const toldPattern = new RegExp(`\\b(?:i|you|\\{\\{user\\}\\})\\s+(?:told|tell|revealed|reveal|informed|inform)\\s+(?:${npcNameRegexSource(headerEntry.name)}|${npcNameRegexSource(firstName)}|him|her|them|you)\\b\\s*(?:that\\s+)?(.{4,})`, "i");
         const told = toldPattern.exec(sentence);
         if (told != null) {
             const fact = cleanFactText(told[1]);
@@ -1042,7 +1106,7 @@ export function inferNpcOnlyKnows(headerEntry: NpcHeaderMemoryEntry, context: st
         }
     }
 
-    return mergeUniqueList(facts.map(cleanFactText).filter(Boolean), 4);
+    return mergeUniqueList(facts.map(cleanFactText).filter(Boolean));
 }
 
 export function mergeRelationshipEvents(previous: string[], incoming: string[]): string[] {
@@ -1064,5 +1128,5 @@ export function mergeRelationshipEvents(previous: string[], incoming: string[]):
 }
 
 export function mergeKnownFacts(previous: string[], incoming: string[]): string[] {
-    return mergeUniqueList(previous.concat(incoming).map(cleanFactText).filter(Boolean), 8);
+    return mergeUniqueList(previous.concat(incoming).map(cleanFactText).filter(Boolean));
 }

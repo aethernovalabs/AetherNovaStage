@@ -543,6 +543,11 @@ html, body, #root {
   resize: vertical;
 }
 
+.aether-debug-editor .long-memory-field textarea {
+  min-height: 180px;
+  max-height: none;
+}
+
 .aether-debug-editor input:focus,
 .aether-debug-editor select:focus,
 .aether-debug-editor textarea:focus,
@@ -627,11 +632,24 @@ html, body, #root {
   padding-left: 18px;
 }
 
+.aether-debug-memory-card .aether-onlyknows-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  padding-left: 0;
+  list-style: none;
+}
+
 .aether-debug-memory-card li {
   margin: 4px 0;
   color: #e7e2d6;
   font-size: 0.83rem;
   line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.aether-debug-memory-card .aether-onlyknows-list li {
+  white-space: pre-wrap;
 }
 
 .aether-debug-empty {

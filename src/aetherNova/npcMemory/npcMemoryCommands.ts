@@ -3,7 +3,7 @@ import {NPC_MEMORY_COMMAND_PATTERN} from "../constants";
 import {coerceNpcMemory} from "./updateNpcMemory";
 import {resolveNpcMemoryKey, npcMemoryKey} from "./npcMemoryState";
 import {cleanNpcMemoryName, cleanMemoryField, cleanMemoryLabel, cleanFactText, formatMemoryLabels, formatBehaviorScores, normalizeMemoryLabelList, normalizeRelationshipList, normalizeBehaviorScores, ensureBehaviorScoresForStableLabels, applyBehaviorScoreDeltas, clampBehaviorScore, mergeUniqueList, mergeBehaviorScores, completeNpcMemoryName, isEmptyNpcMemoryValue, isPersistableNpcMemoryName} from "./npcMemoryHelpers";
-import {mergeKnownFacts, stableBehaviorLabels} from "./npcMemoryInference";
+import {mergeKnownFacts, mergeRelationshipEvents, stableBehaviorLabels} from "./npcMemoryInference";
 import {findNpcCanonByNameOrAlias} from "./npcCanonRegistry";
 import {cleanFragment, normalizeLineEndings} from "../utils/text";
 import {splitTopLevel} from "../utils/split";
@@ -247,7 +247,7 @@ function applyNpcMemoryCommand(memory: NpcMemoryStore, command: NpcMemoryCommand
 
         next[key] = {
             ...next[key],
-            relationshipEvents: mergeKnownFacts(next[key].relationshipEvents, command.updates.relationshipEvents ?? []),
+            relationshipEvents: mergeRelationshipEvents(next[key].relationshipEvents, command.updates.relationshipEvents ?? []),
         };
         return {memory: next, message: `NPC memory command: added relationship event(s) for ${next[key].name}.`};
     }
@@ -343,7 +343,7 @@ function applyNpcMemoryCommand(memory: NpcMemoryStore, command: NpcMemoryCommand
                 command.updates.behaviorScoreDeltas ?? {},
             ),
         relationshipWithUser: normalizeRelationshipList(command.updates.relationshipWithUser ?? previous?.relationshipWithUser),
-        relationshipEvents: mergeKnownFacts(previous?.relationshipEvents ?? [], command.updates.relationshipEvents ?? []),
+        relationshipEvents: mergeRelationshipEvents(previous?.relationshipEvents ?? [], command.updates.relationshipEvents ?? []),
         onlyKnows: command.updates.onlyKnows != null
             ? mergeKnownFacts([], command.updates.onlyKnows)
             : mergeKnownFacts(previous?.onlyKnows ?? [], command.updates.addFacts ?? []),

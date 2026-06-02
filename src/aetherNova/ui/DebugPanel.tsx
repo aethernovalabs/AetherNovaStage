@@ -506,7 +506,7 @@ export function AetherNovaDebugPanel({
                                                 {entry.onlyKnows.length === 0 ? (
                                                     <p className="aether-debug-empty compact">None</p>
                                                 ) : (
-                                                    <ul>
+                                                    <ul className="aether-onlyknows-list">
                                                         {entry.onlyKnows.map((fact) => <li key={fact}>{fact}</li>)}
                                                     </ul>
                                                 )}
@@ -710,9 +710,9 @@ function NpcMemoryEditor({
                 Relationship Events
                 <textarea value={draft.relationshipEventsText} onChange={(event) => onChange({...draft, relationshipEventsText: event.target.value})} />
             </label>
-            <label className="wide">
+            <label className="wide long-memory-field">
                 OnlyKnows
-                <textarea value={draft.onlyKnowsText} onChange={(event) => onChange({...draft, onlyKnowsText: event.target.value})} />
+                <textarea rows={10} value={draft.onlyKnowsText} onChange={(event) => onChange({...draft, onlyKnowsText: event.target.value})} />
             </label>
             <div className="aether-debug-editor-actions">
                 <button type="submit">{saveLabel}</button>

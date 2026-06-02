@@ -1,6 +1,11 @@
 import type {AetherNovaMessageState, NpcMemoryEntry, NpcMemoryStore, UserStatusState} from "../types";
 import type {NpcMemoryDraft} from "./types";
 import {DEBUG_STORAGE_KEY} from "./types";
+import {formatBehaviorScoreValue} from "../npcMemory/npcMemoryHelpers";
+
+function behaviorScoresDraftText(scores: Record<string, number>): string {
+    return Object.entries(scores).map(([label, score]) => `${label}: ${formatBehaviorScoreValue(score)}`).join("; ");
+}
 
 export function computeDirtyFields(draft: NpcMemoryDraft, original: NpcMemoryEntry | null): Set<string> {
     const dirty = new Set<string>();
@@ -14,7 +19,7 @@ export function computeDirtyFields(draft: NpcMemoryDraft, original: NpcMemoryEnt
     if (draft.currentMood !== original.currentMood) dirty.add("currentMood");
     if (draft.lastInteractionTone !== (original.lastInteractionTone ?? "")) dirty.add("lastInteractionTone");
     if (draft.behaviorTowardUserText !== original.behaviorTowardUser.join(", ")) dirty.add("behaviorTowardUserText");
-    if (draft.behaviorScoresText !== Object.entries(original.behaviorScores).map(([l, s]) => `${l}: ${s}`).join("; ")) dirty.add("behaviorScoresText");
+    if (draft.behaviorScoresText !== behaviorScoresDraftText(original.behaviorScores)) dirty.add("behaviorScoresText");
     if (draft.relationshipWithUserText !== original.relationshipWithUser.join(", ")) dirty.add("relationshipWithUserText");
     if (draft.relationshipEventsText !== original.relationshipEvents.join("; ")) dirty.add("relationshipEventsText");
     if (draft.onlyKnowsText !== original.onlyKnows.join("; ")) dirty.add("onlyKnowsText");
@@ -46,7 +51,7 @@ export function draftFromNpcMemory(entry: NpcMemoryEntry): NpcMemoryDraft {
         currentMood: entry.currentMood,
         lastInteractionTone: entry.lastInteractionTone ?? "",
         behaviorTowardUserText: entry.behaviorTowardUser.join(", "),
-        behaviorScoresText: Object.entries(entry.behaviorScores).map(([label, score]) => `${label}: ${score}`).join("; "),
+        behaviorScoresText: behaviorScoresDraftText(entry.behaviorScores),
         relationshipWithUserText: entry.relationshipWithUser.join(", "),
         relationshipEventsText: entry.relationshipEvents.join("; "),
         onlyKnowsText: entry.onlyKnows.join("; "),
@@ -140,7 +145,7 @@ export function formatDebugScores(scores: Record<string, number>): string {
         .filter(([_label, score]) => score > 0)
         .sort((left, right) => right[1] - left[1]);
 
-    return entries.length > 0 ? entries.map(([label, score]) => `${label}:${score}`).join(", ") : "none";
+    return entries.length > 0 ? entries.map(([label, score]) => `${label}:${formatBehaviorScoreValue(score)}`).join(", ") : "none";
 }
 
 export function npcMemoryChangeDetails(previous: NpcMemoryStore, next: NpcMemoryStore): string[] {

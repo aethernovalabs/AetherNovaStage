@@ -1,9 +1,14 @@
 import type {NpcMemoryStore, NpcMemoryEntry} from "../types";
-import {cleanFragment, cleanHeaderText, sameText, limitWords} from "../utils/text";
+import {cleanFragment, cleanHeaderText, sameText} from "../utils/text";
 import {resolveNpcMemoryKey} from "./npcMemoryState";
 
 export function clampBehaviorScore(value: number): number {
-    return Math.max(0, Math.min(9, value));
+    const clamped = Math.max(0, Math.min(9, value));
+    return Math.round((clamped + Number.EPSILON) * 100) / 100;
+}
+
+export function formatBehaviorScoreValue(value: number): string {
+    return clampBehaviorScore(value).toFixed(2).replace(/\.?0+$/, "");
 }
 
 function splitMemoryFields(value: string): string[] {
@@ -76,7 +81,7 @@ export function cleanMemoryField(value: unknown, fallback: string): string {
 }
 
 export function cleanFactText(value: string): string {
-    return limitWords(cleanFragment(value).replace(/^that\s+/i, ""), 24);
+    return cleanFragment(value).replace(/^that\s+/i, "");
 }
 
 export function firstNameOf(name: string): string {
@@ -104,10 +109,9 @@ export function formatMemoryLabels(values: string[], fallback: string): string {
 export function formatBehaviorScores(scores: Record<string, number>): string {
     const entries = Object.entries(scores)
         .filter(([_label, score]) => score > 0)
-        .sort((left, right) => right[1] - left[1])
-        .slice(0, 8);
+        .sort((left, right) => right[1] - left[1]);
 
-    return entries.length > 0 ? entries.map(([label, score]) => `${label}:${score}`).join(", ") : "none";
+    return entries.length > 0 ? entries.map(([label, score]) => `${label}:${formatBehaviorScoreValue(score)}`).join(", ") : "none";
 }
 
 export function normalizeMemoryLabelList(value: unknown, fallback: string[] = []): string[] {
@@ -127,7 +131,7 @@ export function normalizeMemoryLabelList(value: unknown, fallback: string[] = []
     return fallback;
 }
 
-export function normalizeMemoryTextList(value: unknown, maxItems: number): string[] {
+export function normalizeMemoryTextList(value: unknown, maxItems: number = Number.POSITIVE_INFINITY): string[] {
     if (Array.isArray(value)) {
         return mergeUniqueList(value.filter((item): item is string => typeof item === "string").map(cleanFactText).filter(Boolean), maxItems);
     }
@@ -161,7 +165,7 @@ export function normalizeBehaviorScores(value: unknown, stableLabels: string[]):
     return scores;
 }
 
-export function mergeUniqueList(values: string[], maxItems: number): string[] {
+export function mergeUniqueList(values: string[], maxItems: number = Number.POSITIVE_INFINITY): string[] {
     const result: string[] = [];
 
     for (const value of values) {
@@ -171,7 +175,7 @@ export function mergeUniqueList(values: string[], maxItems: number): string[] {
         }
 
         result.push(clean);
-        if (result.length >= maxItems) {
+        if (Number.isFinite(maxItems) && result.length >= maxItems) {
             break;
         }
     }

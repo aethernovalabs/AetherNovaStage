@@ -53,9 +53,9 @@ function normalizeNpcMemoryEntry(value: unknown): NpcMemoryEntry | null {
     }
 
     const onlyKnows = Array.isArray(raw.onlyKnows)
-        ? raw.onlyKnows.filter((fact): fact is string => typeof fact === "string").map(cleanFactText).filter(Boolean).slice(0, 8)
+        ? raw.onlyKnows.filter((fact): fact is string => typeof fact === "string").map(cleanFactText).filter(Boolean)
         : Array.isArray(raw.knownFacts)
-            ? raw.knownFacts.filter((fact): fact is string => typeof fact === "string").map(cleanFactText).filter(Boolean).slice(0, 8)
+            ? raw.knownFacts.filter((fact): fact is string => typeof fact === "string").map(cleanFactText).filter(Boolean)
             : [];
     const behaviorTowardUser = normalizeMemoryLabelList(raw.behaviorTowardUser ?? raw.behavior, []);
     const behaviorScores = normalizeBehaviorScores(raw.behaviorScores, behaviorTowardUser);
@@ -156,7 +156,7 @@ export function updateNpcMemory(previousMemory: NpcMemoryStore, npcLine: string,
         const race = canon != null ? canon.race : cleanMemoryField(headerEntry.race || previous?.race, "Unknown");
         const physicalExtra = canon != null ? canon.physicalExtra : inferNpcPhysicalExtra(headerEntry, previous, context);
         const mood = inferNpcMood(headerEntry, previous, context);
-        const behaviorScores = updateBehaviorScores(previous?.behaviorScores ?? {}, inferNpcBehaviorEvidence(headerEntry, context, next));
+        const behaviorScores = updateBehaviorScores(previous?.behaviorScores ?? {}, inferNpcBehaviorEvidence(headerEntry, context, next), context);
         const behaviorTowardUser = stableBehaviorLabels(previous?.behaviorTowardUser ?? [], behaviorScores);
         const relationshipUpdate = inferNpcRelationshipUpdate(headerEntry, previous, context, behaviorTowardUser);
         const relationshipWithUser = relationshipUpdate.relationshipWithUser;

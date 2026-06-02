@@ -613,24 +613,25 @@ interface NpcMemoryEntry {
 
      Mood **tidak** mengubah relationship atau behavior. `behaviorScores` dan `behaviorTowardUser` tetap stabil dan hysteresis-based.
    - **Behavior Scores** (`updateBehaviorScores`):
-     - **Tidak ada global decay**. Score tidak berubah jika tidak ada evidence baru.
+     - Tidak ada global decay untuk semua label, tetapi ada **targeted decay** untuk trait romantis/posesif yang volatil (`affectionate`, `possessive`, `jealous`) jika konteks scene bisnis/profesional dan tidak ada romance eksplisit.
      - Score naik jika ada evidence behavior sesuai evidence weight baru (weak +0.1, medium +0.5, strong +1).
      - Dalam satu response, hanya evidence terkuat per label yang dipakai (`mergeBehaviorEvidence` mengambil max weight, bukan menjumlah).
      - Max gain per label per response = +1 (strong cue).
-     - Score turun **hanya** jika ada evidence berlawanan (opposite behavior) atau melalui opposite reduction.
+     - Score turun jika ada evidence berlawanan (opposite behavior), social stress tanpa romance eksplisit, atau targeted decay bisnis/profesional untuk trait romantis/posesif.
      - Evidence weights baru:
        - Weight 1 (weak cue) → +0.1
        - Weight 2 (medium cue) → +0.5
        - Weight 3 (strong cue) → +1
-     - Score maksimal 9, minimal 0. Score bisa berupa angka desimal (float).
+     - Score maksimal 9, minimal 0. Score dibulatkan sampai 2 desimal agar tidak muncul angka floating panjang seperti `3.900000000000002`.
      - NPC yang tidak hadir di header tidak mengalami perubahan score.
      - Jika suspicious atau cautious score >= 4, weak affectionate cue (+0.1) diabaikan.
+     - Dalam konteks bisnis/profesional tanpa romance eksplisit, evidence `affectionate`/`possessive`/`jealous` diredam ke bobot sangat kecil lalu mendapat decay, sehingga kerja sama bisnis yang intens tidak otomatis naik menjadi romansa.
    - **Trait/Opposite Score System**:
      - Stage menggunakan `OPPOSITE_TRAIT_PAIRS` (Record<string, string[]>) untuk pasangan trait yang saling menyeimbangkan.
-     - Pasangan utama: `happy↔sad`, `calm↔angry/tense`, `trusting↔suspicious`, `affectionate↔cold/distant`, `playful/teasing↔serious/formal`, `protective↔hostile`, `respectful↔arrogant`, `loyal↔defiant/rebellious`, `obedient↔defiant`, `brave↔fearful`, `possessive↔detached`, `jealous↔secure`, `proud↔humble`, `wise↔reckless`, `defensive↔relaxed/open`.
-     - Jika trait A naik, opposite trait B turun dengan bobot sesuai evidence weight: weak (+0.1) → opposite -0, medium (+0.5) → opposite -0.25, strong (+1) → opposite -0.5.
+     - Pasangan utama: `happy↔sad`, `calm↔angry/tense`, `trusting↔suspicious`, `affectionate↔cold/distant`, `playful/teasing↔serious/formal`, `formal→affectionate/possessive/jealous`, `protective↔hostile`, `respectful↔arrogant`, `loyal↔defiant/rebellious`, `obedient↔defiant`, `brave↔fearful`, `possessive↔detached`, `jealous↔secure`, `proud↔humble`, `wise↔reckless`, `defensive↔relaxed/open`.
+     - Jika trait A naik, opposite trait B turun dengan bobot sesuai evidence weight: weak (+0.1) → opposite -0.2, medium (+0.5) → opposite -0.5, strong (+1) → opposite -1.
      - Clamp score: minimal 0, maksimal 9.
-     - Score tidak turun tanpa evidence berlawanan yang jelas.
+     - Score romantis/posesif juga bisa turun tanpa opposite eksplisit jika scene jelas dibingkai bisnis/profesional dan tidak ada romance eksplisit.
    - **Negation/Contrast Guard** (`detectNegation`):
      - Stage mendeteksi pola seperti `"not X, but Y"`, `"without X"`, `"no X"`, `"not out of X, but Y"`.
      - Jika pola negasi terdeteksi untuk suatu trait, trait tersebut tidak ditambahkan ke behaviorScores.
@@ -641,7 +642,8 @@ interface NpcMemoryEntry {
      - Target bisa: `{{user}}`, NPC lain, objek, situasi umum.
      - Trait yang jelas diarahkan ke `{{user}}` → boleh masuk behaviorScores.
      - Trait yang diarahkan ke NPC lain atau objek → tidak otomatis mempengaruhi behavior terhadap `{{user}}`.
-     - Target tidak jelas → dimasukkan ke currentMood saja dengan bobot kecil.
+     - Target tidak jelas → tidak otomatis masuk behaviorScores untuk label yang perlu target user.
+     - `affectionate`, `possessive`, dan `jealous` wajib diarahkan ke `{{user}}` agar mempengaruhi behavior toward user.
      - Contoh: `"Yume's tails curl possessively around {{user}}"` → possessive naik.
      - Contoh: `"Yume looks possessive over the ancient relic"` → possessive hanya di mood, tidak ke behaviorScores.
    - **Behavior Toward {{user}}** (`stableBehaviorLabels`):
@@ -664,6 +666,7 @@ interface NpcMemoryEntry {
       - Fakta valid disanitasi: leading punctuation dihapus, dangling quote dihapus, whitespace dinormalisasi.
       - **OnlyKnows extraction is recipient-aware**: Fakta hanya masuk ke NPC yang menjadi penerima eksplisit (via cue seperti `I told Aveline`, `I whispered to Yume`, `I warned Debi`). NPC lain yang hadir tidak otomatis menerima fakta, kecuali ada evidence overhear (`Aveline overheard`, `Debi heard this`, `everyone present heard`).
       - **Auto-extract append**: Auto extractor hanya append valid new facts ke OnlyKnows, tidak replace seluruh list. Jika fact duplicate/similar dengan existing fact, tidak di-append.
+      - **No hard history cap**: `OnlyKnows` tidak lagi dipotong ke 8 item dan teks fakta tidak lagi dipotong ke 24 kata. UI editor OnlyKnows juga full-width dengan textarea lebih tinggi untuk history panjang.
       - **Ordinary instruction ditolak**: `gather co-conspirators`, `meet your mother`, `tactical command` tidak masuk OnlyKnows.
     - **Field-Scoped Manual Edit (non-destructive)**: Debug UI save menggunakan patch/merge, bukan full replace:
       - Editing `OnlyKnows` hanya mengubah `onlyKnows`.
