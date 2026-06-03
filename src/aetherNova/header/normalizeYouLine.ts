@@ -149,8 +149,7 @@ function positionMeansProne(value: string): boolean {
 }
 
 function positionMeansGrappling(value: string): boolean {
-    return /\b(pin|pins|pinned|pinning|hold(?:s|ing)? down|held down|restrain|restrains|restrained|restraining|straddle|straddles|straddling|mount|mounts|mounted|mounting|grapple|grapples|grappling|menahan|menindih)\b/i.test(value)
-        || /\b(?:on top of|above|over|atop|upon|beneath|below|under|di atas|di bawah)\b/i.test(value);
+    return /\b(pin|pins|pinned|pinning|hold(?:s|ing)? down|held down|restrain|restrains|restrained|restraining|straddle|straddles|straddling|mount|mounts|mounted|mounting|grapple|grapples|grappling|menahan|menindih)\b/i.test(value);
 }
 
 export function clothingChangeIsNegated(context: string): boolean {
@@ -221,15 +220,24 @@ function positionSignalScore(value: string): number {
         return 0;
     }
 
-    if (positionMeansWalking(lower) || positionMeansStanding(lower) || positionMeansSeated(lower) || positionMeansProne(lower) || positionMeansGrappling(lower)) {
+    const hasExplicitPosition = positionMeansWalking(lower) || positionMeansStanding(lower) || positionMeansSeated(lower) || positionMeansProne(lower) || positionMeansGrappling(lower);
+
+    if (hasExplicitPosition) {
         return 3;
     }
 
-    if (containsAnyCue(lower, POSITION_SPATIAL_CUES)) {
+    const hasSpatialCue = containsAnyCue(lower, POSITION_SPATIAL_CUES);
+    const hasChangeCue = containsAnyCue(lower, POSITION_CHANGE_CUES);
+
+    if ((hasSpatialCue || hasChangeCue) && BODY_RACIAL_DETAIL_PATTERN.test(value)) {
+        return 0;
+    }
+
+    if (hasSpatialCue) {
         return 2;
     }
 
-    if (containsAnyCue(lower, POSITION_CHANGE_CUES)) {
+    if (hasChangeCue) {
         return 1;
     }
 
@@ -282,13 +290,24 @@ function statusPartLooksLikePosition(value: string): boolean {
         return false;
     }
 
-    return positionMeansWalking(lower)
+    const hasExplicitPosition = positionMeansWalking(lower)
         || positionMeansStanding(lower)
         || positionMeansSeated(lower)
         || positionMeansProne(lower)
-        || positionMeansGrappling(lower)
-        || containsAnyCue(lower, POSITION_SPATIAL_CUES)
-        || containsAnyCue(lower, POSITION_CHANGE_CUES);
+        || positionMeansGrappling(lower);
+
+    if (hasExplicitPosition) {
+        return true;
+    }
+
+    const hasSpatialCue = containsAnyCue(lower, POSITION_SPATIAL_CUES);
+    const hasChangeCue = containsAnyCue(lower, POSITION_CHANGE_CUES);
+
+    if ((hasSpatialCue || hasChangeCue) && BODY_RACIAL_DETAIL_PATTERN.test(clean)) {
+        return false;
+    }
+
+    return hasSpatialCue || hasChangeCue;
 }
 
 function statusPartLooksLikeDetail(value: string): boolean {

@@ -337,10 +337,11 @@ Frasa aksi berpakaian (seperti `pulling on trousers`, `putting my legs into my p
 5. **Header settle rule:** Jika header `You` saat ini menampilkan action phrase (contoh: `Pulling on trousers, belt tightening`) dan pada response berikutnya tidak ada evidence bahwa aksi itu masih berlangsung, header clothing settle menjadi `Regular clothing`. Ini menjaga header tetap natural tanpa animasi loading yang macet.
 
 ### Position change logic:
-- Perubahan posisi diterima jika ada cue `walk`, `stand`, `sit`, `kneel`, `lean`, `turn`, `step`, `approach`, dll.
+- Perubahan posisi diterima jika ada cue `walk`, `stand`, `sit`, `kneel`, `lean`, `leaning`, `turn`, `step`, `approach`, dll.
 - Posisi berbaring miring / side-lying dikenali lewat cue `lying sideways`, `on side`, `berbaring`, `miring`, `kasur`, `ranjang`, dll.
-- Posisi grappling/dominance saat combat dikenali lewat cue `pinned`, `holding down`, `straddling`, `mounted`, `on top of`, `above`, `beneath`, `menahan`, `menindih`, `di atas musuh`, dll.
+- Posisi grappling/dominance saat combat dikenali lewat cue `pinned`, `holding down`, `straddling`, `mounted`, `menahan`, `menindih`, `di atas musuh`, dll.
 - Posisi dengan spatial relation (`left of`, `beside`, `before`, `behind`, `facing`, `on top of`, `beneath`) butuh evidence di narasi.
+- **Guard body language vs position:** Jika teks mengandung keyword body/racial detail (`eye`, `hand`, `finger`, `hair`, dll) dan satu-satunya sinyal posisi berasal dari spatial preposition lemah (`over`, `beneath`, `under`, `above`, `below`), teks tersebut TIDAK dianggap sebagai position — tetap masuk ke detail. Mencegah body language seperti `fingers tightening fractionally over each other` atau `eyes narrowed with something beneath the surface` salah masuk ke slot position.
 - Appearance/body detail yang kebetulan memakai spatial cue (`pink hair tumbled over one shoulder`, `sheet pooling at her hips`) tetap masuk detail, bukan position.
 - Posisi generik seperti `"scene"` di-strip (menjadi fallback).
 - Bahasa dramatis di-strip dari posisi.

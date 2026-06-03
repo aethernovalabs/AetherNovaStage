@@ -189,6 +189,7 @@ export const POSITION_CHANGE_CUES = [
     "kneeling",
     "lean",
     "leans",
+    "leaning",
     "turn",
     "turns",
     "step",

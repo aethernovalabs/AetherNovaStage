@@ -1,7 +1,7 @@
 export const POSITION_CHANGE_CUES = [
     "move", "moves", "moved", "walk", "walks", "walked", "walking",
     "stand", "stands", "stood", "standing", "sit", "sits", "sat", "sitting", "seated",
-    "kneel", "kneels", "kneeling", "lean", "leans", "turn", "turns", "step", "steps",
+    "kneel", "kneels", "kneeling", "lean", "leans", "leaning", "turn", "turns", "step", "steps",
     "lie", "lies", "lying", "lay", "laid", "recline", "reclines", "reclining", "reclined",
     "sideways", "on side", "on his side", "on her side", "on their side", "on your side",
     "pin", "pins", "pinned", "pinning", "hold down", "holds down", "held down", "holding down",
