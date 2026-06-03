@@ -451,6 +451,7 @@ function validateCandidateItems(candidate: string, narrative: string): string {
 
 interface NormalizeThreadOptions {
     allowExplicitClear?: boolean;
+    trustStoredState?: boolean;
 }
 
 export function normalizeThreadLine(
@@ -465,6 +466,10 @@ export function normalizeThreadLine(
     const previousActiveThread = activeThreadOrNone(previousThread);
 
     if (isNoThreadValue(rawCandidate)) {
+        if (options.trustStoredState === true) {
+            return "None";
+        }
+
         const result = inferredThread
             ?? (options.allowExplicitClear === true || isNoThreadValue(previousActiveThread)
                 ? "None"
@@ -478,6 +483,10 @@ export function normalizeThreadLine(
     }
 
     let candidate = normalizeThreadValue(rawCandidate);
+
+    if (options.trustStoredState === true) {
+        return candidate.length > 0 ? candidate : "None";
+    }
 
     if (candidate.length === 0) {
         const result = inferredThread ?? previousActiveThread;

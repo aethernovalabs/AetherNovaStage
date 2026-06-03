@@ -47,6 +47,7 @@ export function coerceHeaderState(
         && cleanFragment(raw.thread) === cleanFragment(manualEditOverrides.thread);
     const normalizedThread = normalizeThreadLine(raw.thread ?? "", fallback.thread, "", undefined, {
         allowExplicitClear: threadWasManuallyEdited,
+        trustStoredState: true,
     });
     const {updatedThread, updatedLockedThreads} = threadWasManuallyEdited
       ? {
