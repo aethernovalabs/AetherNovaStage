@@ -298,6 +298,7 @@ Invent detection: jika garment kandidat tidak ada di state sebelumnya dan tidak 
 - Posisi berbaring miring / side-lying dikenali lewat cue `lying sideways`, `on side`, `berbaring`, `miring`, `kasur`, `ranjang`, dll.
 - Posisi grappling/dominance saat combat dikenali lewat cue `pinned`, `holding down`, `straddling`, `mounted`, `on top of`, `above`, `beneath`, `menahan`, `menindih`, `di atas musuh`, dll.
 - Posisi dengan spatial relation (`left of`, `beside`, `before`, `behind`, `facing`, `on top of`, `beneath`) butuh evidence di narasi.
+- Appearance/body detail yang kebetulan memakai spatial cue (`pink hair tumbled over one shoulder`, `sheet pooling at her hips`) tetap masuk detail, bukan position.
 - Posisi generik seperti `"scene"` di-strip (menjadi fallback).
 - Bahasa dramatis di-strip dari posisi.
 

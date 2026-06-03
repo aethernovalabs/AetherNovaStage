@@ -571,7 +571,7 @@ export const CLOTHING_ADJUSTMENT_CUES = [
 ];
 
 export const CLOTHING_DAMAGE_WORDS = /\b(burned|burnt|scorched|torn|ripped|shredded|slashed|bloody|bloodied|stained|soaked|wet|muddy|damaged|destroyed|cracked|frayed|singed|loose|loosened|baggy|caught|snagged|stuck|hooked|tangled|slipping|untucked|unbuttoned|unfastened|missing|robek|terbakar|longgar|tersangkut)\b/i;
-export const CLOTHING_SLOT_PATTERN = /\b(cloth|clothes|clothing|garment|garments|layer|layers|outfit|attire|garb|uniform|armor|armour|robe|robes|over-robe|under-robe|overrobe|underrobe|kimono|yukata|haori|hakama|dress|gown|suit|shirt|blouse|tunic|jacket|coat|cloak|mantle|cape|hood|pants|pant|trousers|jeans|shorts|skirt|leggings|boots|shoes|sandals|gloves|mask|veil|hat|cap|helmet|apron|vest|corset|sash|belt|scarf|shawl|wrap|rags|disguise|leather|silk|linen|cotton|wool|chainmail|mail|sleeve|sleeves|collar|hem|cuff|cuffs|waistband|pantleg|pantlegs|naked|nude|unclothed|bare|baju|celana|pakaian|kemeja|lengan baju|kain)\b/i;
+export const CLOTHING_SLOT_PATTERN = /\b(cloth|clothes|clothing|garment|garments|layer|layers|outfit|attire|garb|uniform|armor|armour|robe|robes|over-robe|under-robe|overrobe|underrobe|kimono|yukata|haori|hakama|dress|gown|nightgown|nightdress|pajama|pajamas|suit|shirt|blouse|tunic|jacket|coat|cloak|mantle|cape|hood|pants|pant|trousers|jeans|shorts|skirt|leggings|boots|shoes|sandals|gloves|mask|veil|hat|cap|helmet|apron|vest|corset|sash|belt|scarf|shawl|wrap|rags|disguise|leather|silk|linen|cotton|wool|chainmail|mail|sleeve|sleeves|collar|hem|cuff|cuffs|waistband|pantleg|pantlegs|naked|nude|unclothed|bare|baju|celana|pakaian|kemeja|lengan baju|kain)\b/i;
 export const BODY_RACIAL_DETAIL_PATTERN = /\b(eye|eyes|gaze|tail|tails|ear|ears|wing|wings|horn|horns|halo|fang|fangs|claw|claws|scale|scales|hand|hands|palm|palms|finger|fingers|arm|arms|elbow|elbows|head|face|cheek|cheeks|forehead|chin|mouth|nose|hair|shoulder|shoulders|back|body|torso|waist|hip|hips|knee|knees|posture|voice|weapon|sword|blade|staff)\b/i;
 export const WALLET_AMOUNT_PATTERN = /\b\d+\s*(?:g|gold|s|silver|c|copper)\b/i;
 export const VAGUE_STATUS_PATTERN = /\b(mood|emotion|feeling|feelings|thought|thoughts|status|role|happy|sad|angry|calm|nervous|worried|confused|curious|suspicious|jealous|afraid|scared|determined|focused)\b/i;
@@ -1123,7 +1123,7 @@ export const GARMENT_NAMES = [
   "hood", "pants", "trousers", "jeans", "shorts", "skirt", "leggings",
   "boots", "shoes", "sandals", "gloves", "mask", "veil", "hat", "cap",
   "helmet", "apron", "vest", "corset", "sash", "belt", "scarf", "shawl",
-  "wrap", "dress", "gown", "robe", "uniform", "armor", "armour", "sleeve",
+  "wrap", "dress", "gown", "nightgown", "nightdress", "pajama", "pajamas", "robe", "uniform", "armor", "armour", "sleeve",
   "sleeves", "collar", "hem", "cuff", "cuffs", "waistband",
   "underwear", "bra", "panties", "boxers", "briefs",
 ];

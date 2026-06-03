@@ -118,6 +118,27 @@ function positionMeansStanding(value: string): boolean {
     return /\b(stand|standing|stood|stopped|halted)\b/i.test(value);
 }
 
+function hasExplicitPostureCue(value: string): boolean {
+    return /\b(walk|walking|moving|stepping|approaching|running|stand|standing|stood|stopped|halted|sit|sitting|seated|sat|lie|lies|lying|lay|laid|prone|supine|reclin(?:e|es|ing|ed)|sprawl(?:s|ing|ed)?|collapsed|kneeling|crouched|crouching|sideways|pin|pins|pinned|pinning|hold(?:s|ing)? down|held down|restrain|restrains|restrained|restraining|straddle|straddles|straddling|mount|mounts|mounted|mounting|grapple|grapples|grappling|berdiri|duduk|berlutut|berbaring|rebah|tidur|miring|telentang|terlentang|tengkurap|menahan|menindih)\b/i.test(value);
+}
+
+function isAppearanceBodyDetail(value: string): boolean {
+    const clean = cleanFragment(value);
+    const lower = clean.toLowerCase();
+
+    if (!BODY_RACIAL_DETAIL_PATTERN.test(clean) || hasExplicitPostureCue(clean)) {
+        return false;
+    }
+
+    const hasAppearanceSubject = /\b(hair|locks|tresses|bangs|braid|braids|sheet|sheets|blanket|blankets|cloth|fabric|silk|linen|robe|robes|gown|dress|shirt|cloak|mantle|cape|sleeve|sleeves)\b/i.test(clean);
+    const hasAppearanceMotion = /\b(tumble(?:d|s|ing)?|spill(?:ed|s|ing)?|pool(?:ed|s|ing)?|drape(?:d|s|ing)?|fall(?:en|s|ing)?|hang(?:s|ing)?|slid|slide(?:s|d|ing)?|slip(?:s|ped|ping)?|spread(?:s|ing)?|curl(?:s|ed|ing)?|brush(?:es|ed|ing)?|frame(?:s|d|ing)?|cover(?:s|ed|ing)?|wrap(?:s|ped|ping)?|settle(?:s|d|ing)?|rest(?:s|ed|ing)?)\b/i.test(clean);
+    const hasBodyAnchor = /\b(shoulder|shoulders|hip|hips|waist|chest|back|torso|lap|neck|face|cheek|cheeks|forehead|arm|arms|hand|hands|thigh|thighs|knee|knees)\b/i.test(clean);
+
+    return hasBodyAnchor
+        && (hasAppearanceSubject || hasAppearanceMotion)
+        && (hasAppearanceMotion || containsAnyCue(lower, POSITION_SPATIAL_CUES));
+}
+
 function positionMeansSeated(value: string): boolean {
     return /\b(sit|sitting|seated|sat)\b/i.test(value);
 }
@@ -195,6 +216,10 @@ function isDefaultClothingValue(value: string): boolean {
 function positionSignalScore(value: string): number {
     const lower = value.toLowerCase();
 
+    if (isAppearanceBodyDetail(value)) {
+        return 0;
+    }
+
     if (positionMeansWalking(lower) || positionMeansStanding(lower) || positionMeansSeated(lower) || positionMeansProne(lower) || positionMeansGrappling(lower)) {
         return 3;
     }
@@ -234,7 +259,7 @@ function splitMixedStatusPart(part: string): string[] {
       }
     }
 
-    const withDetail = clean.match(/^(.*?\b(?:standing|seated|sitting|walking|kneeling|crouching|lying|above|below|beneath|under|over|atop|upon|against|beyond|past|around|inside|outside|alongside|beside|before|behind|near|facing|left|right|front|table|door|counter)\b.*?)\s+with\s+((?:his|her|their|your|both|one)?\s*(?:eye|eyes|gaze|tail|tails|ear|ears|wing|wings|horn|horns|hand|hands|arm|arms|posture|body)\b.*)$/i);
+    const withDetail = clean.match(/^(.*?\b(?:standing|seated|sitting|walking|kneeling|crouching|lying|above|below|beneath|under|over|atop|upon|against|beyond|past|around|inside|outside|alongside|beside|before|behind|near|facing|left|right|front|table|door|counter)\b.*?)\s+with\s+((?:his|her|their|your|both|one)?\s*(?:(?:\w+)\s+){0,3}(?:eye|eyes|gaze|tail|tails|ear|ears|wing|wings|horn|horns|hand|hands|arm|arms|shoulder|shoulders|back|hair|waist|hip|hips|posture|body)\b.*)$/i);
     if (withDetail != null) {
         return [withDetail[1], withDetail[2]].map(cleanFragment).filter(Boolean);
     }
@@ -251,6 +276,10 @@ function isClothingStatusPart(value: string): boolean {
 function statusPartLooksLikePosition(value: string): boolean {
     const clean = cleanFragment(value);
     const lower = clean.toLowerCase();
+
+    if (isAppearanceBodyDetail(clean)) {
+        return false;
+    }
 
     return positionMeansWalking(lower)
         || positionMeansStanding(lower)
@@ -423,7 +452,7 @@ function contextHasClothingReference(context: string): boolean {
 }
 
 function candidateHasConcreteGarment(candidate: string): boolean {
-    return /\b(robe|robes|over[-\s]?robe|under[-\s]?robe|overrobe|underrobe|kimono|yukata|haori|hakama|dress|gown|uniform|armor|armour|cloak|mantle|cape|shirt|blouse|tunic|jacket|coat|pants|trousers|skirt|silk|linen|cotton|wool|leather|garment|garments|layer|layers)\b/i.test(candidate);
+    return /\b(robe|robes|over[-\s]?robe|under[-\s]?robe|overrobe|underrobe|kimono|yukata|haori|hakama|dress|gown|nightgown|nightdress|pajama|pajamas|uniform|armor|armour|cloak|mantle|cape|shirt|blouse|tunic|jacket|coat|pants|trousers|skirt|silk|linen|cotton|wool|leather|garment|garments|layer|layers)\b/i.test(candidate);
 }
 
 function youPositionChangeIsSupported(candidate: string, previous: string, context: string): boolean {
