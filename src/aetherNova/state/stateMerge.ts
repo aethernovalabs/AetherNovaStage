@@ -1,5 +1,5 @@
 import type {AetherNovaMessageState} from "../types";
-import {cleanFragment} from "../utils/text";
+import {cleanFragment, cleanLabeledValue} from "../utils/text";
 import {NPC_MEMORY_COMMAND_PATTERN} from "../constants";
 
 export function normalizePendingNpcDebugQuery(value: unknown): string | null {
@@ -24,7 +24,11 @@ export function normalizeLockedThreadItems(value: unknown): string[] {
 
 export function normalizeTerminalGraceItems(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === "string");
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => cleanLabeledValue(item, "Thread"))
+    .map(cleanFragment)
+    .filter((item) => item.length > 0);
 }
 
 export function normalizeManualEditOverrides(value: unknown): AetherNovaMessageState["manualEditOverrides"] {

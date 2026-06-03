@@ -295,7 +295,9 @@ Invent detection: jika garment kandidat tidak ada di state sebelumnya dan tidak 
 
 ### Position change logic:
 - Perubahan posisi diterima jika ada cue `walk`, `stand`, `sit`, `kneel`, `lean`, `turn`, `step`, `approach`, dll.
-- Posisi dengan spatial relation (`left of`, `beside`, `before`, `behind`, `facing`) butuh evidence di narasi.
+- Posisi berbaring miring / side-lying dikenali lewat cue `lying sideways`, `on side`, `berbaring`, `miring`, `kasur`, `ranjang`, dll.
+- Posisi grappling/dominance saat combat dikenali lewat cue `pinned`, `holding down`, `straddling`, `mounted`, `on top of`, `above`, `beneath`, `menahan`, `menindih`, `di atas musuh`, dll.
+- Posisi dengan spatial relation (`left of`, `beside`, `before`, `behind`, `facing`, `on top of`, `beneath`) butuh evidence di narasi.
 - Posisi generik seperti `"scene"` di-strip (menjadi fallback).
 - Bahasa dramatis di-strip dari posisi.
 
@@ -929,10 +931,11 @@ Fungsi `completeMeetingThreadItems()` mengekstrak nama NPC dari thread item (pro
 
 ### Terminal Grace — Satu Response Lalu Hapus
 
-Thread dengan status `Complete`, `Finished`, atau `Failed` hanya tampil satu response, lalu dihapus pada response berikutnya. Mekanisme `terminalThreadGraceItems` di state melacak item terminal yang sudah ditampilkan.
+Thread dengan status terminal seperti `Complete`, `Completed`, `Finished`, `Failed`, atau `Resolved` hanya tampil satu response, lalu dihapus pada response berikutnya. Mekanisme `terminalThreadGraceItems` di state melacak item terminal yang sudah ditampilkan.
 
-- Response N: item terminal muncul di thread output, ditambahkan ke `terminalThreadGraceItems`
-- Response N+1: item sudah ada di grace → tidak ditambahkan lagi → otomatis hilang
+- Response N: item terminal muncul di thread output, menggantikan versi aktif yang overlap, lalu ditambahkan ke `terminalThreadGraceItems`
+- Response N+1: item sudah ada di grace -> versi terminal dan versi aktif yang overlap tidak ditambahkan lagi -> otomatis hilang
+- Marker privasi seperti `(Secret)` atau `(Only X knows)` tidak mencegah penghapusan jika tag yang sama juga memuat status terminal, misalnya `(Completed, Secret)`.
 
 Fungsi `applyTerminalGrace()` di `src/aetherNova/response/normalizeAetherNovaResponse.ts` menangani logika ini.
 

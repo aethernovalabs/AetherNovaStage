@@ -123,7 +123,12 @@ function positionMeansSeated(value: string): boolean {
 }
 
 function positionMeansProne(value: string): boolean {
-    return /\b(lying|prone|collapsed|kneeling|crouched)\b/i.test(value);
+    return /\b(lie|lies|lying|lay|laid|prone|supine|reclin(?:e|es|ing|ed)|sprawl(?:s|ing|ed)?|collapsed|kneeling|crouched|sideways|berbaring|rebah|tidur|miring|telentang|terlentang|tengkurap)\b/i.test(value);
+}
+
+function positionMeansGrappling(value: string): boolean {
+    return /\b(pin|pins|pinned|pinning|hold(?:s|ing)? down|held down|restrain|restrains|restrained|restraining|straddle|straddles|straddling|mount|mounts|mounted|mounting|grapple|grapples|grappling|menahan|menindih)\b/i.test(value)
+        || /\b(?:on top of|above|over|atop|upon|beneath|below|under|di atas|di bawah)\b/i.test(value);
 }
 
 export function clothingChangeIsNegated(context: string): boolean {
@@ -190,7 +195,7 @@ function isDefaultClothingValue(value: string): boolean {
 function positionSignalScore(value: string): number {
     const lower = value.toLowerCase();
 
-    if (positionMeansWalking(lower) || positionMeansStanding(lower) || positionMeansSeated(lower) || positionMeansProne(lower)) {
+    if (positionMeansWalking(lower) || positionMeansStanding(lower) || positionMeansSeated(lower) || positionMeansProne(lower) || positionMeansGrappling(lower)) {
         return 3;
     }
 
@@ -251,6 +256,7 @@ function statusPartLooksLikePosition(value: string): boolean {
         || positionMeansStanding(lower)
         || positionMeansSeated(lower)
         || positionMeansProne(lower)
+        || positionMeansGrappling(lower)
         || containsAnyCue(lower, POSITION_SPATIAL_CUES)
         || containsAnyCue(lower, POSITION_CHANGE_CUES);
 }
@@ -441,7 +447,30 @@ function youPositionChangeIsSupported(candidate: string, previous: string, conte
     }
 
     if (positionMeansProne(lowerCandidate)) {
-        return containsAnyCue(lowerContext, ["lie", "lies", "lying", "lay", "laid", "prone", "collapse", "collapses", "collapsed"]);
+        return containsAnyCue(lowerContext, [
+            "lie", "lies", "lying", "lay", "laid", "prone", "supine",
+            "recline", "reclines", "reclining", "reclined",
+            "sprawl", "sprawls", "sprawling", "sprawled",
+            "collapse", "collapses", "collapsed",
+            "sideways", "on side", "on his side", "on her side", "on their side", "on your side",
+            "bed", "mattress", "couch", "floor", "ground",
+            "berbaring", "rebah", "tidur", "miring", "kasur", "ranjang", "lantai",
+            "telentang", "terlentang", "tengkurap",
+        ]);
+    }
+
+    if (positionMeansGrappling(lowerCandidate)) {
+        return containsAnyCue(lowerContext, [
+            "pin", "pins", "pinned", "pinning",
+            "hold down", "holds down", "held down", "holding down",
+            "restrain", "restrains", "restrained", "restraining",
+            "straddle", "straddles", "straddling",
+            "mount", "mounts", "mounted", "mounting",
+            "grapple", "grapples", "grappling",
+            "above", "over", "on top of", "atop", "upon", "beneath", "below", "under",
+            "enemy", "opponent", "foe", "target",
+            "menahan", "menindih", "musuh", "lawan", "di atas", "di bawah",
+        ]);
     }
 
     return containsAnyCue(lowerContext, POSITION_CHANGE_CUES)

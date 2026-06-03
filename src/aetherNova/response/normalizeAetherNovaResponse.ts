@@ -1,5 +1,5 @@
 import type {AetherNovaMessageState, NormalizedResponse} from "../types";
-import {sameText, cleanFragment} from "../utils/text";
+import {sameText, cleanFragment, cleanLabeledValue} from "../utils/text";
 import {extractHeader} from "./extractHeader";
 import {formatResponse} from "./formatResponse";
 import {normalizeLocationTimeLine} from "../header/normalizeLocation";
@@ -22,7 +22,8 @@ function applyTerminalGrace(
     normalizedThread: string,
     previousGrace: string[],
 ): {thread: string; newGrace: string[]} {
-    const rawItems = rawThreadLine
+    const rawThreadValue = cleanLabeledValue(rawThreadLine, "Thread");
+    const rawItems = rawThreadValue
         .split(/\s*;\s*/g)
         .map(cleanFragment)
         .filter(Boolean);
@@ -31,11 +32,23 @@ function applyTerminalGrace(
         ? []
         : normalizedThread.split(/\s*;\s*/g).map(cleanFragment).filter(Boolean);
     const newGrace: string[] = [];
+    const terminalBlockers = [
+        ...previousGrace.map((item) => cleanLabeledValue(item, "Thread")).map(cleanFragment).filter(Boolean),
+        ...terminalItems,
+    ];
+
+    for (const terminalItem of terminalBlockers) {
+        for (let index = normalizedItems.length - 1; index >= 0; index--) {
+            if (threadItemsOverlap(normalizedItems[index], terminalItem) || isTerminalThreadItem(normalizedItems[index])) {
+                normalizedItems.splice(index, 1);
+            }
+        }
+    }
+
     for (const terminalItem of terminalItems) {
         const alreadyInGrace = previousGrace.some((g) => threadItemsOverlap(g, terminalItem));
         if (!alreadyInGrace) {
-            const alreadyInNormalized = normalizedItems.some((n) => threadItemsOverlap(n, terminalItem));
-            if (!alreadyInNormalized) {
+            if (!normalizedItems.some((n) => threadItemsOverlap(n, terminalItem))) {
                 normalizedItems.push(terminalItem);
             }
             newGrace.push(terminalItem);
