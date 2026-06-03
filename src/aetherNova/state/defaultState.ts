@@ -41,5 +41,6 @@ export function createDefaultState(characters: Record<string, Character>): Aethe
     return {
         ...DEFAULT_STATE,
         userStatus: {...DEFAULT_STATE.userStatus},
+        privateEvents: [...DEFAULT_STATE.privateEvents],
     };
 }

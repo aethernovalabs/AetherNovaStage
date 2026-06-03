@@ -6,6 +6,7 @@ export const DEBUG_UI_VERSION = "V1.9";
 export type DebugCategory =
     | "stagePrompt"
     | "npcMemory"
+    | "privateEvents"
     | "location"
     | "time"
     | "youLine"
@@ -18,6 +19,7 @@ export type DebugCategory =
 export const DEBUG_LOG_GROUPS: Array<{category: DebugCategory; title: string; emptyText: string; defaultOpen?: boolean}> = [
     {category: "stagePrompt", title: "Stage Prompt To LLM Log", emptyText: "No stage prompt sent to the LLM yet.", defaultOpen: true},
     {category: "npcMemory", title: "NPC Memory Log", emptyText: "No NPC memory changes yet.", defaultOpen: true},
+    {category: "privateEvents", title: "Private Event Log", emptyText: "No private event changes yet.", defaultOpen: true},
     {category: "location", title: "Location Log", emptyText: "No location changes yet."},
     {category: "time", title: "Time Log", emptyText: "No time changes yet."},
     {category: "youLine", title: "You Line Log", emptyText: "No You line changes yet."},

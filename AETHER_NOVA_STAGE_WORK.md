@@ -47,6 +47,14 @@ src/
 │   │   ├── updateNpcMemory.ts     #   coerceNpcMemory / updateNpcMemory / buildNpcMemoryDirections
 │   │   └── npcMemoryCommands.ts   #   applyNpcMemoryCommands
 │   │
+│   ├── privateEvents/             # Private appointments, promises, deadlines, threat consequences
+│   │   ├── privateEventConstants.ts # statuses, cue lists, privacy defaults
+│   │   ├── privateEventUtils.ts   #   coercePrivateEvents / overlap / urgency helpers
+│   │   ├── privateEventInference.ts # infer private event candidates from latest evidence
+│   │   ├── updatePrivateEvents.ts #   merge/update/terminal status handling
+│   │   ├── privateEventPrompt.ts  #   relevance-filtered prompt injection
+│   │   └── index.ts               #   re-export
+│   │
 │   ├── narrative/                 # Narrative formatting
 │   │   ├── normalizeNarrativeFormat.ts # normalizeNarrativeFormat
 │   │   ├── dialogueFormatter.ts   #   Dialogue formatting helpers
@@ -128,7 +136,7 @@ Stage adalah React component (`Stage.tsx`) yang mengimplementasikan `StageBase` 
 1. Mendeteksi `[debug: npc Name]` dalam pesan user (disimpan ke localStorage).
 2. `prepareAetherNovaStateForPrompt()`: update npcMemory dari header NPC terakhir.
 3. `applyNpcMemoryCommands()`: parsing dan eksekusi command `npc memory ...`, membersihkan command dari pesan user.
-4. `buildStageDirections()`: menyusun string stageDirections yang hanya berisi NPC memory context + debug (jika ada) — header state tidak diinject ke prompt, hanya digunakan internal untuk koreksi respons LLM.
+4. `buildStageDirections()`: menyusun string stageDirections berisi NPC memory context, private event context yang relevan, dan debug (jika ada) — header state penuh tidak diinject ke prompt, hanya digunakan internal untuk koreksi respons LLM.
 5. Kembali: `stageDirections`, `messageState`, `modifiedMessage` (jika ada command memory), `systemMessage` (jika command `show`).
 
 ### afterResponse(botMessage)
@@ -140,6 +148,7 @@ Stage adalah React component (`Stage.tsx`) yang mengimplementasikan `StageBase` 
    - `normalizeNpcLine()`: koreksi line NPC.
    - `normalizeThreadLine()`: koreksi Thread.
    - `updateNpcMemory()`: update memory NPC dari header.
+   - `updatePrivateEvents()`: update janji/pertemuan privat/deadline/threat conditional dari thread + narasi terbaru.
    - `formatResponse()`: menggabungkan header terkoreksi + narasi yang diformat.
 2. Re-apply NPC memory commands (untuk persist efek command).
 3. Kembali: `modifiedMessage`, `messageState`, `systemMessage`.
@@ -407,6 +416,8 @@ Cara kerja:
 5. **Thread inference merge:**
    - Jika AI mengulang thread lama yang generik, stage merge dengan hasil inferensi dari narasi.
    - Item lama ditandai `(Pending)` jika ada subgoal baru yang `(Ongoing)`.
+6. **Scheduled meeting guard**:
+   - Meeting thread berstatus `(Scheduled)` tidak otomatis berubah menjadi `(Complete)` hanya karena NPC terkait muncul di header. Future appointment harus tetap aktif sampai ada terminal thread/evidence jelas bahwa meeting terjadi, gagal, dibatalkan, atau expired.
 
 ### Thread Waiting/Rendezvous Lock
 
@@ -427,6 +438,132 @@ User bisa mengunci misi tertentu dari daftar Thread di Debug UI. Stage menyimpan
 2. Jika LLM menulis item yang overlap dengan status terminal (`Complete`, `Completed`, `Done`, `Finished`, `Failed`, `Abandoned`, `Cancelled`, dll), lock manual dilepas.
 3. Jika LLM menulis versi non-terminal yang overlap, lock disinkronkan ke versi terbaru agar status seperti `(Pending)` → `(Ongoing)` tetap terbawa.
 4. Edit manual Thread dari UI menyinkronkan ulang `lockedThreadItems[]`; mengubah Thread ke `None` ikut membersihkan lock manual yang tidak lagi ada di list.
+
+---
+
+## Private Events System (`privateEvents`)
+
+`privateEvents` adalah state detail untuk janji privat, appointment, deadline, warning conditional, dan konsekuensi misi yang terlalu panjang atau terlalu rahasia untuk dimasukkan ke `Thread`.
+
+Pembagian peran:
+- `Thread`: headline misi/status utama yang compact di header.
+- `privateEvents`: detail privat seperti waktu spesifik, lokasi, siapa yang tahu, condition, threat, consequence, dan keywords.
+- `NPC Memory`: data NPC, mood, relationship, relationship events, dan `onlyKnows`.
+
+### State Shape
+
+Disimpan di `AetherNovaMessageState.privateEvents: PrivateEventEntry[]`.
+
+Field utama:
+- `id`, `parentThreadKey`
+- `status`: `scheduled`, `soon`, `imminent`, `overdue`, `risk_active`, `complete`, `failed`, `cancelled`, `expired`
+- `urgencyLabel`: `safe`, `soon`, `imminent`, `overdue`, `risk_active`
+- `npcNames`, `knownBy`
+- `timeAnchor`, `deadline`, `location`
+- `context`, `condition`, `threatContext`, `consequence`
+- `keywords`, `secrecyNote`, `sourceSummary`, `lastEvidence`, `createdAtClock`, `updatedAtClock`
+
+### Extraction Rules
+
+`updatePrivateEvents()` dipanggil di `afterResponse` setelah Thread/NPC/Location/Time selesai dinormalisasi. Inference konservatif dan hanya membuat event jika evidence terbaru memuat cue jelas seperti:
+- `I'll be waiting at...`
+- `meet me at...`
+- `come to ... at ...`
+- `don't be late`
+- `if you're not there...`
+- `I will come looking for you`
+- `I'll hold you to that promise`
+- `appointment`, `rendezvous`, `private meeting`, `deadline`, `warning`, `threat`
+
+Kalimat vague seperti `Maybe we should talk again someday` ditolak.
+
+Repeated reminder dengan NPC/lokasi/waktu/purpose yang overlap digabung ke event yang sama. Data yang lebih spesifik menang:
+- exact clock > relative exact time (`two hours after sunrise`) > broad time period > vague deadline
+- `two hours after sunrise` disimpan sebagai `timeAnchor`
+- `by/around midday` disimpan sebagai `deadline` / pressure
+
+Conditional threat disimpan sebagai intent masa depan, bukan aksi yang sudah terjadi. Contoh:
+- Correct: `If {{user}} is late or absent, Aveline intends to come looking with a blade.`
+- Wrong: `Aveline brought a blade and searched Low Lantern.`
+
+### Relationship With Thread
+
+`Thread` tetap ringkas, misalnya:
+
+```md
+Thread: Meet Aveline at east courtyard fountain two hours after sunrise (Scheduled)
+```
+
+Detail rahasia seperti Low Lantern map, blade, deadline, dan siapa yang tahu masuk `privateEvents`.
+
+Setiap event punya `parentThreadKey` dari thread yang overlap atau dari purpose event. Jika Thread hilang sekali karena LLM omission (`Thread: None` tanpa terminal evidence), `privateEvents` tetap dipertahankan.
+
+Terminal handling:
+- Jika related Thread item menjadi `Complete`, `Failed`, `Cancelled`, atau `Expired`, private event diberi status terminal yang sesuai.
+- Narrative completion hanya diterima dari evidence aksi non-dialogue yang jelas, misalnya user benar-benar arrive/met/found target di lokasi event.
+- Future dialogue seperti `Don't be late` atau `I'll be waiting` tidak dianggap completion.
+
+### Prompt Injection Rules
+
+`formatPrivateEventsForPrompt()` dipanggil dari `buildStageDirections()`.
+
+Stage hanya menginject event relevan, top 1-3 event, jika salah satu kondisi terpenuhi:
+- status/urgency `imminent`, `overdue`, atau `risk_active`
+- current NPC header berisi NPC terkait
+- user message menyebut keyword event
+- current location overlap dengan event location
+- current Thread overlap dengan `parentThreadKey`, context, atau keywords
+- event punya threat/consequence dan sudah ada relevance signal
+
+Jika tidak relevan, block `[Private Event Context - Secret]` tidak dikirim.
+
+Prompt injection selalu memuat secrecy warning:
+
+```md
+[Private Event Context - Secret]
+This information is private world-state. Do not reveal it to NPCs who do not know it. NPCs not listed in Known By must not act as if they know this event unless RP explicitly reveals it.
+```
+
+### Privacy Rules
+
+1. `privateEvents` adalah private world-state.
+2. Hanya `knownBy` yang boleh tahu in-character.
+3. NPC yang tidak tercantum di `knownBy` tidak boleh bereaksi seolah tahu.
+4. Kehadiran dalam scene tidak cukup untuk tahu event kecuali ada explicit overhear/reveal evidence.
+5. Data ini tidak disimpan di NPC `onlyKnows`; ia punya state sendiri agar janji/deadline tidak memenuhi NPC Memory.
+
+### Debug UI Behavior
+
+Debug UI menampilkan box `Private Events` langsung di bawah `Status User`.
+
+Setiap item menampilkan:
+- urgency/status
+- time/deadline/location
+- NPC dan `knownBy`
+- context
+- condition/threat/consequence
+- keywords dan privacy note
+
+Controls:
+- `Edit`: field-scoped manual edit untuk event tersebut.
+- `Mark Complete`
+- `Mark Failed`
+- `Delete`
+
+Action terminal/delete memakai confirm dialog custom UI, bukan `window.confirm()`.
+
+### Validation Examples
+
+Skenario Aveline:
+- Dialog `I'll be waiting at the east courtyard fountain`, `If you're not there by midday...`, `Two hours after sunrise`, `Don't be late` membuat satu private event.
+- `timeAnchor`: `two hours after sunrise`
+- `deadline`: `before/around midday`
+- `location`: `Solmeryn Palace - East Courtyard - Fountain`
+- `threatContext`: conditional intent dengan blade/map
+- repeated reminder merge menjadi satu item
+- vague future talk ditolak
+- `Thread: None` tanpa terminal evidence tidak menghapus event
+- terminal Thread `Complete` mengubah event terkait menjadi `complete`
 
 ---
 
@@ -827,6 +964,7 @@ Debug UI menampilkan:
 - **Edit Buttons**: Setiap field state utama (Location, You, NPC, Thread, Wallet, Status User) memiliki tombol **Edit**. Saat diklik, kartu edit melebar ke seluruh grid dan berubah menjadi form yang lebih nyaman. Field pendek memakai input, `timeOfDay` memakai select (`Morning/Midday/Afternoon/Evening/Night`), dan field panjang seperti `You`, `NPC`, dan `Thread` memakai textarea. User bisa mengubah value lalu **Save** (menerapkan edit ke state + mencatat di `manualEditOverrides`) atau **Cancel** (kembali ke tampilan baca).
 - **Thread Mission List**: Thread ditampilkan sebagai daftar misi per item ` ; `. Setiap item punya tombol gembok untuk menambah/menghapus lock manual di `lockedThreadItems[]`. Item terminal tidak bisa dikunci.
 - **Status User Editor**: Saat Edit Status User diklik, panel detail berubah menjadi form grid dengan input untuk Gender, Race, dan setiap slot pakaian (Upper, Lower, Footwear, Outerwear, Accessories). Weapons dan Important Items bisa diedit lewat textarea dengan format `name | location | status`; parser juga menerima pemisah `—` atau `-`.
+- **Private Events**: Panel langsung di bawah Status User menampilkan private appointment/deadline/threat event. Setiap event punya tombol **Edit**, **Mark Complete**, **Mark Failed**, dan **Delete** dengan confirm dialog untuk aksi terminal/destructive.
 - **Confirm destructive actions**: Aksi yang menghapus/clear data UI meminta konfirmasi lebih dulu (`Clear Logs`, clear log per kategori, `Clear Facts`, dan `Delete` NPC memory) lewat dialog custom React di dalam Stage, bukan `window.confirm()`, agar tetap bekerja di webview/platform yang memblokir dialog browser native.
 - Manual edits yang dilakukan melalui UI disimpan di `manualEditOverrides` dan dipertahankan saat swipe/jump serta melalui normalisasi.
 - NPC Memory cards: semua NPC yang tersimpan dengan detail lengkap. Setiap kartu NPC punya tombol **Minimize/Expand** untuk menyembunyikan detail panjang; daftar kartu yang diminimize disimpan di `localStorage` key `aether-nova-stage.collapsedNpcCards`.
@@ -834,6 +972,7 @@ Debug UI menampilkan:
 - Debug Logs terpisah per kategori:
   - **Stage Prompt To LLM Log**: history prompt/stageDirections yang diberikan kepada LLM.
   - **NPC Memory Log**: perubahan nyata pada NPC memory, termasuk diff field konkret seperti `Aveline Montreval currentMood: neutral -> wary`.
+  - **Private Event Log**: perubahan `privateEvents`, termasuk status, urgency, knownBy, timeAnchor, deadline, location, context, threat, consequence, dan keywords.
   - **Location Log**: perubahan location yang dilakukan stage, termasuk diff segment (`Location region/place/area: before -> after`).
   - **Time Log**: perubahan `timeOfDay` dan `clock` yang dilakukan stage, termasuk `Time of day: before -> after` dan `Clock: before -> after`.
   - **You Line Log**: perubahan line `You` dan detail `Status User`, termasuk diff field konkret seperti `You clothing: kemeja -> Naked` atau `You position: duduk di kursi -> duduk bersandar di kursi`.

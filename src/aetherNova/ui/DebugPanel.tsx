@@ -1,6 +1,6 @@
 import type {ReactElement} from "react";
 import React, {useState, useEffect, useRef} from "react";
-import type {AetherNovaMessageState, UserStatusState, NpcMemoryEntry} from "../types";
+import type {AetherNovaMessageState, UserStatusState, NpcMemoryEntry, PrivateEventEntry, PrivateEventStatus, PrivateEventUrgency} from "../types";
 import type {DebugSnapshot, DebugEvent, NpcMemoryDraft, DebugCategory} from "./types";
 import {DEBUG_UI_VERSION, DEBUG_LOG_GROUPS} from "./types";
 import {
@@ -15,6 +15,8 @@ import {isTerminalThreadItem, threadItemsOverlap} from "../thread/normalizeThrea
 
 const DEBUG_UI_MINIMIZED_STORAGE_KEY = "aether-nova-stage.debugUiMinimized";
 const DEBUG_UI_COLLAPSED_NPCS_STORAGE_KEY = "aether-nova-stage.collapsedNpcCards";
+const PRIVATE_EVENT_STATUS_OPTIONS: PrivateEventStatus[] = ["scheduled", "soon", "imminent", "overdue", "risk_active", "complete", "failed", "cancelled", "expired"];
+const PRIVATE_EVENT_URGENCY_OPTIONS: PrivateEventUrgency[] = ["safe", "soon", "imminent", "overdue", "risk_active"];
 
 type EditableMetricField = {
     key: string;
@@ -50,6 +52,77 @@ function threadItemsForDisplay(value: string): string[] {
 
 function threadItemIsLocked(item: string, lockedItems: string[]): boolean {
     return lockedItems.some((lockedItem) => threadItemsOverlap(lockedItem, item));
+}
+
+function privateEventListText(values: string[] | undefined): string {
+    return values != null && values.length > 0 ? values.join(", ") : "";
+}
+
+function parsePrivateEventList(value: string): string[] {
+    const result: string[] = [];
+    for (const item of value.split(/[,;\n]+/g)) {
+        const clean = item.trim().replace(/\s+/g, " ");
+        if (clean.length > 0 && !result.some((entry) => entry.toLowerCase() === clean.toLowerCase())) {
+            result.push(clean);
+        }
+    }
+    return result;
+}
+
+function privateEventToForm(event: PrivateEventEntry): Record<string, string> {
+    return {
+        id: event.id,
+        parentThreadKey: event.parentThreadKey,
+        status: event.status,
+        urgencyLabel: event.urgencyLabel,
+        npcNames: privateEventListText(event.npcNames),
+        knownBy: privateEventListText(event.knownBy),
+        timeAnchor: event.timeAnchor ?? "",
+        deadline: event.deadline ?? "",
+        location: event.location ?? "",
+        context: event.context,
+        condition: event.condition ?? "",
+        threatContext: event.threatContext ?? "",
+        consequence: event.consequence ?? "",
+        keywords: privateEventListText(event.keywords),
+        secrecyNote: event.secrecyNote,
+        sourceSummary: event.sourceSummary ?? "",
+        lastEvidence: event.lastEvidence ?? "",
+    };
+}
+
+function optionalPrivateEventField(value: string | undefined): string | undefined {
+    const clean = value?.trim().replace(/\s+/g, " ") ?? "";
+    return clean.length > 0 ? clean : undefined;
+}
+
+function privateEventFromForm(original: PrivateEventEntry, form: Record<string, string>): PrivateEventEntry {
+    const id = optionalPrivateEventField(form.id) ?? original.id;
+    const parentThreadKey = optionalPrivateEventField(form.parentThreadKey) ?? original.parentThreadKey;
+    const npcNames = parsePrivateEventList(form.npcNames ?? "");
+    const knownBy = parsePrivateEventList(form.knownBy ?? "");
+    const keywords = parsePrivateEventList(form.keywords ?? "");
+
+    return {
+        ...original,
+        id,
+        parentThreadKey,
+        status: (form.status as PrivateEventStatus) || original.status,
+        urgencyLabel: (form.urgencyLabel as PrivateEventUrgency) || original.urgencyLabel,
+        npcNames,
+        knownBy: knownBy.length > 0 ? knownBy : ["{{user}}", ...npcNames],
+        timeAnchor: optionalPrivateEventField(form.timeAnchor),
+        deadline: optionalPrivateEventField(form.deadline),
+        location: optionalPrivateEventField(form.location),
+        context: optionalPrivateEventField(form.context) ?? original.context,
+        condition: optionalPrivateEventField(form.condition),
+        threatContext: optionalPrivateEventField(form.threatContext),
+        consequence: optionalPrivateEventField(form.consequence),
+        keywords,
+        secrecyNote: optionalPrivateEventField(form.secrecyNote) ?? original.secrecyNote,
+        sourceSummary: optionalPrivateEventField(form.sourceSummary),
+        lastEvidence: optionalPrivateEventField(form.lastEvidence),
+    };
 }
 
 function readMinimizedPreference(): boolean {
@@ -156,6 +229,33 @@ export function AetherNovaDebugPanel({
             : [...lockedItems, item];
 
         setSnapshot(onStateEdit({lockedThreadItems: nextLocks}));
+    };
+
+    const savePrivateEventEdit = (event: PrivateEventEntry): void => {
+        const nextEvent = privateEventFromForm(event, editForm);
+        const nextEvents = (snapshot.state.privateEvents ?? []).map((entry) => entry.id === event.id ? nextEvent : entry);
+        saveEdit({privateEvents: nextEvents});
+    };
+
+    const updatePrivateEventStatus = (event: PrivateEventEntry, status: PrivateEventStatus): void => {
+        const nextEvents = (snapshot.state.privateEvents ?? []).map((entry) => entry.id === event.id
+            ? {
+                ...entry,
+                status,
+                urgencyLabel: status === "complete" || status === "failed" || status === "cancelled" || status === "expired"
+                    ? "safe" as PrivateEventUrgency
+                    : entry.urgencyLabel,
+            }
+            : entry);
+        setSnapshot(onStateEdit({privateEvents: nextEvents}));
+    };
+
+    const deletePrivateEvent = (event: PrivateEventEntry): void => {
+        const nextEvents = (snapshot.state.privateEvents ?? []).filter((entry) => entry.id !== event.id);
+        setSnapshot(onStateEdit({privateEvents: nextEvents}));
+        if (editingSection === `privateEvent:${event.id}`) {
+            cancelEdit();
+        }
     };
 
     const toggleMinimized = (): void => {
@@ -374,6 +474,42 @@ export function AetherNovaDebugPanel({
                     <UserStatusPanel status={snapshot.state.userStatus} />
                 )}
             </details>
+
+            <PrivateEventsPanel
+                events={snapshot.state.privateEvents ?? []}
+                editingSection={editingSection}
+                editForm={editForm}
+                onEdit={(event) => startEdit(`privateEvent:${event.id}`, privateEventToForm(event))}
+                onCancel={cancelEdit}
+                onChange={setEditForm}
+                onSave={savePrivateEventEdit}
+                onMarkComplete={(event) => {
+                    requestConfirm({
+                        title: "Mark Complete",
+                        message: `Mark private event "${event.id}" as complete?`,
+                        confirmLabel: "Mark Complete",
+                        onConfirm: () => updatePrivateEventStatus(event, "complete"),
+                    });
+                }}
+                onMarkFailed={(event) => {
+                    requestConfirm({
+                        title: "Mark Failed",
+                        message: `Mark private event "${event.id}" as failed?`,
+                        confirmLabel: "Mark Failed",
+                        danger: true,
+                        onConfirm: () => updatePrivateEventStatus(event, "failed"),
+                    });
+                }}
+                onDelete={(event) => {
+                    requestConfirm({
+                        title: "Delete Private Event",
+                        message: `Delete private event "${event.id}"? This cannot be undone.`,
+                        confirmLabel: "Delete",
+                        danger: true,
+                        onConfirm: () => deletePrivateEvent(event),
+                    });
+                }}
+            />
 
             <section className="aether-debug-section">
                 <div className="aether-debug-section-title">
@@ -620,6 +756,194 @@ function DebugLogPanel({
                 </ol>
             )}
         </details>
+    );
+}
+
+function PrivateEventsPanel({
+    events,
+    editingSection,
+    editForm,
+    onEdit,
+    onCancel,
+    onChange,
+    onSave,
+    onMarkComplete,
+    onMarkFailed,
+    onDelete,
+}: {
+    events: PrivateEventEntry[];
+    editingSection: string | null;
+    editForm: Record<string, string>;
+    onEdit: (event: PrivateEventEntry) => void;
+    onCancel: () => void;
+    onChange: (form: Record<string, string>) => void;
+    onSave: (event: PrivateEventEntry) => void;
+    onMarkComplete: (event: PrivateEventEntry) => void;
+    onMarkFailed: (event: PrivateEventEntry) => void;
+    onDelete: (event: PrivateEventEntry) => void;
+}): ReactElement {
+    return (
+        <section className="aether-debug-section aether-private-events-section">
+            <div className="aether-debug-section-title">
+                <h2>Private Events</h2>
+                <span>{events.length}</span>
+            </div>
+            {events.length === 0 ? (
+                <p className="aether-debug-empty">No private events stored yet.</p>
+            ) : (
+                <div className="aether-private-event-list">
+                    {events.map((event) => {
+                        const isEditing = editingSection === `privateEvent:${event.id}`;
+                        return (
+                            <article className="aether-debug-memory-card aether-private-event-card" key={event.id}>
+                                {isEditing ? (
+                                    <PrivateEventEditor
+                                        event={event}
+                                        editForm={editForm}
+                                        onChange={onChange}
+                                        onCancel={onCancel}
+                                        onSave={() => onSave(event)}
+                                    />
+                                ) : (
+                                    <>
+                                        <div className="aether-debug-card-header">
+                                            <h3>{event.context}</h3>
+                                            <div className="aether-debug-card-actions">
+                                                <button type="button" onClick={() => onEdit(event)}>Edit</button>
+                                                <button type="button" onClick={() => onMarkComplete(event)} disabled={event.status === "complete"}>Mark Complete</button>
+                                                <button type="button" onClick={() => onMarkFailed(event)} disabled={event.status === "failed"}>Mark Failed</button>
+                                                <button className="danger" type="button" onClick={() => onDelete(event)}>Delete</button>
+                                            </div>
+                                        </div>
+                                        <div className="aether-private-event-badges">
+                                            <span className={`aether-private-event-badge urgency-${event.urgencyLabel}`}>{event.urgencyLabel}</span>
+                                            <span className="aether-private-event-badge">{event.status}</span>
+                                            <span className="aether-private-event-badge private">Secret</span>
+                                        </div>
+                                        <dl>
+                                            <DebugDetail label="Time" value={event.timeAnchor ?? "None"} />
+                                            <DebugDetail label="Deadline" value={event.deadline ?? "None"} />
+                                            <DebugDetail label="Location" value={event.location ?? "None"} />
+                                            <DebugDetail label="NPC" value={privateEventListText(event.npcNames) || "None"} />
+                                            <DebugDetail label="Known By" value={privateEventListText(event.knownBy) || "None"} />
+                                            <DebugDetail label="Thread Key" value={event.parentThreadKey} />
+                                        </dl>
+                                        {event.condition != null || event.threatContext != null || event.consequence != null ? (
+                                            <div className="aether-private-event-threat">
+                                                {event.condition != null ? <p><strong>Condition:</strong> {event.condition}</p> : null}
+                                                {event.threatContext != null ? <p><strong>Threat:</strong> {event.threatContext}</p> : null}
+                                                {event.consequence != null ? <p><strong>Consequence:</strong> {event.consequence}</p> : null}
+                                            </div>
+                                        ) : null}
+                                        <p className="aether-debug-facts-label">Keywords</p>
+                                        <p className="aether-debug-card-summary">{privateEventListText(event.keywords) || "None"}</p>
+                                        <p className="aether-debug-facts-label">Privacy</p>
+                                        <p className="aether-debug-card-summary">{event.secrecyNote}</p>
+                                    </>
+                                )}
+                            </article>
+                        );
+                    })}
+                </div>
+            )}
+        </section>
+    );
+}
+
+function PrivateEventEditor({
+    event,
+    editForm,
+    onChange,
+    onCancel,
+    onSave,
+}: {
+    event: PrivateEventEntry;
+    editForm: Record<string, string>;
+    onChange: (form: Record<string, string>) => void;
+    onCancel: () => void;
+    onSave: () => void;
+}): ReactElement {
+    const value = (key: string): string => editForm[key] ?? privateEventToForm(event)[key] ?? "";
+    const setValue = (key: string, next: string): void => onChange({...editForm, [key]: next});
+
+    return (
+        <form className="aether-debug-editor aether-private-event-editor" onSubmit={(submitEvent) => {
+            submitEvent.preventDefault();
+            onSave();
+        }}>
+            <label>
+                ID
+                <input value={value("id")} onChange={(changeEvent) => setValue("id", changeEvent.target.value)} />
+            </label>
+            <label>
+                Thread Key
+                <input value={value("parentThreadKey")} onChange={(changeEvent) => setValue("parentThreadKey", changeEvent.target.value)} />
+            </label>
+            <label>
+                Status
+                <select value={value("status")} onChange={(changeEvent) => setValue("status", changeEvent.target.value)}>
+                    {PRIVATE_EVENT_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
+            </label>
+            <label>
+                Urgency
+                <select value={value("urgencyLabel")} onChange={(changeEvent) => setValue("urgencyLabel", changeEvent.target.value)}>
+                    {PRIVATE_EVENT_URGENCY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
+            </label>
+            <label>
+                NPC Names
+                <input value={value("npcNames")} onChange={(changeEvent) => setValue("npcNames", changeEvent.target.value)} />
+            </label>
+            <label>
+                Known By
+                <input value={value("knownBy")} onChange={(changeEvent) => setValue("knownBy", changeEvent.target.value)} />
+            </label>
+            <label>
+                Time
+                <input value={value("timeAnchor")} onChange={(changeEvent) => setValue("timeAnchor", changeEvent.target.value)} />
+            </label>
+            <label>
+                Deadline
+                <input value={value("deadline")} onChange={(changeEvent) => setValue("deadline", changeEvent.target.value)} />
+            </label>
+            <label className="wide">
+                Location
+                <input value={value("location")} onChange={(changeEvent) => setValue("location", changeEvent.target.value)} />
+            </label>
+            <label className="wide">
+                Context
+                <textarea value={value("context")} onChange={(changeEvent) => setValue("context", changeEvent.target.value)} rows={3} />
+            </label>
+            <label className="wide">
+                Condition
+                <textarea value={value("condition")} onChange={(changeEvent) => setValue("condition", changeEvent.target.value)} rows={2} />
+            </label>
+            <label className="wide">
+                Threat
+                <textarea value={value("threatContext")} onChange={(changeEvent) => setValue("threatContext", changeEvent.target.value)} rows={3} />
+            </label>
+            <label className="wide">
+                Consequence
+                <textarea value={value("consequence")} onChange={(changeEvent) => setValue("consequence", changeEvent.target.value)} rows={3} />
+            </label>
+            <label className="wide">
+                Keywords
+                <textarea value={value("keywords")} onChange={(changeEvent) => setValue("keywords", changeEvent.target.value)} rows={2} />
+            </label>
+            <label className="wide">
+                Privacy Note
+                <textarea value={value("secrecyNote")} onChange={(changeEvent) => setValue("secrecyNote", changeEvent.target.value)} rows={2} />
+            </label>
+            <label className="wide">
+                Source Summary
+                <textarea value={value("sourceSummary")} onChange={(changeEvent) => setValue("sourceSummary", changeEvent.target.value)} rows={2} />
+            </label>
+            <div className="aether-debug-editor-actions">
+                <button type="submit">Save</button>
+                <button type="button" onClick={onCancel}>Cancel</button>
+            </div>
+        </form>
     );
 }
 

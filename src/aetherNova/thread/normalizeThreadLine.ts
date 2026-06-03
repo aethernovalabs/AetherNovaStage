@@ -77,6 +77,9 @@ function isMeetingThreadItemComplete(item: string, npcLine: string, currentThrea
     if (isTerminalThreadItem(item)) {
         return false;
     }
+    if (/\(\s*scheduled\s*\)$/i.test(item)) {
+        return false;
+    }
     const itemNpcs = extractMeetingNpcNames(item);
     if (itemNpcs.length === 0) {
         return false;

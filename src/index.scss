@@ -323,7 +323,8 @@ html, body, #root {
   font-size: 0.98rem;
 }
 
-.aether-debug-memory-list {
+.aether-debug-memory-list,
+.aether-private-event-list {
   display: grid;
   gap: 8px;
 }
@@ -409,10 +410,79 @@ html, body, #root {
   background: #2c302f !important;
 }
 
+.aether-debug-card-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .aether-debug-card-actions button.danger {
   color: #ffd6d6;
   border-color: rgba(255, 118, 118, 0.35);
   background: #301f20 !important;
+}
+
+.aether-private-event-card {
+  border-color: rgba(215, 180, 106, 0.18);
+}
+
+.aether-private-event-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.aether-private-event-badge {
+  border: 1px solid rgba(245, 242, 234, 0.14);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #d8d8cf;
+  background: #111314 !important;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.aether-private-event-badge.urgency-imminent,
+.aether-private-event-badge.urgency-overdue,
+.aether-private-event-badge.urgency-risk_active {
+  color: #251510;
+  border-color: rgba(241, 154, 96, 0.72);
+  background: #f19a60 !important;
+}
+
+.aether-private-event-badge.urgency-soon {
+  color: #17150e;
+  border-color: rgba(215, 180, 106, 0.8);
+  background: #d7b46a !important;
+}
+
+.aether-private-event-badge.private {
+  color: #d9e7ff;
+  border-color: rgba(124, 160, 214, 0.5);
+  background: #182232 !important;
+}
+
+.aether-private-event-threat {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid rgba(245, 242, 234, 0.1);
+  border-radius: 8px;
+  background: #141718 !important;
+}
+
+.aether-private-event-threat p {
+  margin: 0;
+  color: #e7e2d6;
+  font-size: 0.83rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.aether-private-event-threat strong {
+  color: #f2d08d;
 }
 
 .aether-confirm-overlay {

@@ -12,6 +12,7 @@ import {applyThreadItemLocks, applyThreadWaitingLock, synchronizeLockedThreadIte
 import {coerceWalletState} from "../wallet/normalizeWalletLine";
 import {updateNpcMemory, coerceNpcMemory} from "../npcMemory/updateNpcMemory";
 import {coerceUserStatus} from "../userStatus/userStatusState";
+import {coercePrivateEvents} from "../privateEvents";
 import {normalizePendingNpcDebugQuery, normalizePendingNpcMemoryCommand, normalizeLockedWaitingThreads, normalizeLockedThreadItems, normalizeManualEditOverrides, normalizeTerminalGraceItems} from "./stateMerge";
 
 export function createInitialHeaderState(
@@ -26,7 +27,7 @@ export function coerceHeaderState(
     fallback: AetherNovaMessageState = DEFAULT_STATE,
 ): AetherNovaMessageState {
     if (incomingState == null || typeof incomingState !== "object") {
-        return { ...fallback, userStatus: { ...fallback.userStatus } };
+        return { ...fallback, userStatus: { ...fallback.userStatus }, privateEvents: [...(fallback.privateEvents ?? [])] };
     }
 
     const raw = incomingState as Partial<AetherNovaMessageState> & {time?: string};
@@ -35,6 +36,7 @@ export function coerceHeaderState(
     const walletState = coerceWalletState(raw, fallback);
     const npc = normalizeNpcLine(raw.npc ?? "", fallback.npc);
     const npcMemory = updateNpcMemory(coerceNpcMemory(raw.npcMemory, fallback.npcMemory), npc, fallback.location);
+    const privateEvents = coercePrivateEvents(raw.privateEvents ?? fallback.privateEvents);
     const youLine = normalizeYouLine(raw.you ?? "", fallback.you, "", {trustRawStatus: true});
     const userStatus = coerceUserStatus(raw.userStatus, youLine);
 
@@ -80,6 +82,7 @@ export function coerceHeaderState(
         wallet: walletState.value,
         walletInitialized: walletState.initialized,
         npcMemory,
+        privateEvents,
         pendingNpcDebugQuery: normalizePendingNpcDebugQuery(raw.pendingNpcDebugQuery),
         pendingNpcMemoryCommand: normalizePendingNpcMemoryCommand(raw.pendingNpcMemoryCommand),
         userStatus,

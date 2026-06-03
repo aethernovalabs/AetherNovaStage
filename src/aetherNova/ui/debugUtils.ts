@@ -1,4 +1,4 @@
-import type {AetherNovaMessageState, NpcMemoryEntry, NpcMemoryStore, UserStatusState} from "../types";
+import type {AetherNovaMessageState, NpcMemoryEntry, NpcMemoryStore, PrivateEventEntry, UserStatusState} from "../types";
 import type {NpcMemoryDraft} from "./types";
 import {DEBUG_STORAGE_KEY} from "./types";
 import {formatBehaviorScoreValue} from "../npcMemory/npcMemoryHelpers";
@@ -208,6 +208,63 @@ export function npcMemoryChangeDetails(previous: NpcMemoryStore, next: NpcMemory
     }
 
     return details.length > 0 ? details : ["NPC memory unchanged."];
+}
+
+function privateEventLogKey(event: PrivateEventEntry): string {
+    return cleanFragment(event.id || event.parentThreadKey || event.context).toLowerCase();
+}
+
+function formatEventList(values: string[] | undefined): string {
+    return values != null && values.length > 0 ? values.join(", ") : "None";
+}
+
+function pushPrivateEventFieldChanges(details: string[], previous: PrivateEventEntry, next: PrivateEventEntry): void {
+    const label = next.id || previous.id;
+    pushTextChange(details, `${label} status`, previous.status, next.status);
+    pushTextChange(details, `${label} urgency`, previous.urgencyLabel, next.urgencyLabel);
+    pushTextChange(details, `${label} parentThreadKey`, previous.parentThreadKey, next.parentThreadKey);
+    pushTextChange(details, `${label} npcNames`, formatEventList(previous.npcNames), formatEventList(next.npcNames));
+    pushTextChange(details, `${label} knownBy`, formatEventList(previous.knownBy), formatEventList(next.knownBy));
+    pushTextChange(details, `${label} timeAnchor`, previous.timeAnchor ?? "", next.timeAnchor ?? "");
+    pushTextChange(details, `${label} deadline`, previous.deadline ?? "", next.deadline ?? "");
+    pushTextChange(details, `${label} location`, previous.location ?? "", next.location ?? "");
+    pushTextChange(details, `${label} context`, previous.context, next.context);
+    pushTextChange(details, `${label} condition`, previous.condition ?? "", next.condition ?? "");
+    pushTextChange(details, `${label} threatContext`, previous.threatContext ?? "", next.threatContext ?? "");
+    pushTextChange(details, `${label} consequence`, previous.consequence ?? "", next.consequence ?? "");
+    pushTextChange(details, `${label} keywords`, formatEventList(previous.keywords), formatEventList(next.keywords));
+}
+
+export function privateEventChangeDetails(previous: PrivateEventEntry[] = [], next: PrivateEventEntry[] = []): string[] {
+    const previousByKey = new Map(previous.map((event) => [privateEventLogKey(event), event]));
+    const nextByKey = new Map(next.map((event) => [privateEventLogKey(event), event]));
+    const details: string[] = [];
+
+    for (const nextEvent of next) {
+        const key = privateEventLogKey(nextEvent);
+        const previousEvent = previousByKey.get(key);
+        if (previousEvent == null) {
+            details.push(`Added private event: ${nextEvent.id}`);
+            details.push(`${nextEvent.id} context: ${nextEvent.context}`);
+            if (nextEvent.timeAnchor != null) details.push(`${nextEvent.id} timeAnchor: ${nextEvent.timeAnchor}`);
+            if (nextEvent.deadline != null) details.push(`${nextEvent.id} deadline: ${nextEvent.deadline}`);
+            if (nextEvent.location != null) details.push(`${nextEvent.id} location: ${nextEvent.location}`);
+            if (nextEvent.threatContext != null) details.push(`${nextEvent.id} threatContext: ${nextEvent.threatContext}`);
+            continue;
+        }
+
+        if (JSON.stringify(previousEvent) !== JSON.stringify(nextEvent)) {
+            pushPrivateEventFieldChanges(details, previousEvent, nextEvent);
+        }
+    }
+
+    for (const previousEvent of previous) {
+        if (!nextByKey.has(privateEventLogKey(previousEvent))) {
+            details.push(`Removed private event: ${previousEvent.id}`);
+        }
+    }
+
+    return details;
 }
 
 interface ParsedHeaderStatus {
@@ -490,6 +547,10 @@ export function changedStateFields(previous: AetherNovaMessageState, next: Aethe
 
     if (JSON.stringify(previous.npcMemory ?? {}) !== JSON.stringify(next.npcMemory ?? {})) {
         changed.push("npcMemory");
+    }
+
+    if (JSON.stringify(previous.privateEvents ?? []) !== JSON.stringify(next.privateEvents ?? [])) {
+        changed.push("privateEvents");
     }
 
     if (JSON.stringify(previous.userStatus ?? {}) !== JSON.stringify(next.userStatus ?? {})) {

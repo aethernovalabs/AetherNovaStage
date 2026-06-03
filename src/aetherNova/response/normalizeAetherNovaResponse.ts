@@ -11,6 +11,7 @@ import {applyThreadItemLocks, applyThreadWaitingLock} from "../thread/threadWait
 import {updateUserStatus} from "../userStatus/userStatusState";
 import {updateNpcMemory} from "../npcMemory/updateNpcMemory";
 import {buildNpcDebugFooter} from "../npcMemory/npcMemoryHelpers";
+import {updatePrivateEvents} from "../privateEvents";
 
 export function debugNpcQuery(userMessage: string): string | null {
     const match = userMessage.match(/[\[【]\s*debug\s*:\s*npc\s+([^\]】]+)[\]】]/i);
@@ -98,6 +99,7 @@ export function normalizeAetherNovaResponse(
         wallet: wallet.value,
         walletInitialized: wallet.initialized,
         npcMemory: previousState.npcMemory,
+        privateEvents: previousState.privateEvents ?? [],
         pendingNpcDebugQuery: null,
         pendingNpcMemoryCommand: previousState.pendingNpcMemoryCommand,
         userStatus: updateUserStatus(previousState.userStatus, youLine, correctionContext),
@@ -106,6 +108,13 @@ export function normalizeAetherNovaResponse(
         terminalThreadGraceItems: terminalGraceItems,
         manualEditOverrides: previousState.manualEditOverrides,
     };
+    const privateEventUpdate = updatePrivateEvents({
+        previousEvents: previousState.privateEvents,
+        state,
+        previousThread: previousState.thread,
+        evidence: correctionContext,
+    });
+    state.privateEvents = privateEventUpdate.privateEvents;
     state.npcMemory = updateNpcMemory(previousState.npcMemory, state.npc, `${state.location}\n${correctionContext}`);
     const debugQuery = previousState.pendingNpcDebugQuery ?? debugNpcQuery(context);
     const debugMessage = buildNpcDebugFooter(debugQuery, state.npcMemory);

@@ -23,6 +23,7 @@ export const DEFAULT_STATE: AetherNovaMessageState = {
     wallet: "0G ; 0S ; 0C",
     walletInitialized: false,
     npcMemory: {},
+    privateEvents: [],
     pendingNpcDebugQuery: null,
     pendingNpcMemoryCommand: null,
     userStatus: { ...DEFAULT_USER_STATUS },

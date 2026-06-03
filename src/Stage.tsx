@@ -19,8 +19,9 @@ import {
     writePendingDebugQuery,
     readPendingDebugQuery,
     clearPendingDebugQuery,
-    npcMemoryChangeDetails,
-    changedStateFields,
+	    npcMemoryChangeDetails,
+	    privateEventChangeDetails,
+	    changedStateFields,
     locationChangeDetails,
     lockedThreadChangeDetails,
     npcLineChangeDetails,
@@ -122,9 +123,9 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             const promptLines = this.lastStageDirections.split("\n");
             this.pushDebugEvent("stagePrompt", "beforePrompt", `${promptLines.length} lines, ${this.lastStageDirections.length} chars`, [this.lastStageDirections]);
         }
-        if (JSON.stringify(previousNpcMemory ?? {}) !== JSON.stringify(this.state.npcMemory ?? {})) {
-            this.pushDebugEvent(
-                "npcMemory",
+	        if (JSON.stringify(previousNpcMemory ?? {}) !== JSON.stringify(this.state.npcMemory ?? {})) {
+	            this.pushDebugEvent(
+	                "npcMemory",
                 "beforePrompt",
                 `NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}`,
                 npcMemoryChangeDetails(previousNpcMemory, this.state.npcMemory),
@@ -239,10 +240,18 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                 "npcMemory",
                 "afterResponse",
                 `NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}`,
-                npcMemoryChangeDetails(previousNpcMemory, this.state.npcMemory),
-            );
-        }
-        this.latestUserMessage = "";
+	                npcMemoryChangeDetails(previousNpcMemory, this.state.npcMemory),
+	            );
+	        }
+	        if (JSON.stringify(previousState.privateEvents ?? []) !== JSON.stringify(this.state.privateEvents ?? [])) {
+	            this.pushDebugEvent(
+	                "privateEvents",
+	                "afterResponse",
+	                `Private events ${(previousState.privateEvents ?? []).length} -> ${(this.state.privateEvents ?? []).length}`,
+	                privateEventChangeDetails(previousState.privateEvents, this.state.privateEvents),
+	            );
+	        }
+	        this.latestUserMessage = "";
         this.latestNpcMemoryCommandMessage = "";
         clearPendingDebugQuery();
 

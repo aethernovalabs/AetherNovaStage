@@ -1,6 +1,7 @@
 export type {
     AetherNovaMessageState, UserStatusState, NpcMemoryEntry, NpcMemoryStore,
     NpcCanonEntry, NpcMemoryCommandResult, WalletAmounts, NormalizedWallet,
+    PrivateEventEntry, PrivateEventStatus, PrivateEventUrgency,
 } from "./types";
 
 export {
@@ -36,6 +37,13 @@ export {coerceNpcMemory, updateNpcMemory, buildNpcMemoryDirections} from "./npcM
 export {npcHeaderMemoryEntries, npcMemoryKeysFromHeader, npcSpeakerNamesFromState} from "./npcMemory/npcMemoryState";
 export {NPC_CANON_REGISTRY, findNpcCanonByNameOrAlias} from "./npcMemory/npcCanonRegistry";
 export {applyNpcMemoryCommands} from "./npcMemory/npcMemoryCommands";
+
+export {
+    updatePrivateEvents,
+    formatPrivateEventsForPrompt,
+    coercePrivateEvents,
+    privateEventDisplayTitle,
+} from "./privateEvents";
 
 export {coerceUserStatus, updateUserStatus} from "./userStatus/userStatusState";
 

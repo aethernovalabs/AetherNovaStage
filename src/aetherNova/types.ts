@@ -34,6 +34,7 @@ export interface AetherNovaMessageState {
     wallet: string;
     walletInitialized: boolean;
     npcMemory: NpcMemoryStore;
+    privateEvents: PrivateEventEntry[];
     pendingNpcDebugQuery: string | null;
     pendingNpcMemoryCommand: string | null;
     userStatus: UserStatusState;
@@ -47,6 +48,46 @@ export interface AetherNovaMessageState {
       thread?: string;
       wallet?: string;
     };
+}
+
+export type PrivateEventStatus =
+    | "scheduled"
+    | "soon"
+    | "imminent"
+    | "overdue"
+    | "risk_active"
+    | "complete"
+    | "failed"
+    | "cancelled"
+    | "expired";
+
+export type PrivateEventUrgency =
+    | "safe"
+    | "soon"
+    | "imminent"
+    | "overdue"
+    | "risk_active";
+
+export interface PrivateEventEntry {
+    id: string;
+    parentThreadKey: string;
+    status: PrivateEventStatus;
+    urgencyLabel: PrivateEventUrgency;
+    npcNames: string[];
+    knownBy: string[];
+    timeAnchor?: string;
+    deadline?: string;
+    location?: string;
+    context: string;
+    condition?: string;
+    threatContext?: string;
+    consequence?: string;
+    keywords: string[];
+    secrecyNote: string;
+    sourceSummary?: string;
+    lastEvidence?: string;
+    createdAtClock?: string;
+    updatedAtClock?: string;
 }
 
 export interface NpcMemoryEntry {
