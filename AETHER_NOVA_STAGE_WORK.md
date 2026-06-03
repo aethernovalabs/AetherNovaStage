@@ -394,6 +394,7 @@ Cara kerja:
 3. **Perubahan thread hanya diterima jika:**
    - Ada overlap meaningful tokens ≥22% antara thread baru dan lama.
    - Atau ada `THREAD_TRANSITION_CUES`: arrive, leave, resolved, mission, quest, travel, etc.
+   - Output `Thread: None` dari LLM tidak menghapus thread aktif tanpa inferensi/thread terminal yang jelas; stage mempertahankan thread sebelumnya agar misi tidak hilang mendadak. Clear eksplisit dari Debug UI tetap dihormati.
 4. **Thread cleanup otomatis:**
    - Item dengan status `resolved`, `completed`, `done`, `finished`, `concluded`, `refused`, `failed`, `abandoned`, `expired`, `cancelled` → dihapus.
    - Minor thread pattern: `normal topic`, `casual question`, `temporary mood`, `small suspicion`, `minor jealousy`, `small talk` → dihapus.

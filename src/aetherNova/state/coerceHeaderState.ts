@@ -42,10 +42,12 @@ export function coerceHeaderState(
     const lockedThreadItems = normalizeLockedThreadItems(raw.lockedThreadItems);
     const terminalGrace = normalizeTerminalGraceItems(raw.terminalThreadGraceItems);
     const manualEditOverrides = normalizeManualEditOverrides(raw.manualEditOverrides);
-    const normalizedThread = normalizeThreadLine(raw.thread ?? "", fallback.thread, "");
     const threadWasManuallyEdited = manualEditOverrides?.thread != null
         && typeof raw.thread === "string"
         && cleanFragment(raw.thread) === cleanFragment(manualEditOverrides.thread);
+    const normalizedThread = normalizeThreadLine(raw.thread ?? "", fallback.thread, "", undefined, {
+        allowExplicitClear: threadWasManuallyEdited,
+    });
     const {updatedThread, updatedLockedThreads} = threadWasManuallyEdited
       ? {
           updatedThread: normalizedThread,

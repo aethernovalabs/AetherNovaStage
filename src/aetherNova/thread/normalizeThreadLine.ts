@@ -449,13 +449,26 @@ function validateCandidateItems(candidate: string, narrative: string): string {
     return validItems.join(" ; ");
 }
 
-export function normalizeThreadLine(rawLine: string, previousThread: string, narrative: string, npcLine?: string): string {
+interface NormalizeThreadOptions {
+    allowExplicitClear?: boolean;
+}
+
+export function normalizeThreadLine(
+    rawLine: string,
+    previousThread: string,
+    narrative: string,
+    npcLine?: string,
+    options: NormalizeThreadOptions = {},
+): string {
     const rawCandidate = cleanLabeledValue(rawLine, "Thread");
     const inferredThread = inferThreadFromNarrative(narrative, previousThread);
     const previousActiveThread = activeThreadOrNone(previousThread);
 
     if (isNoThreadValue(rawCandidate)) {
-        const result = inferredThread ?? "None";
+        const result = inferredThread
+            ?? (options.allowExplicitClear === true || isNoThreadValue(previousActiveThread)
+                ? "None"
+                : previousActiveThread);
         return npcLine ? completeMeetingThreadItems(result, npcLine, previousThread) : result;
     }
 
