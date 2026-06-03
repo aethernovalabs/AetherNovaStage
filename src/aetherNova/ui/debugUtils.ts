@@ -2,6 +2,10 @@ import type {AetherNovaMessageState, NpcMemoryEntry, NpcMemoryStore, UserStatusS
 import type {NpcMemoryDraft} from "./types";
 import {DEBUG_STORAGE_KEY} from "./types";
 import {formatBehaviorScoreValue} from "../npcMemory/npcMemoryHelpers";
+import {parseIdentityStatus, splitIdentity, statusParts} from "../header/normalizeYouLine";
+import {splitLocation, splitTopLevel} from "../utils/split";
+import {cleanFragment, cleanLabeledValue, isNoNpcValue, isNoThreadValue, sameText} from "../utils/text";
+import {copperToWallet, formatWallet, parseWalletAmounts, walletToCopper} from "../wallet/walletMath";
 
 function behaviorScoresDraftText(scores: Record<string, number>): string {
     return Object.entries(scores).map(([label, score]) => `${label}: ${formatBehaviorScoreValue(score)}`).join("; ");
@@ -148,21 +152,317 @@ export function formatDebugScores(scores: Record<string, number>): string {
     return entries.length > 0 ? entries.map(([label, score]) => `${label}:${formatBehaviorScoreValue(score)}`).join(", ") : "none";
 }
 
+function formatMemoryList(values: string[] | undefined): string {
+    return values != null && values.length > 0 ? values.join("; ") : "None";
+}
+
+function pushScoreChanges(details: string[], npcName: string, previous: Record<string, number>, next: Record<string, number>): void {
+    const labels = new Set([...Object.keys(previous ?? {}), ...Object.keys(next ?? {})]);
+    for (const label of [...labels].sort()) {
+        const previousScore = previous?.[label] ?? 0;
+        const nextScore = next?.[label] ?? 0;
+        if (previousScore !== nextScore) {
+            details.push(`${npcName} behaviorScores.${label}: ${formatBehaviorScoreValue(previousScore)} -> ${formatBehaviorScoreValue(nextScore)}`);
+        }
+    }
+}
+
+function pushNpcMemoryFieldChanges(details: string[], previous: NpcMemoryEntry, next: NpcMemoryEntry): void {
+    const npcName = next.name || previous.name;
+    pushTextChange(details, `${npcName} name`, previous.name, next.name);
+    pushTextChange(details, `${npcName} roleTitle`, previous.roleTitle, next.roleTitle);
+    pushTextChange(details, `${npcName} race`, previous.race, next.race);
+    pushTextChange(details, `${npcName} physicalExtra`, previous.physicalExtra, next.physicalExtra);
+    pushTextChange(details, `${npcName} currentMood`, previous.currentMood, next.currentMood);
+    pushTextChange(details, `${npcName} lastInteractionTone`, previous.lastInteractionTone ?? "", next.lastInteractionTone ?? "");
+    pushTextChange(details, `${npcName} behaviorTowardUser`, formatMemoryList(previous.behaviorTowardUser), formatMemoryList(next.behaviorTowardUser));
+    pushScoreChanges(details, npcName, previous.behaviorScores, next.behaviorScores);
+    pushTextChange(details, `${npcName} relationshipWithUser`, formatMemoryList(previous.relationshipWithUser), formatMemoryList(next.relationshipWithUser));
+    pushTextChange(details, `${npcName} relationshipEvents`, formatMemoryList(previous.relationshipEvents), formatMemoryList(next.relationshipEvents));
+    pushTextChange(details, `${npcName} onlyKnows`, formatMemoryList(previous.onlyKnows), formatMemoryList(next.onlyKnows));
+}
+
 export function npcMemoryChangeDetails(previous: NpcMemoryStore, next: NpcMemoryStore): string[] {
     const previousKeys = Object.keys(previous ?? {});
     const nextKeys = Object.keys(next ?? {});
-    const added = nextKeys.filter((key) => previous?.[key] == null).map((key) => next[key].name);
-    const removed = previousKeys.filter((key) => next?.[key] == null).map((key) => previous[key].name);
-    const changed = nextKeys
-        .filter((key) => previous?.[key] != null && JSON.stringify(previous[key]) !== JSON.stringify(next[key]))
-        .map((key) => next[key].name);
-    const details = [
-        added.length > 0 ? `Added: ${added.join(", ")}` : "",
-        removed.length > 0 ? `Removed: ${removed.join(", ")}` : "",
-        changed.length > 0 ? `Changed: ${changed.join(", ")}` : "",
-    ].filter(Boolean);
+    const details: string[] = [];
+
+    for (const key of nextKeys) {
+        if (previous?.[key] == null) {
+            details.push(`Added NPC memory: ${next[key].name}`);
+            details.push(`${next[key].name} roleTitle: ${displayValue(next[key].roleTitle)}`);
+            details.push(`${next[key].name} race: ${displayValue(next[key].race)}`);
+            details.push(`${next[key].name} currentMood: ${displayValue(next[key].currentMood)}`);
+            continue;
+        }
+
+        if (JSON.stringify(previous[key]) !== JSON.stringify(next[key])) {
+            pushNpcMemoryFieldChanges(details, previous[key], next[key]);
+        }
+    }
+
+    for (const key of previousKeys) {
+        if (next?.[key] == null) {
+            details.push(`Removed NPC memory: ${previous[key].name}`);
+        }
+    }
 
     return details.length > 0 ? details : ["NPC memory unchanged."];
+}
+
+interface ParsedHeaderStatus {
+    name: string;
+    race: string;
+    clothing: string;
+    position: string;
+    detail: string;
+    raw: string;
+}
+
+function parseHeaderStatusEntry(rawEntry: string, kind: "you" | "npc"): ParsedHeaderStatus | null {
+    const raw = cleanFragment(rawEntry);
+    if (raw.length === 0) {
+        return null;
+    }
+
+    const parsed = parseIdentityStatus(raw);
+    const identity = splitIdentity(parsed.identity, kind === "you" ? "Unknown" : "Unknown NPC", "Human");
+    const parts = statusParts(parsed.status, kind);
+
+    return {
+        name: identity.left,
+        race: identity.right,
+        clothing: parts[0] ?? "",
+        position: parts[1] ?? "",
+        detail: parts[2] ?? "",
+        raw,
+    };
+}
+
+function displayValue(value: string): string {
+    const clean = cleanFragment(value);
+    return clean.length > 0 ? clean : "None";
+}
+
+function pushTextChange(details: string[], label: string, previous: string, next: string): void {
+    if (!sameText(previous, next)) {
+        details.push(`${label}: ${displayValue(previous)} -> ${displayValue(next)}`);
+    }
+}
+
+export function locationChangeDetails(previousLocation: string, nextLocation: string): string[] {
+    const previousParts = splitLocation(previousLocation);
+    const nextParts = splitLocation(nextLocation);
+    const labels = ["Location region", "Location place", "Location area"];
+    const maxLength = Math.max(previousParts.length, nextParts.length, labels.length);
+    const details: string[] = [];
+
+    for (let index = 0; index < maxLength; index++) {
+        pushTextChange(details, labels[index] ?? `Location part ${index + 1}`, previousParts[index] ?? "", nextParts[index] ?? "");
+    }
+
+    return details;
+}
+
+export function timeChangeDetails(previousTimeOfDay: string, previousClock: string, nextTimeOfDay: string, nextClock: string): string[] {
+    const details: string[] = [];
+    pushTextChange(details, "Time of day", previousTimeOfDay, nextTimeOfDay);
+    pushTextChange(details, "Clock", previousClock, nextClock);
+    return details;
+}
+
+interface ParsedThreadItem {
+    item: string;
+    key: string;
+    label: string;
+    status: string;
+}
+
+function threadLogItems(value: string): ParsedThreadItem[] {
+    if (isNoThreadValue(value)) {
+        return [];
+    }
+
+    return splitTopLevel(value, ";")
+        .map(cleanFragment)
+        .filter(Boolean)
+        .map((item) => {
+            const statusMatch = item.match(/\(([^()]*)\)\s*$/);
+            const label = cleanFragment(statusMatch == null ? item : item.slice(0, statusMatch.index));
+            const status = cleanFragment(statusMatch?.[1] ?? "");
+            const key = label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+            return {item, key: key || item.toLowerCase(), label: label || item, status};
+        });
+}
+
+export function threadLineChangeDetails(previousThread: string, nextThread: string): string[] {
+    const previousItems = threadLogItems(previousThread);
+    const nextItems = threadLogItems(nextThread);
+    const previousByKey = new Map(previousItems.map((item) => [item.key, item]));
+    const nextByKey = new Map(nextItems.map((item) => [item.key, item]));
+    const details: string[] = [];
+
+    for (const nextItem of nextItems) {
+        const previousItem = previousByKey.get(nextItem.key);
+        if (previousItem == null) {
+            details.push(`Added thread: ${nextItem.item}`);
+            continue;
+        }
+
+        pushTextChange(details, `Thread status ${nextItem.label}`, previousItem.status, nextItem.status);
+        if (!sameText(previousItem.item, nextItem.item) && sameText(previousItem.status, nextItem.status)) {
+            details.push(`Thread item text: ${previousItem.item} -> ${nextItem.item}`);
+        }
+    }
+
+    for (const previousItem of previousItems) {
+        if (!nextByKey.has(previousItem.key)) {
+            details.push(`Removed thread: ${previousItem.item}`);
+        }
+    }
+
+    return details;
+}
+
+export function lockedThreadChangeDetails(previousLocked: string[] = [], nextLocked: string[] = []): string[] {
+    const details: string[] = [];
+    const previousKeys = new Set(previousLocked.map((item) => cleanFragment(item).toLowerCase()));
+    const nextKeys = new Set(nextLocked.map((item) => cleanFragment(item).toLowerCase()));
+
+    for (const item of nextLocked) {
+        if (!previousKeys.has(cleanFragment(item).toLowerCase())) {
+            details.push(`Locked thread added: ${item}`);
+        }
+    }
+
+    for (const item of previousLocked) {
+        if (!nextKeys.has(cleanFragment(item).toLowerCase())) {
+            details.push(`Locked thread removed: ${item}`);
+        }
+    }
+
+    return details;
+}
+
+function formatCopperDelta(deltaCopper: number): string {
+    if (deltaCopper === 0) {
+        return "0G ; 0S ; 0C";
+    }
+
+    const sign = deltaCopper > 0 ? "+" : "-";
+    return `${sign}${formatWallet(copperToWallet(Math.abs(deltaCopper)))}`;
+}
+
+export function walletChangeDetails(previousWallet: string, nextWallet: string): string[] {
+    const previous = parseWalletAmounts(previousWallet);
+    const next = parseWalletAmounts(nextWallet);
+    const details: string[] = [];
+
+    if (previous == null || next == null) {
+        pushTextChange(details, "Wallet raw", previousWallet, nextWallet);
+        return details;
+    }
+
+    pushTextChange(details, "Wallet gold", String(previous.gold), String(next.gold));
+    pushTextChange(details, "Wallet silver", String(previous.silver), String(next.silver));
+    pushTextChange(details, "Wallet copper", String(previous.copper), String(next.copper));
+
+    const previousTotal = walletToCopper(previous);
+    const nextTotal = walletToCopper(next);
+    if (previousTotal !== nextTotal) {
+        details.push(`Wallet total delta: ${formatCopperDelta(nextTotal - previousTotal)}`);
+    }
+
+    return details;
+}
+
+export function youLineChangeDetails(previousLine: string, nextLine: string): string[] {
+    const previous = parseHeaderStatusEntry(cleanLabeledValue(previousLine, "You"), "you");
+    const next = parseHeaderStatusEntry(cleanLabeledValue(nextLine, "You"), "you");
+
+    if (previous == null || next == null) {
+        return [];
+    }
+
+    const details: string[] = [];
+    pushTextChange(details, "You gender", previous.name, next.name);
+    pushTextChange(details, "You apparent race", previous.race, next.race);
+    pushTextChange(details, "You clothing", previous.clothing, next.clothing);
+    pushTextChange(details, "You position", previous.position, next.position);
+    pushTextChange(details, "You detail", previous.detail, next.detail);
+    return details;
+}
+
+function npcStatusEntries(line: string): ParsedHeaderStatus[] {
+    const value = cleanLabeledValue(line, "NPC");
+    if (isNoNpcValue(value)) {
+        return [];
+    }
+
+    return splitTopLevel(value, ",")
+        .map((entry) => parseHeaderStatusEntry(entry, "npc"))
+        .filter((entry): entry is ParsedHeaderStatus => entry != null);
+}
+
+function npcStatusKey(entry: ParsedHeaderStatus): string {
+    return cleanFragment(entry.name).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+export function npcLineChangeDetails(previousLine: string, nextLine: string): string[] {
+    const previousEntries = npcStatusEntries(previousLine);
+    const nextEntries = npcStatusEntries(nextLine);
+    const previousByName = new Map(previousEntries.map((entry) => [npcStatusKey(entry), entry]));
+    const nextByName = new Map(nextEntries.map((entry) => [npcStatusKey(entry), entry]));
+    const details: string[] = [];
+
+    for (const next of nextEntries) {
+        const previous = previousByName.get(npcStatusKey(next));
+        if (previous == null) {
+            details.push(`Added NPC: ${next.raw}`);
+            continue;
+        }
+
+        pushTextChange(details, `${next.name} race`, previous.race, next.race);
+        pushTextChange(details, `${next.name} clothing`, previous.clothing, next.clothing);
+        pushTextChange(details, `${next.name} position`, previous.position, next.position);
+        pushTextChange(details, `${next.name} detail`, previous.detail, next.detail);
+    }
+
+    for (const previous of previousEntries) {
+        if (!nextByName.has(npcStatusKey(previous))) {
+            details.push(`Removed NPC: ${previous.raw}`);
+        }
+    }
+
+    return details;
+}
+
+function formatUserStatusList(values: string[] | undefined): string {
+    return values != null && values.length > 0 ? values.join(", ") : "None";
+}
+
+function formatUserStatusItems(items: Array<{name: string; location: string; status?: string}> | undefined): string {
+    if (items == null || items.length === 0) {
+        return "None";
+    }
+
+    return items
+        .map((item) => [item.name, item.location, item.status].map((part) => cleanFragment(part ?? "")).filter(Boolean).join(" @ "))
+        .join("; ");
+}
+
+export function userStatusChangeDetails(previous: UserStatusState, next: UserStatusState): string[] {
+    const details: string[] = [];
+    pushTextChange(details, "Status User gender", previous.gender, next.gender);
+    pushTextChange(details, "Status User apparent race", previous.apparentRace, next.apparentRace);
+    pushTextChange(details, "Status User clothing.upper", previous.clothing.upper ?? "", next.clothing.upper ?? "");
+    pushTextChange(details, "Status User clothing.lower", previous.clothing.lower ?? "", next.clothing.lower ?? "");
+    pushTextChange(details, "Status User clothing.footwear", previous.clothing.footwear ?? "", next.clothing.footwear ?? "");
+    pushTextChange(details, "Status User clothing.outerwear", previous.clothing.outerwear ?? "", next.clothing.outerwear ?? "");
+    pushTextChange(details, "Status User clothing.accessories", formatUserStatusList(previous.clothing.accessories), formatUserStatusList(next.clothing.accessories));
+    pushTextChange(details, "Status User weapons", formatUserStatusItems(previous.weapons), formatUserStatusItems(next.weapons));
+    pushTextChange(details, "Status User important items", formatUserStatusItems(previous.importantItems), formatUserStatusItems(next.importantItems));
+    return details;
 }
 
 export function countNpcMemory(state: AetherNovaMessageState): number {

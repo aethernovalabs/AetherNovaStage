@@ -828,13 +828,13 @@ Debug UI menampilkan:
 - Stage Prompt Directions: isi `stageDirections` terbaru yang diinject ke prompt, ditampilkan di atas Debug Logs.
 - Debug Logs terpisah per kategori:
   - **Stage Prompt To LLM Log**: history prompt/stageDirections yang diberikan kepada LLM.
-  - **NPC Memory Log**: perubahan nyata pada NPC memory.
-  - **Location Log**: perubahan location yang dilakukan stage.
-  - **Time Log**: perubahan `timeOfDay` dan `clock` yang dilakukan stage.
-  - **You Line Log**: perubahan line `You` dan detail `Status User`.
-  - **NPC Line Log**: perubahan line `NPC`.
-  - **Thread Line Log**: perubahan thread dan lock thread manual.
-  - **Wallet Line Log**: perubahan wallet.
+  - **NPC Memory Log**: perubahan nyata pada NPC memory, termasuk diff field konkret seperti `Aveline Montreval currentMood: neutral -> wary`.
+  - **Location Log**: perubahan location yang dilakukan stage, termasuk diff segment (`Location region/place/area: before -> after`).
+  - **Time Log**: perubahan `timeOfDay` dan `clock` yang dilakukan stage, termasuk `Time of day: before -> after` dan `Clock: before -> after`.
+  - **You Line Log**: perubahan line `You` dan detail `Status User`, termasuk diff field konkret seperti `You clothing: kemeja -> Naked` atau `You position: duduk di kursi -> duduk bersandar di kursi`.
+  - **NPC Line Log**: perubahan line `NPC`, termasuk diff per NPC seperti `Kaelen clothing: travel cloak -> torn travel cloak` atau `Kaelen position: standing nearby -> sitting beside you`.
+  - **Thread Line Log**: perubahan thread dan lock thread manual, termasuk item added/removed dan status mission (`Thread status Mission A: Ongoing -> Completed`).
+  - **Wallet Line Log**: perubahan wallet, termasuk gold/silver/copper dan total delta.
   - **Narrative Log**: perubahan format narasi saat response dimodifikasi.
   - **Lifecycle Log**: `init`, `load`, `setState`, `beforePrompt`, `afterResponse`, dan edit UI.
 - Last System Message: system message terakhir yang dikirim stage.

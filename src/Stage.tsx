@@ -21,6 +21,14 @@ import {
     clearPendingDebugQuery,
     npcMemoryChangeDetails,
     changedStateFields,
+    locationChangeDetails,
+    lockedThreadChangeDetails,
+    npcLineChangeDetails,
+    threadLineChangeDetails,
+    timeChangeDetails,
+    userStatusChangeDetails,
+    walletChangeDetails,
+    youLineChangeDetails,
     deepMergeUserStatus,
 } from "./aetherNova/ui/debugUtils";
 import {AetherNovaDebugPanel} from "./aetherNova/ui/DebugPanel";
@@ -165,33 +173,55 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             "afterResponse",
             `response ${this.lastModifiedMessageChanged ? "modified" : "unchanged"}; changed: ${changedFields.length > 0 ? changedFields.join(", ") : "none"}; NPC memory ${previousNpcMemoryCount} -> ${countNpcMemory(this.state)}; memory command reapply ${afterResponseCommand?.applied === true ? "yes" : "no"}; system debug ${this.lastSystemMessage.length > 0 ? "sent" : "none"}`,
         );
-        this.pushFieldChange("location", "afterResponse", "Location", previousState.location, this.state.location);
-        this.pushFieldChange("time", "afterResponse", "Time", `${previousState.timeOfDay} | ${previousState.clock}`, `${this.state.timeOfDay} | ${this.state.clock}`);
+        this.pushFieldChange(
+            "location",
+            "afterResponse",
+            "Location",
+            previousState.location,
+            this.state.location,
+            locationChangeDetails(previousState.location, this.state.location),
+        );
+        this.pushFieldChange(
+            "time",
+            "afterResponse",
+            "Time",
+            `${previousState.timeOfDay} | ${previousState.clock}`,
+            `${this.state.timeOfDay} | ${this.state.clock}`,
+            timeChangeDetails(previousState.timeOfDay, previousState.clock, this.state.timeOfDay, this.state.clock),
+        );
+        const youDetails = [
+            ...youLineChangeDetails(previousState.you, this.state.you),
+            ...userStatusChangeDetails(previousState.userStatus, this.state.userStatus),
+        ];
+        const npcDetails = npcLineChangeDetails(previousState.npc, this.state.npc);
         this.pushFieldChange(
             "youLine",
             "afterResponse",
             "You",
             previousState.you,
             this.state.you,
-            JSON.stringify(previousState.userStatus ?? {}) !== JSON.stringify(this.state.userStatus ?? {})
-                ? ["Status User details changed."]
-                : undefined,
+            youDetails,
         );
-        this.pushFieldChange("npcLine", "afterResponse", "NPC", previousState.npc, this.state.npc);
+        this.pushFieldChange("npcLine", "afterResponse", "NPC", previousState.npc, this.state.npc, npcDetails);
         this.pushFieldChange(
             "threadLine",
             "afterResponse",
             "Thread",
             previousState.thread,
             this.state.thread,
-            JSON.stringify(previousState.lockedThreadItems ?? []) !== JSON.stringify(this.state.lockedThreadItems ?? [])
-                ? [
-                    `Locked before: ${(previousState.lockedThreadItems ?? []).join(" ; ") || "None"}`,
-                    `Locked after: ${(this.state.lockedThreadItems ?? []).join(" ; ") || "None"}`,
-                ]
-                : undefined,
+            [
+                ...threadLineChangeDetails(previousState.thread, this.state.thread),
+                ...lockedThreadChangeDetails(previousState.lockedThreadItems, this.state.lockedThreadItems),
+            ],
         );
-        this.pushFieldChange("walletLine", "afterResponse", "Wallet", previousState.wallet, this.state.wallet);
+        this.pushFieldChange(
+            "walletLine",
+            "afterResponse",
+            "Wallet",
+            previousState.wallet,
+            this.state.wallet,
+            walletChangeDetails(previousState.wallet, this.state.wallet),
+        );
         if (this.lastModifiedMessageChanged) {
             this.pushDebugEvent(
                 "narrative",
