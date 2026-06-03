@@ -54,6 +54,121 @@ function threadItemIsLocked(item: string, lockedItems: string[]): boolean {
     return lockedItems.some((lockedItem) => threadItemsOverlap(lockedItem, item));
 }
 
+function privateEventKeyFromText(value: string): string {
+    return value
+        .toLowerCase()
+        .replace(/\{\{user\}\}/g, "user")
+        .replace(/\([^)]*\)/g, " ")
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 64);
+}
+
+function privateEventThreadLabel(threadItem: string): string {
+    return cleanThreadItem(threadItem.replace(/\s*\([^)]*\)\s*$/g, ""));
+}
+
+function privateEventStatusFromThread(threadItem: string): PrivateEventStatus {
+    const lower = threadItem.toLowerCase();
+    if (/\bfailed|abandoned|refused|declined|rejected\b/.test(lower)) return "failed";
+    if (/\bcancelled|canceled\b/.test(lower)) return "cancelled";
+    if (/\bexpired\b/.test(lower)) return "expired";
+    if (/\bcomplete|completed|done|finished|resolved|settled\b/.test(lower)) return "complete";
+    if (/\bimminent|urgent\b/.test(lower)) return "imminent";
+    if (/\bsoon\b/.test(lower)) return "soon";
+    return "scheduled";
+}
+
+function npcNamesFromHeader(npcLine: string): string[] {
+    const clean = cleanThreadItem(npcLine);
+    if (clean.length === 0 || clean.toLowerCase() === "none") {
+        return [];
+    }
+
+    return clean
+        .split(/\s*,\s*/g)
+        .map((entry) => cleanThreadItem(entry.replace(/\([^)]*\)/g, "").split(/\s+-\s+/)[0] ?? ""))
+        .filter(Boolean);
+}
+
+function privateEventNpcNamesFromThread(threadItem: string, npcLine: string): string[] {
+    const lowerThread = threadItem.toLowerCase();
+    const headerNames = npcNamesFromHeader(npcLine);
+    const matchedHeaderNames = headerNames.filter((name) => {
+        const lowerName = name.toLowerCase();
+        const firstName = lowerName.split(/\s+/)[0] ?? lowerName;
+        return lowerThread.includes(lowerName) || lowerThread.includes(firstName);
+    });
+
+    if (matchedHeaderNames.length > 0) {
+        return matchedHeaderNames;
+    }
+
+    const skip = new Set([
+        "Meet", "Mission", "Quest", "Thread", "Travel", "Promise", "Waiting", "Rendezvous",
+        "Pending", "Scheduled", "Ongoing", "Complete", "Failed", "Cancelled", "Expired",
+    ]);
+    return Array.from(threadItem.matchAll(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,}){0,3}\b/g))
+        .map((match) => cleanThreadItem(match[0]))
+        .filter((name) => !skip.has(name.split(/\s+/)[0] ?? name));
+}
+
+function privateEventKeywordsFromThread(threadItem: string, npcNames: string[]): string[] {
+    const keywords = [
+        ...npcNames,
+        privateEventThreadLabel(threadItem),
+        ...threadItem
+            .replace(/\([^)]*\)/g, " ")
+            .split(/[^A-Za-z0-9]+/g)
+            .map((word) => word.trim())
+            .filter((word) => word.length > 3 && !["with", "from", "that", "this", "into", "about", "scheduled", "ongoing", "pending"].includes(word.toLowerCase())),
+    ];
+    return parsePrivateEventList(keywords.join(", "));
+}
+
+function uniquePrivateEventId(baseId: string, events: PrivateEventEntry[], excludeId?: string): string {
+    const cleanBase = baseId.length > 0 ? baseId : "manual_private_event";
+    let candidate = cleanBase;
+    let index = 2;
+    while (events.some((event) => event.id === candidate && event.id !== excludeId)) {
+        candidate = `${cleanBase}_${index}`;
+        index += 1;
+    }
+    return candidate;
+}
+
+function privateEventDraftFromThread(
+    threadItem: string,
+    state: AetherNovaMessageState,
+    existingEvents: PrivateEventEntry[],
+): PrivateEventEntry {
+    const label = privateEventThreadLabel(threadItem);
+    const parentThreadKey = privateEventKeyFromText(label);
+    const id = uniquePrivateEventId(`manual_${parentThreadKey}`, existingEvents);
+    const npcNames = privateEventNpcNamesFromThread(threadItem, state.npc);
+    const status = privateEventStatusFromThread(threadItem);
+    const urgencyLabel: PrivateEventUrgency = status === "imminent"
+        ? "imminent"
+        : status === "soon"
+            ? "soon"
+            : "safe";
+
+    return {
+        id,
+        parentThreadKey,
+        status,
+        urgencyLabel,
+        npcNames,
+        knownBy: parsePrivateEventList(["{{user}}", ...npcNames].join(", ")),
+        context: `{{user}} has a private event linked to Thread: ${label}.`,
+        keywords: privateEventKeywordsFromThread(threadItem, npcNames),
+        secrecyNote: "Private event. Only {{user}} and listed NPCs know this unless revealed in RP.",
+        sourceSummary: `Manually created from Thread: ${threadItem}`,
+        createdAtClock: state.clock,
+        updatedAtClock: state.clock,
+    };
+}
+
 function privateEventListText(values: string[] | undefined): string {
     return values != null && values.length > 0 ? values.join(", ") : "";
 }
@@ -184,6 +299,7 @@ export function AetherNovaDebugPanel({
     const [editUserStatusClothing, setEditUserStatusClothing] = useState<Record<string, string>>({});
     const [editUserWeaponsText, setEditUserWeaponsText] = useState("");
     const [editUserItemsText, setEditUserItemsText] = useState("");
+    const [draftPrivateEvent, setDraftPrivateEvent] = useState<PrivateEventEntry | null>(null);
 
     useEffect(() => {
         const intervalId = window.setInterval(() => {
@@ -208,6 +324,7 @@ export function AetherNovaDebugPanel({
         setEditingSection(null);
         setEditForm({});
         setEditUserStatusClothing({});
+        setDraftPrivateEvent(null);
     };
 
     const saveEdit = (patch: Partial<AetherNovaMessageState & {userStatusPatch?: Partial<UserStatusState>}>): void => {
@@ -215,6 +332,7 @@ export function AetherNovaDebugPanel({
         setEditingSection(null);
         setEditForm({});
         setEditUserStatusClothing({});
+        setDraftPrivateEvent(null);
     };
 
     const toggleThreadLock = (item: string): void => {
@@ -233,8 +351,33 @@ export function AetherNovaDebugPanel({
 
     const savePrivateEventEdit = (event: PrivateEventEntry): void => {
         const nextEvent = privateEventFromForm(event, editForm);
-        const nextEvents = (snapshot.state.privateEvents ?? []).map((entry) => entry.id === event.id ? nextEvent : entry);
+        const existingEvents = snapshot.state.privateEvents ?? [];
+        const safeEvent = {
+            ...nextEvent,
+            id: uniquePrivateEventId(nextEvent.id, existingEvents, event.id),
+        };
+        const nextEvents = existingEvents.map((entry) => entry.id === event.id ? safeEvent : entry);
         saveEdit({privateEvents: nextEvents});
+    };
+
+    const startPrivateEventCreateFromThread = (threadItem: string): void => {
+        const draftEvent = privateEventDraftFromThread(threadItem, snapshot.state, snapshot.state.privateEvents ?? []);
+        setDraftPrivateEvent(draftEvent);
+        startEdit("privateEvent:create", privateEventToForm(draftEvent));
+    };
+
+    const savePrivateEventCreate = (): void => {
+        if (draftPrivateEvent == null) {
+            return;
+        }
+
+        const existingEvents = snapshot.state.privateEvents ?? [];
+        const event = privateEventFromForm(draftPrivateEvent, editForm);
+        const safeEvent = {
+            ...event,
+            id: uniquePrivateEventId(event.id, existingEvents),
+        };
+        saveEdit({privateEvents: [safeEvent, ...existingEvents]});
     };
 
     const updatePrivateEventStatus = (event: PrivateEventEntry, status: PrivateEventStatus): void => {
@@ -477,8 +620,12 @@ export function AetherNovaDebugPanel({
 
             <PrivateEventsPanel
                 events={snapshot.state.privateEvents ?? []}
+                threadItems={threadItemsForDisplay(snapshot.state.thread)}
+                draftEvent={draftPrivateEvent}
                 editingSection={editingSection}
                 editForm={editForm}
+                onCreateFromThread={startPrivateEventCreateFromThread}
+                onSaveCreate={savePrivateEventCreate}
                 onEdit={(event) => startEdit(`privateEvent:${event.id}`, privateEventToForm(event))}
                 onCancel={cancelEdit}
                 onChange={setEditForm}
@@ -761,8 +908,12 @@ function DebugLogPanel({
 
 function PrivateEventsPanel({
     events,
+    threadItems,
+    draftEvent,
     editingSection,
     editForm,
+    onCreateFromThread,
+    onSaveCreate,
     onEdit,
     onCancel,
     onChange,
@@ -772,8 +923,12 @@ function PrivateEventsPanel({
     onDelete,
 }: {
     events: PrivateEventEntry[];
+    threadItems: string[];
+    draftEvent: PrivateEventEntry | null;
     editingSection: string | null;
     editForm: Record<string, string>;
+    onCreateFromThread: (threadItem: string) => void;
+    onSaveCreate: () => void;
     onEdit: (event: PrivateEventEntry) => void;
     onCancel: () => void;
     onChange: (form: Record<string, string>) => void;
@@ -782,13 +937,54 @@ function PrivateEventsPanel({
     onMarkFailed: (event: PrivateEventEntry) => void;
     onDelete: (event: PrivateEventEntry) => void;
 }): ReactElement {
+    const [selectedThreadItem, setSelectedThreadItem] = useState("");
+    const activeThreadItem = threadItems.includes(selectedThreadItem)
+        ? selectedThreadItem
+        : threadItems[0] ?? "";
+    const isCreating = editingSection === "privateEvent:create" && draftEvent != null;
+
     return (
         <section className="aether-debug-section aether-private-events-section">
             <div className="aether-debug-section-title">
                 <h2>Private Events</h2>
                 <span>{events.length}</span>
             </div>
-            {events.length === 0 ? (
+            <div className="aether-private-event-create-row">
+                <select
+                    value={activeThreadItem}
+                    disabled={threadItems.length === 0 || isCreating}
+                    onChange={(event) => setSelectedThreadItem(event.target.value)}
+                    aria-label="Select Thread item for private event"
+                >
+                    {threadItems.length === 0 ? (
+                        <option value="">No Thread item available</option>
+                    ) : (
+                        threadItems.map((item) => <option key={item} value={item}>{item}</option>)
+                    )}
+                </select>
+                <button
+                    type="button"
+                    disabled={activeThreadItem.length === 0 || isCreating}
+                    onClick={() => onCreateFromThread(activeThreadItem)}
+                >
+                    Add From Thread
+                </button>
+            </div>
+            {isCreating ? (
+                <article className="aether-debug-memory-card aether-private-event-card is-creating">
+                    <div className="aether-debug-card-header">
+                        <h3>New private event from Thread</h3>
+                    </div>
+                    <PrivateEventEditor
+                        event={draftEvent}
+                        editForm={editForm}
+                        onChange={onChange}
+                        onCancel={onCancel}
+                        onSave={onSaveCreate}
+                    />
+                </article>
+            ) : null}
+            {events.length === 0 && !isCreating ? (
                 <p className="aether-debug-empty">No private events stored yet.</p>
             ) : (
                 <div className="aether-private-event-list">

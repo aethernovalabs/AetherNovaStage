@@ -545,6 +545,7 @@ Setiap item menampilkan:
 - keywords dan privacy note
 
 Controls:
+- `Add From Thread`: user memilih salah satu item Thread, Stage membuat draft `privateEvent` yang sudah punya `id`, `parentThreadKey`, context, `knownBy`, dan keywords dari thread itu. User lalu mengisi/menyesuaikan detail sebelum Save.
 - `Edit`: field-scoped manual edit untuk event tersebut.
 - `Mark Complete`
 - `Mark Failed`
@@ -964,7 +965,7 @@ Debug UI menampilkan:
 - **Edit Buttons**: Setiap field state utama (Location, You, NPC, Thread, Wallet, Status User) memiliki tombol **Edit**. Saat diklik, kartu edit melebar ke seluruh grid dan berubah menjadi form yang lebih nyaman. Field pendek memakai input, `timeOfDay` memakai select (`Morning/Midday/Afternoon/Evening/Night`), dan field panjang seperti `You`, `NPC`, dan `Thread` memakai textarea. User bisa mengubah value lalu **Save** (menerapkan edit ke state + mencatat di `manualEditOverrides`) atau **Cancel** (kembali ke tampilan baca).
 - **Thread Mission List**: Thread ditampilkan sebagai daftar misi per item ` ; `. Setiap item punya tombol gembok untuk menambah/menghapus lock manual di `lockedThreadItems[]`. Item terminal tidak bisa dikunci.
 - **Status User Editor**: Saat Edit Status User diklik, panel detail berubah menjadi form grid dengan input untuk Gender, Race, dan setiap slot pakaian (Upper, Lower, Footwear, Outerwear, Accessories). Weapons dan Important Items bisa diedit lewat textarea dengan format `name | location | status`; parser juga menerima pemisah `—` atau `-`.
-- **Private Events**: Panel langsung di bawah Status User menampilkan private appointment/deadline/threat event. Setiap event punya tombol **Edit**, **Mark Complete**, **Mark Failed**, dan **Delete** dengan confirm dialog untuk aksi terminal/destructive.
+- **Private Events**: Panel langsung di bawah Status User menampilkan private appointment/deadline/threat event. Tombol **Add From Thread** membuka dropdown item Thread dan membuat draft event yang otomatis linked ke `parentThreadKey` thread terkait. Setiap event punya tombol **Edit**, **Mark Complete**, **Mark Failed**, dan **Delete** dengan confirm dialog untuk aksi terminal/destructive.
 - **Confirm destructive actions**: Aksi yang menghapus/clear data UI meminta konfirmasi lebih dulu (`Clear Logs`, clear log per kategori, `Clear Facts`, dan `Delete` NPC memory) lewat dialog custom React di dalam Stage, bukan `window.confirm()`, agar tetap bekerja di webview/platform yang memblokir dialog browser native.
 - Manual edits yang dilakukan melalui UI disimpan di `manualEditOverrides` dan dipertahankan saat swipe/jump serta melalui normalisasi.
 - NPC Memory cards: semua NPC yang tersimpan dengan detail lengkap. Setiap kartu NPC punya tombol **Minimize/Expand** untuk menyembunyikan detail panjang; daftar kartu yang diminimize disimpan di `localStorage` key `aether-nova-stage.collapsedNpcCards`.
