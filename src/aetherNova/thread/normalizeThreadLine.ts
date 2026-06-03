@@ -68,6 +68,12 @@ function extractNpcNamesFromLine(npcLine: string): string[] {
         .filter(Boolean);
 }
 
+function isFutureMeetingThreadItem(item: string): boolean {
+    const statusMatch = item.match(/\(([^()]*)\)\s*$/);
+    const status = statusMatch?.[1] ?? "";
+    return /\b(?:scheduled|promised|promise|pending|waiting|awaiting|rendezvous)\b/i.test(status);
+}
+
 function isMeetingThreadItemComplete(item: string, npcLine: string, currentThread: string): boolean {
     const itemLower = item.toLowerCase();
     const isMeetingType = THREAD_MEETING_KEYWORDS.some((k) => itemLower.includes(k));
@@ -77,7 +83,7 @@ function isMeetingThreadItemComplete(item: string, npcLine: string, currentThrea
     if (isTerminalThreadItem(item)) {
         return false;
     }
-    if (/\(\s*scheduled\s*\)$/i.test(item)) {
+    if (isFutureMeetingThreadItem(item)) {
         return false;
     }
     const itemNpcs = extractMeetingNpcNames(item);

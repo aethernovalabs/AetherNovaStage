@@ -137,6 +137,32 @@ function uniquePrivateEventId(baseId: string, events: PrivateEventEntry[], exclu
     return candidate;
 }
 
+function privateEventCanonicalThreadKey(value: string): string {
+    const key = privateEventKeyFromText(value.replace(/^manual[_-]+/i, "").replace(/_/g, " "));
+    return key.replace(/_(?:scheduled|promised|promise|pending|waiting|awaiting|rendezvous|ongoing|active|soon|imminent|overdue|risk_active|complete|completed|done|finished|resolved|settled|failed|abandoned|refused|declined|rejected|cancelled|canceled|expired)$/i, "");
+}
+
+function privateEventMatchesThreadItem(event: PrivateEventEntry, threadItem: string): boolean {
+    const itemKey = privateEventCanonicalThreadKey(privateEventThreadLabel(threadItem));
+    if (itemKey.length === 0) {
+        return false;
+    }
+
+    const directKeys = [
+        event.parentThreadKey,
+        event.id,
+        event.context,
+        event.sourceSummary ?? "",
+    ].map(privateEventCanonicalThreadKey);
+
+    return directKeys.some((key) => key === itemKey || (itemKey.length >= 12 && key.endsWith(`_${itemKey}`)))
+        || event.keywords.some((keyword) => privateEventCanonicalThreadKey(keyword) === itemKey);
+}
+
+function privateEventAvailableThreadItems(threadItems: string[], events: PrivateEventEntry[]): string[] {
+    return threadItems.filter((item) => !events.some((event) => privateEventMatchesThreadItem(event, item)));
+}
+
 function privateEventDraftFromThread(
     threadItem: string,
     state: AetherNovaMessageState,
@@ -467,6 +493,11 @@ export function AetherNovaDebugPanel({
         );
     }
 
+    const availablePrivateEventThreadItems = privateEventAvailableThreadItems(
+        threadItemsForDisplay(snapshot.state.thread),
+        snapshot.state.privateEvents ?? [],
+    );
+
     return (
         <main className="aether-debug-shell">
             <header className="aether-debug-header">
@@ -620,7 +651,7 @@ export function AetherNovaDebugPanel({
 
             <PrivateEventsPanel
                 events={snapshot.state.privateEvents ?? []}
-                threadItems={threadItemsForDisplay(snapshot.state.thread)}
+                threadItems={availablePrivateEventThreadItems}
                 draftEvent={draftPrivateEvent}
                 editingSection={editingSection}
                 editForm={editForm}
@@ -957,7 +988,7 @@ function PrivateEventsPanel({
                     aria-label="Select Thread item for private event"
                 >
                     {threadItems.length === 0 ? (
-                        <option value="">No Thread item available</option>
+                        <option value="">No unlinked Thread item available</option>
                     ) : (
                         threadItems.map((item) => <option key={item} value={item}>{item}</option>)
                     )}
