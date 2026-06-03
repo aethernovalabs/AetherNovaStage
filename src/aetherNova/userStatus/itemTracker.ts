@@ -73,13 +73,51 @@ function isLocationPhraseItem(context: string, itemName: string): boolean {
   return false;
 }
 
+function isAnatomicalWeaponMention(context: string, weapon: string, matchIndex: number): boolean {
+  if (!sameText(weapon, "blade")) {
+    return false;
+  }
+
+  const window = context.slice(Math.max(0, matchIndex - 50), matchIndex + weapon.length + 50);
+  return /\b(?:your|\{\{user\}\}'s|his|her|their)?\s*(?:left|right)?\s*shoulder[-\s]+blades?\b/i.test(window)
+    || /\bblades?\s+of\s+(?:your|\{\{user\}\}'s|his|her|their)?\s*(?:left|right)?\s*shoulder\b/i.test(window);
+}
+
+function hasNonAnatomicalWeaponMention(context: string, weapon: string): boolean {
+  const re = new RegExp(`\\b${escapeRegExp(weapon)}\\b`, "gi");
+  let match = re.exec(context);
+
+  while (match != null) {
+    if (!isAnatomicalWeaponMention(context, weapon, match.index)) {
+      return true;
+    }
+    match = re.exec(context);
+  }
+
+  return false;
+}
+
+function isAnatomicalBladeFalsePositive(entry: UserStatusState["weapons"][number], context: string): boolean {
+  if (!sameText(entry.name, "blade")) {
+    return false;
+  }
+
+  const locationLooksAnatomical = /\b(?:your|\{\{user\}\}'s)?\s*(?:left|right)?\s*shoulder\b/i.test(entry.location);
+  return locationLooksAnatomical && !hasNonAnatomicalWeaponMention(context, "blade") && /\bshoulder[-\s]+blades?\b/i.test(context);
+}
+
 export function updateUserWeapons(
   previous: UserStatusState["weapons"],
   narrativeContext: string,
 ): UserStatusState["weapons"] {
-  const weapons = previous.filter((w) => w.status !== "destroyed" && w.status !== "removed" && w.status !== "lost");
+  const weapons = previous.filter((w) =>
+    w.status !== "destroyed"
+    && w.status !== "removed"
+    && w.status !== "lost"
+    && !isAnatomicalBladeFalsePositive(w, narrativeContext)
+  );
   const weaponMentions = WEAPON_KEYWORDS.filter((w) =>
-    new RegExp(`\\b${escapeRegExp(w)}\\b`, "i").test(narrativeContext),
+    hasNonAnatomicalWeaponMention(narrativeContext, w),
   );
   const damageCues = ["destroyed", "broken", "shattered", "lost", "dropped", "falls?\\s+", "leave", "leaves", "left", "handed over", "given away", "thrown", "threw", "abandoned", "discarded"];
   const removeCues = ["leave", "leaves", "left", "handed over", "give", "gives", "gave", "drop", "drops", "dropped", "throw", "throws", "threw", "put away", "stow", "stows", "stowed", "sheathe", "sheathes", "sheathed"];

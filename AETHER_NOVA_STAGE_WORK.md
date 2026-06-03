@@ -354,6 +354,10 @@ Location hasil ekstraksi ditolak jika hanya berisi: `the`, `a`, `an`, `it`, `the
 
 Sebutan noun saja (tanpa ownership anchor) tidak cukup untuk membuat item/weapon baru. Contoh: `ring`, `dagger`, `document`, `brooch`, `cloak`, `sword`, `coin`, `key`, `letter` — jika hanya disebut dalam narasi tanpa kepemilikan user, tidak masuk Status User.
 
+#### Anatomy False Positive Guard
+
+Body/anatomy phrase tidak boleh disalahartikan sebagai weapon. Contoh: `your right shoulder blade` adalah anatomi, bukan `blade` weapon; tracker mengabaikan mention `blade` dalam konteks `shoulder blade` dan membersihkan false-positive `blade @ shoulder` yang telanjur tercatat saat narasi terbaru masih memuat phrase anatomi itu.
+
 ---
 
 ## 5. NPC System (`normalizeNpcLine`)
