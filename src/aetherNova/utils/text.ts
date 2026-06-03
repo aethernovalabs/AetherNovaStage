@@ -47,7 +47,18 @@ export function isNoNpcValue(value: string): boolean {
         || lower === "no npcs"
         || lower === "no npcs present"
         || lower === "no npc present"
-        || lower === "none present";
+        || lower === "none present"
+        || lower === "nothing"
+        || lower === "nobody"
+        || lower === "no one"
+        || lower === "no-one"
+        || lower === "alone"
+        || lower === "—"
+        || lower === "-"
+        || lower === "n/a"
+        || lower === "no npc currently"
+        || lower === "no npcs currently"
+        || lower.startsWith("— -");
 }
 
 export function isNoThreadValue(value: string): boolean {

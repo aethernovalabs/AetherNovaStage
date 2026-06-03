@@ -11,7 +11,7 @@ import {
     formatDebugList,
     formatDebugScores,
 } from "./debugUtils";
-import {isTerminalThreadItem, threadItemsOverlap} from "../thread/normalizeThreadLine";
+import {isTerminalThreadItem, threadItemsOverlap, lockItemsMatch} from "../thread/normalizeThreadLine";
 
 const DEBUG_UI_MINIMIZED_STORAGE_KEY = "aether-nova-stage.debugUiMinimized";
 const DEBUG_UI_COLLAPSED_NPCS_STORAGE_KEY = "aether-nova-stage.collapsedNpcCards";
@@ -51,7 +51,7 @@ function threadItemsForDisplay(value: string): string[] {
 }
 
 function threadItemIsLocked(item: string, lockedItems: string[]): boolean {
-    return lockedItems.some((lockedItem) => threadItemsOverlap(lockedItem, item));
+    return lockedItems.some((lockedItem) => lockItemsMatch(lockedItem, item));
 }
 
 function privateEventKeyFromText(value: string): string {
@@ -369,7 +369,7 @@ export function AetherNovaDebugPanel({
         const lockedItems = snapshot.state.lockedThreadItems ?? [];
         const isLocked = threadItemIsLocked(item, lockedItems);
         const nextLocks = isLocked
-            ? lockedItems.filter((lockedItem) => !threadItemsOverlap(lockedItem, item))
+            ? lockedItems.filter((lockedItem) => !lockItemsMatch(lockedItem, item))
             : [...lockedItems, item];
 
         setSnapshot(onStateEdit({lockedThreadItems: nextLocks}));

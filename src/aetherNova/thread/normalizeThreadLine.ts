@@ -653,3 +653,36 @@ export function meaningfulTokens(value: string): Set<string> {
             .filter((token) => token.length > 2 && !THREAD_STOP_WORDS.has(token)),
     );
 }
+
+const THREAD_LOCK_STOP_WORDS = new Set([
+    ...THREAD_STOP_WORDS,
+    "secret", "only", "knows", "private",
+    "pending", "scheduled", "ongoing", "active", "waiting", "imminent",
+    "complete", "completed", "done", "finished", "failed",
+    "abandoned", "cancelled", "canceled", "expired", "resolved",
+    "concluded", "settled", "refused", "declined", "rejected",
+    "promised", "promise", "rendezvous", "awaiting",
+]);
+
+export function threadItemLockKey(value: string): string {
+    const stripped = value.replace(/\([^)]*\)/g, "").trim();
+    const tokens = stripped
+        .toLowerCase()
+        .replace(/\{\{user\}\}/g, "user")
+        .replace(/[^a-z0-9]+/g, " ")
+        .split(/\s+/)
+        .filter((token) => token.length > 2 && !THREAD_LOCK_STOP_WORDS.has(token));
+    return tokens.join(" ");
+}
+
+export function lockItemsMatch(locked: string, current: string): boolean {
+    const lockedKey = threadItemLockKey(locked);
+    const currentKey = threadItemLockKey(current);
+    if (lockedKey.length === 0 || currentKey.length === 0) return false;
+    if (lockedKey === currentKey) return true;
+    const lockedTokens = lockedKey.split(" ");
+    const currentTokens = currentKey.split(" ");
+    const shared = lockedTokens.filter((t) => currentTokens.includes(t));
+    const minLen = Math.min(lockedTokens.length, currentTokens.length);
+    return minLen >= 2 && shared.length >= Math.max(2, Math.ceil(minLen * 0.5));
+}

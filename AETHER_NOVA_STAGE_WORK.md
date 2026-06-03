@@ -302,6 +302,40 @@ Stage tidak boleh menciptakan pakaian baru yang tidak pernah ada. Jika clothing 
 
 Invent detection: jika garment kandidat tidak ada di state sebelumnya dan tidak ada `CLOTHING_CHANGE_CUES` dalam narasi, stage tidak menerima garment baru.
 
+### Clothing Action Phrase Guard
+
+Frasa aksi berpakaian (seperti `pulling on trousers`, `putting my legs into my pants`, `tightened my belt`) adalah **valid evidence** bahwa user sedang/baru memakai pakaian, tetapi **bukan final clothing label**.
+
+**Aturan:**
+
+1. **Status User tidak boleh menyimpan action phrase mentah.** Stage menggunakan `isClothingActionPhrase()` dan `normalizeStableClothingValue()` di `clothingClassifier.ts` untuk:
+   - Mendeteksi frasa aksi dengan cue: `pulling on`, `putting on`, `put on`, `dressed himself`, `dressing`, `buttoning`, `fastening`, `tightening belt`, `slipping into`, `stepping into pants`, `putting legs into`, `pulls on trousers`, `my clothes`, `i put on`, dll.
+   - Jika frasa aksi terdeteksi, tidak menyimpan raw string ke slot clothing.
+   - Output generic `Regular clothing` untuk pakaian biasa.
+
+2. **Generic dressing completion:** Jika narasi mengandung evidence bahwa user menyelesaikan pakaian biasa (`I put on my shirt`, `I got dressed`, `I pulled on my trousers`), Status User.clothing menjadi:
+   ```ts
+   upper: "Regular clothing",
+   lower: "Regular clothing",
+   accessories: []
+   ```
+   Ditampilkan di UI sebagai:
+   ```
+   Upper: Regular clothing
+   Lower: Regular clothing
+   Footwear:
+   Outerwear:
+   Accessories: none
+   ```
+
+3. **Belt tidak menjadi accessory terpisah untuk pakaian biasa.** Jika belt disebut dalam konteks berpakaian biasa (`I pulled on my trousers and tightened my belt`), belt dianggap bagian dari `Regular clothing`, bukan accessory terpisah.
+
+4. **Special garment tetap dipertahankan:** Jika garment spesifik penting seperti `armor`, `cloak`, `robe`, `dress`, `uniform`, `disguise` disebut dengan jelas, Stage boleh menyimpan garment tersebut. Contoh:
+   - Narasi: `I put on the black royal disguise cloak over my clothes.`
+   - Hasil: `Outerwear: black royal disguise cloak`, `Upper: Regular clothing`, `Lower: Regular clothing`
+
+5. **Header settle rule:** Jika header `You` saat ini menampilkan action phrase (contoh: `Pulling on trousers, belt tightening`) dan pada response berikutnya tidak ada evidence bahwa aksi itu masih berlangsung, header clothing settle menjadi `Regular clothing`. Ini menjaga header tetap natural tanpa animasi loading yang macet.
+
 ### Position change logic:
 - Perubahan posisi diterima jika ada cue `walk`, `stand`, `sit`, `kneel`, `lean`, `turn`, `step`, `approach`, dll.
 - Posisi berbaring miring / side-lying dikenali lewat cue `lying sideways`, `on side`, `berbaring`, `miring`, `kasur`, `ranjang`, dll.
@@ -374,6 +408,18 @@ Body/anatomy phrase tidak boleh disalahartikan sebagai weapon. Contoh: `your rig
 
 ### Format: `Full Name - Race (Clothes; Position; body/racial detail), Full Name - Race (Clothes; Position; body/racial detail)`
 
+### None NPC
+
+Stage mengizinkan `NPC: None` sebagai nilai valid. Jika LLM menulis `NPC: None`, `NPC: none`, `NPC: — - Human (...)`, atau variasi lainnya yang menunjukkan tidak ada NPC aktif, Stage mengembalikan `NPC: None`.
+
+Aturan:
+- Helper `isNoNpcValue()` di `src/aetherNova/utils/text.ts` mendeteksi pola: `none`, `no npc`, `nothing`, `nobody`, `no one`, `alone`, `—`, `-`, `n/a`.
+- Di `normalizeNpcLine()`, jika entry identity berupa `—` atau `-`, entry tersebut difilter dan tidak dibuat NPC palsu.
+- Jika semua entry setelah filtering kosong, output `None`.
+- `None` NPC tidak membuat NPC memory entry.
+- `None` NPC tidak dianggap sebagai `Human` default.
+- UI menampilkan `NPC: None`.
+
 Cara kerja:
 - `splitTopLevel(value, ",")`: parse multiple NPC dengan koma (hanya di level atas, bukan di dalam parentheses).
 - Setiap NPC dicocokkan dengan fallback berdasarkan nama (`npcIdentityKey`).
@@ -438,6 +484,24 @@ User bisa mengunci misi tertentu dari daftar Thread di Debug UI. Stage menyimpan
 2. Jika LLM menulis item yang overlap dengan status terminal (`Complete`, `Completed`, `Done`, `Finished`, `Failed`, `Abandoned`, `Cancelled`, dll), lock manual dilepas.
 3. Jika LLM menulis versi non-terminal yang overlap, lock disinkronkan ke versi terbaru agar status seperti `(Pending)` → `(Ongoing)` tetap terbawa.
 4. Edit manual Thread dari UI menyinkronkan ulang `lockedThreadItems[]`; mengubah Thread ke `None` ikut membersihkan lock manual yang tidak lagi ada di list.
+
+### Lock Key Precision
+
+Manual lock menggunakan `lockItemsMatch()` dan `threadItemLockKey()` untuk mencegah cross-lock antara item berbeda yang hanya kebetulan berbagi token umum:
+
+1. **Stable Lock Key:** Setiap thread item memiliki lock key yang dibuat dari meaningful content setelah:
+   - Semua parenthesized marker di-strip (`(Secret)`, `(Only X knows)`, `(Pending)`, `(Ongoing)`, dll).
+   - Token privacy/marker diabaikan: `secret`, `only`, `knows`, `private`, `pending`, `scheduled`, `ongoing`, `active`, `waiting`, `imminent`, `complete`, `completed`, `done`, `finished`, `failed`, `abandoned`, `cancelled`, `expired`, `resolved`, `concluded`, `settled`, `refused`, `declined`, `rejected`, `promised`, `promise`, `rendezvous`, `awaiting`.
+2. **Lock matching** menggunakan `lockItemsMatch()` yang membandingkan lock key dengan aturan:
+   - Exact match pada lock key → dianggap sama.
+   - Jika tidak exact, minimal 50% dari token meaningful harus cocok dan minimal 2 token.
+3. **Privacy marker tidak boleh membuat dua mission dianggap sama.** Contoh:
+   - Mission 1: `Morning meeting at east courtyard fountain with Aveline (Secret, Only Alamx&Aveline knows)`
+   - Mission 2: `Yume waiting by fountain (Secret, Only Alamx&Yume knows)`
+   - Lock key 1: `morning meeting east courtyard fountain with aveline`
+   - Lock key 2: `yume waiting fountain`
+   - `lockItemsMatch()` mengembalikan `false` → tidak cross-lock.
+4. **Restore lock:** Hanya item dengan key yang sama yang dipulihkan. Item lain yang hanya overlap pada privacy marker tidak ikut ter-restore.
 
 ---
 
@@ -507,15 +571,22 @@ Terminal handling:
 
 `formatPrivateEventsForPrompt()` dipanggil dari `buildStageDirections()`.
 
-Stage hanya menginject event relevan, top 1-3 event, jika salah satu kondisi terpenuhi:
-- status/urgency `imminent`, `overdue`, atau `risk_active`
-- current NPC header berisi NPC terkait
-- user message menyebut keyword event
-- current location overlap dengan event location
-- current Thread overlap dengan `parentThreadKey`, context, atau keywords
-- event punya threat/consequence dan sudah ada relevance signal
+Stage menggunakan **hard relevance gate** untuk menghemat token. Private event hanya lolos ke prompt jika **salah satu kondisi hard gate** terpenuhi:
+1. **status/urgency `imminent`, `overdue`, atau `risk_active`** — event sudah sangat mendesak.
+2. **NPC terkait tercantum di header `NPC`** — NPC yang terlibat sedang hadir dalam scene.
+3. **User message terbaru menyebut keyword event** — user secara eksplisit merujuk event tersebut.
 
-Jika tidak relevan, block `[Private Event Context - Secret]` tidak dikirim.
+**Kondisi berikut TIDAK cukup** untuk inject sendirian:
+- Location overlap dengan event location (hanya sebagai booster, bukan hard gate).
+- Thread overlap dengan `parentThreadKey`/context/keywords (hanya sebagai booster).
+- Event memiliki `threatContext` atau `consequence` tanpa signal relevance lain.
+
+**Scoring:**
+- Hard gate: urgency (+80), NPC present (+60), keyword mentioned (+50).
+- Booster: location overlap (+10), thread overlap (+10), threat/consequence (+10).
+- Maksimal 3 event paling relevan diinject per turn.
+
+Jika tidak ada event yang lolos hard gate, block `[Private Event Context - Secret]` tidak dikirim.
 
 Prompt injection selalu memuat secrecy warning:
 

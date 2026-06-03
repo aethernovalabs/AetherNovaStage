@@ -138,6 +138,10 @@ export function normalizeNpcLine(
         return previousNpc;
     }
 
+    if (/^\s*—/.test(value)) {
+        return "None";
+    }
+
     const fallbackEntries = splitTopLevel(previousNpc || DEFAULT_STATE.npc, ",");
     const fallbackByName = new Map<string, string>();
     for (const fallbackEntry of fallbackEntries) {
@@ -152,10 +156,19 @@ export function normalizeNpcLine(
         return previousNpc;
     }
 
-    return entries.map((entry) => {
+    const normalizedEntries = entries.map((entry) => {
         const parsed = parseIdentityStatus(entry);
         const identity = splitIdentity(parsed.identity, "Unknown NPC", "Human");
+        if (isNoNpcValue(identity.left) || identity.left === "—" || identity.left === "-") {
+            return "";
+        }
         const fallback = fallbackByName.get(npcIdentityKey(identity.left)) ?? null;
         return normalizeNpcEntry(entry, fallback, context, options);
-    }).join(", ");
+    }).filter(Boolean);
+
+    if (normalizedEntries.length === 0) {
+        return "None";
+    }
+
+    return normalizedEntries.join(", ");
 }

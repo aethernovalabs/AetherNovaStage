@@ -1,6 +1,6 @@
 import type {AetherNovaMessageState} from "../types";
 import {THREAD_WAITING_PATTERNS, THREAD_WAITING_RESOLUTION_PATTERNS} from "./threadConstants";
-import {splitThreadItems, threadItemsOverlap, isTerminalThreadItem} from "./normalizeThreadLine";
+import {splitThreadItems, threadItemsOverlap, isTerminalThreadItem, lockItemsMatch} from "./normalizeThreadLine";
 
 const MEETING_SKIP_NAMES = new Set([
     "meeting", "meet", "audience", "appointment", "rendezvous", "speak", "talk",
@@ -123,7 +123,7 @@ function manualLockIsCompleted(lockedItem: string, rawThreadLine: string): boole
     return true;
   }
 
-  return terminalItemsFromThreadLine(rawThreadLine).some((item) => threadItemsOverlap(item, lockedItem));
+  return terminalItemsFromThreadLine(rawThreadLine).some((item) => lockItemsMatch(item, lockedItem));
 }
 
 export function synchronizeLockedThreadItems(thread: string, lockedThreadItems: string[]): string[] {
@@ -135,12 +135,12 @@ export function synchronizeLockedThreadItems(thread: string, lockedThreadItems: 
       continue;
     }
 
-    const currentMatch = currentItems.find((item) => threadItemsOverlap(item, lockedItem));
+    const currentMatch = currentItems.find((item) => lockItemsMatch(item, lockedItem));
     if (currentMatch == null) {
       continue;
     }
 
-    if (!synchronized.some((item) => threadItemsOverlap(item, currentMatch))) {
+    if (!synchronized.some((item) => lockItemsMatch(item, currentMatch))) {
       synchronized.push(currentMatch);
     }
   }
@@ -162,16 +162,16 @@ export function applyThreadItemLocks(
       continue;
     }
 
-    const currentMatch = currentItems.find((item) => threadItemsOverlap(item, lockedItem));
+    const currentMatch = currentItems.find((item) => lockItemsMatch(item, lockedItem));
     const activeItem = currentMatch ?? lockedItem;
-    if (!activeLocks.some((item) => threadItemsOverlap(item, activeItem))) {
+    if (!activeLocks.some((item) => lockItemsMatch(item, activeItem))) {
       activeLocks.push(activeItem);
     }
   }
 
   let resultThread = currentThread;
   for (const lockedItem of activeLocks) {
-    if (!currentItems.some((item) => threadItemsOverlap(item, lockedItem))) {
+    if (!currentItems.some((item) => lockItemsMatch(item, lockedItem))) {
       const separator = resultThread === "None" || resultThread.length === 0 ? "" : " ; ";
       resultThread = resultThread === "None" || resultThread.length === 0
         ? lockedItem

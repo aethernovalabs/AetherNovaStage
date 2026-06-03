@@ -5,6 +5,53 @@ import {looksLikeClothingSlot} from "../header/normalizeYouLine";
 import {escapeRegExp, containsAnyCue} from "../utils/regex";
 import {cleanFragment, sameText, isPlaceholder} from "../utils/text";
 
+const CLOTHING_ACTION_CUES = [
+  "pulling on", "putting on", "put on", "putting my",
+  "wearing", "getting dressed", "dressed himself", "dressed herself",
+  "dressing", "buttoning", "fastening", "tightening belt",
+  "slipping into", "stepping into pants", "putting legs into",
+  "pulls on trousers", "pulls on pants", "my clothes",
+  "i put on", "i pulled on", "i tightened", "i slipped into",
+  "i put my", "put my", "pulled my",
+];
+
+export function isClothingActionPhrase(text: string): boolean {
+  const lower = text.toLowerCase().trim();
+  if (lower.length === 0) return false;
+  const isAction = CLOTHING_ACTION_CUES.some((cue) => lower.includes(cue));
+  if (isAction) return true;
+  if (lower.split(/\s+/).length > 6) {
+    const actionVerbs = /\b(pull|put|wear|dress|slip|step|tighten|fasten|button|strip|remove)\b/i;
+    const match = lower.match(actionVerbs);
+    if (match != null) {
+      const wordsAfter = lower.split(match[0].toLowerCase())[1] ?? "";
+      if (wordsAfter.trim().length > 10) return true;
+    }
+  }
+  return false;
+}
+
+export function normalizeStableClothingValue(raw: string, previous?: string): string {
+  const trimmed = cleanFragment(raw);
+  if (trimmed.length === 0) return previous ?? "";
+  if (isClothingActionPhrase(trimmed)) {
+    const lower = trimmed.toLowerCase();
+    if (lower.includes("armor") || lower.includes("armour")) return "Armor";
+    if (lower.includes("disguise") && (lower.includes("cloak") || lower.includes("robe"))) {
+      const match = trimmed.match(/(?:black\s+)?(?:royal\s+)?(?:disguise\s+)?(?:cloak|robe)/i);
+      return match ? match[0] : "Regular clothing";
+    }
+    return "Regular clothing";
+  }
+  const lower = trimmed.toLowerCase();
+  if (lower.includes("regular clothing") || lower === "regular") return "Regular clothing";
+  if (lower.includes("naked") || lower.includes("nude") || lower.includes("unclothed")) return trimmed;
+  if (lower.includes("shirtless")) return trimmed;
+  if (lower.includes("armor") || lower.includes("armour")) return trimmed;
+  if (lower.includes("without")) return trimmed;
+  return trimmed;
+}
+
 export function hasGarmentKeyword(value: string): boolean {
   return GARMENT_NAMES.some((g) => new RegExp(`\\b${escapeRegExp(g)}\\b`, "i").test(value));
 }
@@ -43,12 +90,15 @@ export function coerceClothing(raw: unknown): UserStatusState["clothing"] {
   if (raw == null || typeof raw !== "object") return {};
   const c = raw as Partial<UserStatusState["clothing"]>;
   const result: UserStatusState["clothing"] = {};
-  if (typeof c.upper === "string" && c.upper.length > 0) result.upper = c.upper;
-  if (typeof c.lower === "string" && c.lower.length > 0) result.lower = c.lower;
-  if (typeof c.footwear === "string" && c.footwear.length > 0) result.footwear = c.footwear;
-  if (typeof c.outerwear === "string" && c.outerwear.length > 0) result.outerwear = c.outerwear;
+  if (typeof c.upper === "string" && c.upper.length > 0) result.upper = normalizeStableClothingValue(c.upper);
+  if (typeof c.lower === "string" && c.lower.length > 0) result.lower = normalizeStableClothingValue(c.lower);
+  if (typeof c.footwear === "string" && c.footwear.length > 0) result.footwear = normalizeStableClothingValue(c.footwear);
+  if (typeof c.outerwear === "string" && c.outerwear.length > 0) result.outerwear = normalizeStableClothingValue(c.outerwear);
   if (Array.isArray(c.accessories)) {
-    const filtered = c.accessories.filter((a): a is string => typeof a === "string" && a.length > 0);
+    const filtered = c.accessories
+      .filter((a): a is string => typeof a === "string" && a.length > 0)
+      .map((a) => normalizeStableClothingValue(a))
+      .filter((a) => a !== "none" && !a.includes("Regular"));
     if (filtered.length > 0) result.accessories = filtered;
   }
   return result;
@@ -72,17 +122,18 @@ export function updateUserClothing(
 
   const youParts = youStatus.split(";").map((s) => s.trim()).filter(Boolean);
   const youClothingRaw = youParts[0] ?? "";
+  const normalizedYouClothing = normalizeStableClothingValue(youClothingRaw, clothing.upper);
   const hasConcreteGarmentInYouLine = GARMENT_NAMES.some((g) =>
-    new RegExp(`\\b${escapeRegExp(g)}\\b`, "i").test(youClothingRaw),
+    new RegExp(`\\b${escapeRegExp(g)}\\b`, "i").test(normalizedYouClothing),
   );
 
-  if (hasConcreteGarmentInYouLine && !/regular clothing/i.test(youClothingRaw)) {
+  if (hasConcreteGarmentInYouLine && !/regular clothing/i.test(normalizedYouClothing)) {
     const prevUpper = clothing.upper ?? "";
     const prevMatchesPrev = GARMENT_NAMES.some((g) =>
       new RegExp(`\\b${escapeRegExp(g)}\\b`, "i").test(prevUpper),
     );
-    if (!prevMatchesPrev || !sameText(youClothingRaw, prevUpper)) {
-      clothing.upper = youClothingRaw;
+    if (!prevMatchesPrev || !sameText(normalizedYouClothing, prevUpper)) {
+      clothing.upper = normalizedYouClothing;
     }
   }
 
@@ -145,16 +196,23 @@ export function updateUserClothing(
         if (slot != null && slot !== "accessories") {
           const newDesc = extractNewGarmentDesc(narrativeContext, garment);
           if (newDesc != null) {
-            if (slot === "upper") clothing.upper = newDesc;
-            else if (slot === "lower") clothing.lower = newDesc;
-            else if (slot === "outerwear") clothing.outerwear = newDesc;
-            else if (slot === "footwear") clothing.footwear = newDesc;
+            const stableDesc = normalizeStableClothingValue(newDesc, clothing[slot]);
+            if (slot === "upper") clothing.upper = stableDesc;
+            else if (slot === "lower") clothing.lower = stableDesc;
+            else if (slot === "outerwear") clothing.outerwear = stableDesc;
+            else if (slot === "footwear") clothing.footwear = stableDesc;
           }
         } else if (slot === "accessories") {
+          if (isClothingActionPhrase(narrativeContext) && garment === "belt") {
+            continue;
+          }
           if (!clothing.accessories) clothing.accessories = [];
           const newAcc = extractNewGarmentDesc(narrativeContext, garment);
           if (newAcc != null && !clothing.accessories.includes(newAcc)) {
-            clothing.accessories.push(newAcc);
+            const stableAcc = normalizeStableClothingValue(newAcc);
+            if (!stableAcc.includes("Regular") && stableAcc !== "none") {
+              clothing.accessories.push(stableAcc);
+            }
           }
         }
       }

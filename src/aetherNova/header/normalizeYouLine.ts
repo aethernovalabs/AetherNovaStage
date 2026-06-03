@@ -5,6 +5,7 @@ import {containsAnyCue, escapeRegExp} from "../utils/regex";
 import {splitTopLevel} from "../utils/split";
 import {nonDialogueEvidenceContext} from "../utils/nonDialogue";
 import {defaultNpcStatusForRace} from "../state/defaultState";
+import {isClothingActionPhrase} from "../userStatus/clothingClassifier";
 import {
     POSITION_CHANGE_CUES, POSITION_SPATIAL_CUES, POSTURE_BODY_KEYWORDS,
     CLOTHING_CHANGE_CUES, CLOTHING_REMOVAL_CUES, CLOTHING_DAMAGE_CUES, CLOTHING_ADJUSTMENT_CUES,
@@ -672,9 +673,15 @@ export function normalizeStatus(
             || (options.sceneChanged === true && rawParts[1] != null && !isGenericStatusPart(rawPosition))
             ? rawPosition
             : fallbackPosition);
-    const clothing = options.trustRawStatus === true
-        ? rawClothing
-        : (statusChangeIsSupported(rawClothing, fallbackClothing, clothingContext, "clothing", kind) ? rawClothing : fallbackClothing);
+    let clothing: string;
+    if (options.trustRawStatus === true) {
+      clothing = rawClothing;
+    } else {
+      const settledClothing = isClothingActionPhrase(rawClothing) && !containsAnyCue(clothingContext.toLowerCase(), ["pulling on", "putting on", "dressing", "buttoning", "fastening"])
+        ? "Regular clothing"
+        : rawClothing;
+      clothing = statusChangeIsSupported(settledClothing, fallbackClothing, clothingContext, "clothing", kind) ? settledClothing : fallbackClothing;
+    }
     const fallbackDetail = normalizeDetail(fallbackParts[2] ?? defaultParts[2], defaultParts[2], kind);
     const rawDetail = normalizeDetail(rawParts[2] ?? fallbackDetail, fallbackDetail, kind);
     const detail = rawDetail;

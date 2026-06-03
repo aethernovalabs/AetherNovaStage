@@ -15,21 +15,29 @@ function privateEventRelevanceScore(event: PrivateEventEntry, state: AetherNovaM
         return 0;
     }
 
-    let score = 0;
-    if (event.status === "imminent" || event.status === "overdue" || event.status === "risk_active") score += 80;
-    if (event.urgencyLabel === "imminent" || event.urgencyLabel === "overdue" || event.urgencyLabel === "risk_active") score += 80;
+    const isUrgent = event.status === "imminent" || event.status === "overdue" || event.status === "risk_active"
+        || event.urgencyLabel === "imminent" || event.urgencyLabel === "overdue" || event.urgencyLabel === "risk_active";
 
     const headerNpcNames = splitNpcNamesFromHeader(state.npc).map((name) => name.toLowerCase());
-    if (event.npcNames.some((name) => headerNpcNames.some((headerName) => headerName.includes(name.toLowerCase()) || name.toLowerCase().includes(headerName)))) {
-        score += 40;
+    const npcPresent = event.npcNames.some((name) =>
+        headerNpcNames.some((headerName) =>
+            headerName.includes(name.toLowerCase()) || name.toLowerCase().includes(headerName),
+        ),
+    );
+
+    const keywordMentioned = mentionsKeyword(userMessage, event.keywords);
+
+    if (!isUrgent && !npcPresent && !keywordMentioned) {
+        return 0;
     }
 
-    if (mentionsKeyword(userMessage, event.keywords)) {
-        score += 35;
-    }
+    let score = 0;
+    if (isUrgent) score += 80;
+    if (npcPresent) score += 60;
+    if (keywordMentioned) score += 50;
 
     if (event.location != null && tokenOverlap(state.location, event.location) >= 2) {
-        score += 30;
+        score += 10;
     }
 
     if (
@@ -37,11 +45,11 @@ function privateEventRelevanceScore(event: PrivateEventEntry, state: AetherNovaM
         || tokenOverlap(state.thread, event.context) >= 2
         || mentionsKeyword(state.thread, event.keywords)
     ) {
-        score += 30;
+        score += 10;
     }
 
-    if ((event.threatContext != null || event.consequence != null) && score > 0) {
-        score += 15;
+    if (event.threatContext != null || event.consequence != null) {
+        score += 10;
     }
 
     return score;
