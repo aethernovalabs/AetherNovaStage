@@ -342,7 +342,9 @@ function orderStatusParts(parts: string[]): string[] {
         .map((part, index) => ({part, index}))
         .filter(({part}) => statusPartLooksLikePosition(part) && !statusPartLooksLikeDetailOnly(part));
 
-    if (positionCandidates.length > 0) {
+    const declaredPosition = positionCandidates.find((candidate) => candidate.index === 0) ?? null;
+
+    if (declaredPosition == null && positionCandidates.length > 0) {
         positionCandidates.sort((a, b) => {
             const scoreA = positionSignalScore(a.part);
             const scoreB = positionSignalScore(b.part);
@@ -351,7 +353,7 @@ function orderStatusParts(parts: string[]): string[] {
         });
     }
 
-    const bestPosition = positionCandidates.length > 0 ? positionCandidates[0] : null;
+    const bestPosition = declaredPosition ?? (positionCandidates.length > 0 ? positionCandidates[0] : null);
     const position = bestPosition != null ? bestPosition.part : "";
     const remaining = nonClothing.filter((_p, i) => bestPosition == null || i !== bestPosition.index);
     const detailParts = remaining.filter((p) => !isPurePositionPart(p));

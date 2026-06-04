@@ -355,6 +355,7 @@ Frasa aksi berpakaian (seperti `pulling on trousers`, `putting my legs into my p
 - **Position-location guard:** Position yang membawa anchor lokasi fisik seperti `bed`, `bedside`, `canopy`, `mattress`, atau `sheets` ditolak jika lokasi resmi yang sudah dinormalisasi masih area berbeda seperti `Personal Study, Sofa`, kecuali ada perpindahan lokasi eksplisit. Ini mencegah `Hovering over Meridiane` diganti menjadi `Standing ... by the bed` saat location masih sofa/study.
 - **Guard body language vs position:** Jika teks mengandung keyword body/racial detail (`eye`, `hand`, `finger`, `hair`, `leg`, `thigh`, `chest`, `breast`, `lip`, `penis`, dll.) dan satu-satunya sinyal posisi berasal dari spatial preposition lemah (`over`, `beneath`, `under`, `above`, `below`, `inside`, `outside`, dll.), teks tersebut TIDAK dianggap sebagai position — tetap masuk ke detail. Mencegah body language seperti `fingers tightening fractionally over each other`, `eyes narrowed with something beneath the surface`, atau `tip of your penis lodged just inside her entrance` salah masuk ke slot position.
 - Appearance/body detail yang kebetulan memakai spatial cue (`pink hair tumbled over one shoulder`, `sheet pooling at her hips`) tetap masuk detail, bukan position.
+- Jika field status berisi posisi utama lalu detail body/contact setelah koma, Stage mempertahankan posisi utama pertama sebagai `Position` dan memindahkan fragmen body/contact berikutnya ke `body detail`. Contoh: `Hovering over Meridiane, holding her legs pinned on your shoulders` menjadi posisi `Hovering over Meridiane` dan detail `holding her legs pinned on your shoulders`; detail dengan cue kuat seperti `pinned` tidak boleh mengalahkan posisi utama.
 - Posisi generik seperti `"scene"` di-strip (menjadi fallback).
 - Bahasa dramatis di-strip dari posisi.
 
@@ -451,6 +452,7 @@ Cara kerja:
   - Pixie/Fey: `"Regular clothing; Standing nearby; wings still, faint glow visible"`
   - Human/default: `"Regular clothing; Standing nearby; posture attentive"`
 - Position NPC berubah lebih permisif daripada You (lebih banyak cue diterima).
+- Sama seperti `You`, jika field posisi NPC berisi posisi utama lalu detail body/contact setelah koma, Stage memilih posisi utama pertama sebagai `Position` dan menyimpan fragmen body/contact berikutnya ke `body/racial detail`. Ini mencegah detail seperti kaki/tangan/forearm yang punya cue `pinned` atau contact menghapus posisi utama seperti `Lying beneath you`.
 - Clothing NPC bisa berubah dengan `CLOTHING_ADJUSTMENT_CUES` (fix, adjust, straighten, fasten, smooth).
 - Existing NPC yang sebelumnya `Naked/Nude/Unclothed` memakai guard yang sama dengan `You`: clothing baru tidak diterima tanpa aksi berpakaian eksplisit. Deskripsi seperti robe yang `hiked`, `slipped`, atau `partially removed` tidak boleh membuat NPC tiba-tiba berpakaian jika state sebelumnya naked.
 
