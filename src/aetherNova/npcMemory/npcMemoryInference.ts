@@ -190,6 +190,23 @@ function hasExplicitRomanceContext(context: string): boolean {
     return EXPLICIT_ROMANCE_CONTEXT_PATTERN.test(context);
 }
 
+function hasEnemyRelationshipEvidence(context: string): boolean {
+    if (/\b(?:no hostility|not hostile|without hostility|not an enemy|not enemies)\b/i.test(context)) {
+        return false;
+    }
+
+    if (/\b(?:declares? (?:you|{{user}}) (?:an )?enemy|enemy declared|sworn enemy|betrayal|betrays? (?:you|{{user}})|orders? (?:your|{{user}}'s) capture|tries? to kill (?:you|{{user}})|attempts? to kill (?:you|{{user}})|orders? (?:you|{{user}}) executed?)\b/i.test(context)) {
+        return true;
+    }
+
+    const romanticOrJealousScene = hasExplicitRomanceContext(context)
+        || /\b(?:jealous|jealousy|possessive|suspicious|romantic tension|kiss(?:es|ed|ing)?|caress(?:es|ed|ing)?|embrace|bed|intimate)\b/i.test(context);
+    const attacksUser = /\battacks? (?:you|{{user}})\b/i.test(context);
+    const clearViolence = /\b(?:with (?:a )?(?:blade|sword|knife|weapon)|strike|strikes|struck|stab|stabs|stabbed|slash|slashes|slashed|shoots?|shot|blood|wound|wounds|wounded|capture|arrest|kill|execute|harm|hurt)\b/i.test(context);
+
+    return attacksUser && clearViolence && !romanticOrJealousScene;
+}
+
 function isMoodOnlyTrait(label: string): boolean {
     return MOOD_ONLY_TRAITS.has(label);
 }
@@ -842,7 +859,7 @@ export function inferNpcRelationshipUpdate(
     };
 
     if (/\b(?:my name is|call me|i am called|i'm called|my name's)\b/i.test(searchable) && labels.includes("stranger")) {
-        addEvent(["acquaintance", "formal"], `${headerEntry.firstName} learned {{user}}'s name or basic identity.`);
+        labels = applyRelationshipLabels(labels, ["acquaintance", "formal"]);
     }
 
     if (/\b(?:alliance formed|formed an alliance|temporary alliance|work together|working together|cooperate|cooperation|join forces|same goal|contract signed|accepted the contract)\b/i.test(searchable)) {
@@ -868,7 +885,7 @@ export function inferNpcRelationshipUpdate(
         addEvent(["subordinate"], `${headerEntry.firstName} entered a clear subordinate structure under {{user}}.`);
     }
 
-    if (/\b(?:declares? (?:you|{{user}}) (?:an )?enemy|enemy declared|betrays?|betrayal|attacks? (?:you|{{user}})|orders? (?:your|{{user}}'s) capture|tries? to kill (?:you|{{user}})|sworn enemy)\b/i.test(searchable)) {
+    if (hasEnemyRelationshipEvidence(searchable)) {
         addEvent(["enemy"], `${headerEntry.firstName} entered open hostility with {{user}}.`);
     }
 
@@ -886,6 +903,8 @@ export function inferNpcRelationshipUpdate(
 
 const HIGH_VALUE_FACT_CUES = [
     /\b(?:his name|her name|my name|their name|true name|real name)\b/i,
+    /\{\{user\}\}'?s\s+name(?!\w)|\buser'?s\s+name\b/i,
+    /\bname\s+used\s+by\s+\{\{user\}\}(?!\w)/i,
     /\b(?:memory loss|amnesia|forget|forgotten|lost memories|kehilangan ingatan)\b/i,
     /\b(?:secret|secretly|confess|confessed|confession|admit|admitted|reveal|revealed|disclose|disclosed)\b/i,
     /\b(?:hidden\s+(?:plan|relic|treasure|weapon|passage|identity))|true\s+identity|real\s+identity\b/i,
@@ -979,7 +998,7 @@ export function hasOverhearEvidence(npcName: string, context: string): boolean {
     const firstSource = npcNameRegexSource(firstName);
 
     const overhearCues = [
-        new RegExp(`\\b(?:${nameSource}|${firstSource})\\s+(?:overheard|heard|could\\s+hear|listened|caught\\s+(?:every\\s+)?word|was\\s+close\\s+enough\\s+to\\s+hear)\\b`, "i"),
+        new RegExp(`\\b(?:${nameSource}|${firstSource})\\s+(?:overheard|heard|hears|could\\s+hear|listened|caught\\s+(?:every\\s+)?word|was\\s+close\\s+enough\\s+to\\s+hear)\\b`, "i"),
         /\b(?:everyone\s+present\s+(?:heard|knew)|both\s+\w+\s+and\s+\w+\s+heard)\b/i,
         /\b(?:in\s+(?:front\s+of|earshot\s+of))\s+(?:everyone|all|the\s+group)/i,
         new RegExp(`\\b(?:${nameSource}|${firstSource})\\s+(?:was|were|stood|remained|stayed)\\s+(?:nearby|close|behind|in\s+the\s+room)\\b`, "i"),
@@ -1007,7 +1026,7 @@ export function inferNpcOnlyKnows(headerEntry: NpcHeaderMemoryEntry, context: st
         const nameTold = /\b(?:my name is|call me|i am called|i'm called|my name's)\b/i.test(context)
             && npcMentionedInText(headerEntry.name, context);
         if (nameTold) {
-            const filtered = filterOnlyKnowsFact(`${firstName} learned {{user}}'s name`);
+            const filtered = filterOnlyKnowsFact(`${firstName} learned the name used by {{user}}`);
             if (filtered != null) {
                 facts.push(filtered);
             }
@@ -1054,7 +1073,7 @@ export function inferNpcOnlyKnows(headerEntry: NpcHeaderMemoryEntry, context: st
 
     // {{user}} told NPC their name
     if (/\b(?:my name is|call me|i am called|i'm called|my name's)\b/i.test(context) && npcMentionedInText(headerEntry.name, context)) {
-        const filtered = filterOnlyKnowsFact(`${firstName} learned {{user}}'s name`);
+        const filtered = filterOnlyKnowsFact(`${firstName} learned the name used by {{user}}`);
         if (filtered != null) {
             facts.push(filtered);
         }

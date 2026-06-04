@@ -453,6 +453,46 @@ export function normalizeDetail(value: string, fallback: string, kind: "you" | "
     return cleanFragment(clean) || safeFallback;
 }
 
+function isPersistentYouPostureDetail(value: string): boolean {
+    return /\b(?:lean|leans|leaning|leaned|recline|reclines|reclining|reclined)\s+(?:back|backward|backwards|against|into|toward|towards|forward|forwards)\b/i.test(value)
+        || /\b(?:head tilted|tilted head|shoulders? relaxed|back against|body angled)\b/i.test(value);
+}
+
+function contextContradictsPersistentPostureDetail(context: string): boolean {
+    return /\b(?:straighten|straightens|straightened|sits? upright|sat upright|stands? up|stood up|rises?|rose|leans? forward|leaned forward|pulls? away|pulled away)\b/i.test(context);
+}
+
+function mergePersistentYouPostureDetail(
+    rawDetail: string,
+    fallbackDetail: string,
+    position: string,
+    fallbackPosition: string,
+    context: string,
+    sceneChanged: boolean,
+): string {
+    if (
+        sceneChanged
+        || contextContradictsPersistentPostureDetail(context)
+        || !sameText(position, fallbackPosition)
+    ) {
+        return rawDetail;
+    }
+
+    const rawParts = splitTopLevel(rawDetail, ",").map(cleanFragment).filter(Boolean);
+    const fallbackPostureParts = splitTopLevel(fallbackDetail, ",")
+        .map(cleanFragment)
+        .filter((part) => isPersistentYouPostureDetail(part));
+    const merged = [...rawParts];
+
+    for (const part of fallbackPostureParts) {
+        if (!merged.some((existing) => sameText(existing, part))) {
+            merged.unshift(part);
+        }
+    }
+
+    return merged.length > 0 ? merged.join(", ") : rawDetail;
+}
+
 function contextHasEvidence(context: string, field: "position" | "clothing"): boolean {
     const lowerContext = context.toLowerCase();
 
@@ -703,7 +743,9 @@ export function normalizeStatus(
     }
     const fallbackDetail = normalizeDetail(fallbackParts[2] ?? defaultParts[2], defaultParts[2], kind);
     const rawDetail = normalizeDetail(rawParts[2] ?? fallbackDetail, fallbackDetail, kind);
-    const detail = rawDetail;
+    const detail = kind === "you"
+        ? mergePersistentYouPostureDetail(rawDetail, fallbackDetail, position, fallbackPosition, context, options.sceneChanged === true)
+        : rawDetail;
 
     return `${clothing}; ${position}; ${detail}`;
 }

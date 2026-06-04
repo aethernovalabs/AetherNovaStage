@@ -873,8 +873,10 @@ interface NpcMemoryEntry {
      - Tidak ada rebuild mentah dari score — label yang sudah aktif tidak flicker.
      - Hanya trait dari `STABLE_BEHAVIOR_CANDIDATES` yang bisa masuk behaviorTowardUser.
      - Mood-only traits (`sad`, `happy`, `angry`, `shy`, `proud`, `wise`, dll) tidak masuk behaviorTowardUser.
-  - **Relationship With {{user}}**: Array label konservatif (`stranger`, `acquaintance`, `formal`, `ally`, `friend`, `enemy`, `rival`, `subordinate`, `lover`, `romantic tension`). Hanya berubah lewat event besar.
+  - **Relationship With {{user}}**: Array label konservatif (`stranger`, `acquaintance`, `formal`, `ally`, `friend`, `enemy`, `rival`, `subordinate`, `lover`, `romantic tension`). Hanya berubah lewat event besar atau disclosure dasar yang aman seperti memberi nama untuk mengubah `stranger` menjadi `acquaintance/formal` tanpa menulis relationship event besar.
   - **Relationship Events**: Event penting saja, maksimal 10, misalnya confession accepted, alliance formed, betrayal, oath sworn, formal employment.
+    - Pemberitahuan nama user **bukan** relationship event. Jika NPC mendengar nama user, simpan sebagai `OnlyKnows` spesifik seperti `Meridiane learned the name used by {{user}}`, tanpa frasa luas seperti `basic identity`.
+    - `enemy/open hostility` hanya dibuat dari bukti konflik eksplisit: declared enemy, betrayal jelas, order capture/execute, attempt to kill, atau attack fisik dengan cue kekerasan/weapon. Cemburu, suspicious, kecanggungan romantis, atau possessive mood tidak cukup untuk membuat event hostility.
     - **OnlyKnows**: Extract fakta dari konteks sekitar nama NPC. Hanya fakta **high-value/private** yang disimpan. Fakta yang ditolak:
       - Obrolan biasa, rencana umum scene (`we need to`, `we should`, `let's go`, dll.)
       - Rencana pertemuan/route (`meet your mother`, `go to the palace`)
@@ -889,7 +891,7 @@ interface NpcMemoryEntry {
       - **Ordinary instruction ditolak**: `gather co-conspirators`, `meet your mother`, `tactical command` tidak masuk OnlyKnows.
     - **Field-Scoped Manual Edit (non-destructive)**: Debug UI save menggunakan patch/merge, bukan full replace:
       - Editing `OnlyKnows` hanya mengubah `onlyKnows`.
-      - Editing `Relationship Events` hanya mengubah `relationshipEvents`.
+      - Editing `Relationship Events` hanya mengubah `relationshipEvents` dan bersifat replace/clear untuk field itu. Menghapus isi textarea Relationship Events akan mengosongkan list event, bukan mempertahankan event lama. Command manual `npc memory relation event` tetap append event baru.
       - Editing `Current Mood`, `Role/Title`, `Race`, `Physical Extra`, `Relationship` hanya mengubah field tersebut.
       - `behaviorScores` di-preserve kecuali diedit secara eksplisit.
       - `behaviorTowardUser` dan `behaviorScores` memiliki sinkronisasi terbatas: menambah manual behavior bisa set score minimum >= 3; menghapus behavior bisa menurunkan hanya label tersebut; score tidak terkait di-preserve.
@@ -1000,7 +1002,7 @@ Command dideteksi dengan regex `NPC_MEMORY_COMMAND_PATTERN` di mana pun dalam pe
 - `npc memory relationship: Name | relationship=ally, suspicious` → set relationship list.
 - `npc memory relation event: Name | event=Yume accepted {{user}}'s confession and said she loved him too.` → tambah relationship event.
 - `npc memory show: Name` → tampilkan data sebagai system message.
-- `npc memory set: Name | role=... | race=... | physical=... | mood=... | behavior=... | behaviorScores=protective:5 | relationship=... | event=... | onlyKnows=... | fact=...` → set lengkap. Field `fact` append ke OnlyKnows; `onlyKnows` replace.
+- `npc memory set: Name | role=... | race=... | physical=... | mood=... | behavior=... | behaviorScores=protective:5 | relationship=... | event=... | onlyKnows=... | fact=...` → set lengkap. Field `event` replace Relationship Events (termasuk `event=` kosong untuk clear), `fact` append ke OnlyKnows, dan `onlyKnows` replace.
 
 Command di-reapply setelah `afterResponse` agar efeknya persist meskipun AI mengubah header.
 

@@ -62,6 +62,7 @@ function parseNpcMemoryCommandUpdates(segments: string[]): Partial<NpcMemoryComm
     const addFacts: string[] = [];
     const behaviorScoreDeltas: Record<string, number> = {};
     const relationshipEvents: string[] = [];
+    let relationshipEventsTouched = false;
 
     for (const segment of segments) {
         const scoreDelta = parseBehaviorScoreDelta(segment);
@@ -77,7 +78,15 @@ function parseNpcMemoryCommandUpdates(segments: string[]): Partial<NpcMemoryComm
 
         const key = match[1].toLowerCase().replace(/\s+/g, "");
         const value = cleanFragment(match[2]);
-        if (value.length === 0 && key !== "onlyknows" && key !== "knownfacts" && key !== "facts") {
+        if (
+            value.length === 0
+            && key !== "event"
+            && key !== "relationevent"
+            && key !== "relationshipevent"
+            && key !== "onlyknows"
+            && key !== "knownfacts"
+            && key !== "facts"
+        ) {
             continue;
         }
 
@@ -98,6 +107,7 @@ function parseNpcMemoryCommandUpdates(segments: string[]): Partial<NpcMemoryComm
         } else if (key === "physical" || key === "physicalextra") {
             updates.physicalExtra = cleanMemoryField(value, "none");
         } else if (key === "event" || key === "relationevent" || key === "relationshipevent") {
+            relationshipEventsTouched = true;
             relationshipEvents.push(...splitRelationshipEvents(value));
         } else if (key === "onlyknows" || key === "knownfacts" || key === "facts") {
             updates.onlyKnows = splitNpcMemoryFacts(value);
@@ -118,7 +128,7 @@ function parseNpcMemoryCommandUpdates(segments: string[]): Partial<NpcMemoryComm
     if (addFacts.length > 0) {
         updates.addFacts = addFacts;
     }
-    if (relationshipEvents.length > 0) {
+    if (relationshipEventsTouched) {
         updates.relationshipEvents = relationshipEvents;
     }
     if (Object.keys(behaviorScoreDeltas).length > 0) {
@@ -343,7 +353,9 @@ function applyNpcMemoryCommand(memory: NpcMemoryStore, command: NpcMemoryCommand
                 command.updates.behaviorScoreDeltas ?? {},
             ),
         relationshipWithUser: normalizeRelationshipList(command.updates.relationshipWithUser ?? previous?.relationshipWithUser),
-        relationshipEvents: mergeRelationshipEvents(previous?.relationshipEvents ?? [], command.updates.relationshipEvents ?? []),
+        relationshipEvents: command.updates.relationshipEvents != null
+            ? mergeRelationshipEvents([], command.updates.relationshipEvents)
+            : previous?.relationshipEvents ?? [],
         onlyKnows: command.updates.onlyKnows != null
             ? mergeKnownFacts([], command.updates.onlyKnows)
             : mergeKnownFacts(previous?.onlyKnows ?? [], command.updates.addFacts ?? []),
