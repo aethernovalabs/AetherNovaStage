@@ -43,6 +43,8 @@ export interface AetherNovaMessageState {
     terminalThreadGraceItems?: string[];
     manualEditOverrides?: {
       location?: string;
+      timeOfDay?: TimeOfDay;
+      clock?: string;
       you?: string;
       npc?: string;
       thread?: string;
@@ -165,6 +167,7 @@ export interface NarrativeFormatState {
 export interface NormalizeStatusOptions {
     sceneChanged?: boolean;
     trustRawStatus?: boolean;
+    currentLocation?: string;
 }
 
 export interface NpcHeaderMemoryEntry {

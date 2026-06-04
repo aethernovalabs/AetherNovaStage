@@ -8,6 +8,9 @@ import {
     createDefaultState,
     createInitialHeaderState,
     debugNpcQuery,
+    extractHeader,
+    cleanFragment,
+    cleanLabeledValue,
     normalizeAetherNovaResponse,
     prepareAetherNovaStateForPrompt,
     synchronizeLockedThreadItems,
@@ -41,6 +44,43 @@ type ConfigType = {
 };
 type InitStateType = Record<string, never>;
 type ChatStateType = Record<string, never>;
+
+const RAW_TIME_OF_DAY_PATTERN = /\b(Morning|Midday|Afternoon|Evening|Night)\b/i;
+const RAW_CLOCK_PATTERN = /\b([01]?\d|2[0-3]):([0-5]\d)\b/;
+
+function rawHeaderValue(rawLine: string | null, label: string): string | null {
+    if (rawLine == null) {
+        return null;
+    }
+
+    const value = cleanLabeledValue(rawLine, label);
+    return cleanFragment(value).length > 0 ? value : null;
+}
+
+function rawLocationTime(rawLine: string | null): {location: string; timeOfDay: string; clock: string; display: string} | null {
+    if (rawLine == null) {
+        return null;
+    }
+
+    const clean = cleanLabeledValue(rawLine, "Location").replace(/^(?:time)\s*:\s*/i, "");
+    const segments = clean.split("|").map(cleanFragment).filter(Boolean);
+    const clockMatch = clean.match(RAW_CLOCK_PATTERN);
+    const timeMatch = clean.match(RAW_TIME_OF_DAY_PATTERN);
+    const location = segments.find((segment) => !RAW_CLOCK_PATTERN.test(segment) && !RAW_TIME_OF_DAY_PATTERN.test(segment)) ?? "";
+    const clock = clockMatch == null ? "" : `${String(Number(clockMatch[1])).padStart(2, "0")}:${clockMatch[2]}`;
+    const timeOfDay = timeMatch == null ? "" : timeMatch[1].toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
+
+    if (location.length === 0 && timeOfDay.length === 0 && clock.length === 0) {
+        return null;
+    }
+
+    return {
+        location,
+        timeOfDay,
+        clock,
+        display: `${location || "Unknown"} | ${timeOfDay || "Unknown"} | ${clock || "Unknown"}`,
+    };
+}
 
 export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateType, ConfigType> {
 
@@ -165,6 +205,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         const previousState = this.state;
         const previousNpcMemory = this.state.npcMemory;
         const previousNpcMemoryCount = countNpcMemory(this.state);
+        const rawHeader = extractHeader(botMessage.content);
         const storedDebugQuery = this.state.pendingNpcDebugQuery ?? readPendingDebugQuery();
         if (storedDebugQuery != null) {
             this.state = {
@@ -242,6 +283,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             this.state.wallet,
             walletChangeDetails(previousState.wallet, this.state.wallet),
         );
+        this.pushRawHeaderCorrectionLogs(rawHeader);
         if (this.lastModifiedMessageChanged) {
             this.pushDebugEvent(
                 "narrative",
@@ -301,6 +343,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 
     private applyStateEdit(patch: Partial<AetherNovaMessageState & {userStatusPatch?: Partial<UserStatusState>}>): DebugSnapshot {
         const {userStatusPatch, ...statePatch} = patch;
+        const previousState = this.state;
         const nextThread = statePatch.thread ?? this.state.thread;
         const lockedWaitingThreads = statePatch.thread != null
             ? waitingThreadItemsFromThread(statePatch.thread)
@@ -322,6 +365,8 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             manualEditOverrides: {
                 ...(this.state.manualEditOverrides ?? {}),
                 ...(statePatch.location != null ? {location: statePatch.location} : {}),
+                ...(statePatch.timeOfDay != null ? {timeOfDay: statePatch.timeOfDay} : {}),
+                ...(statePatch.clock != null ? {clock: statePatch.clock} : {}),
                 ...(statePatch.you != null ? {you: statePatch.you} : {}),
                 ...(statePatch.npc != null ? {npc: statePatch.npc} : {}),
                 ...(statePatch.thread != null ? {thread: statePatch.thread} : {}),
@@ -332,6 +377,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                 : this.state.userStatus,
         };
         this.pushDebugEvent("lifecycle", "uiEdit", `Manual edit applied: ${Object.keys(patch).join(", ")}`);
+        this.pushUiEditChangeLogs(previousState);
         return this.createDebugSnapshot();
     }
 
@@ -386,6 +432,165 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         };
     }
 
+    private pushRawHeaderCorrectionLogs(rawHeader: ReturnType<typeof extractHeader>): void {
+        const rawTimeLocation = rawLocationTime(rawHeader.locationLine);
+        if (rawTimeLocation != null) {
+            if (rawTimeLocation.location.length > 0) {
+                this.pushCorrectionEvent(
+                    "location",
+                    "Location",
+                    rawTimeLocation.location,
+                    this.state.location,
+                    locationChangeDetails(rawTimeLocation.location, this.state.location),
+                );
+            }
+            if (rawTimeLocation.timeOfDay.length > 0 || rawTimeLocation.clock.length > 0) {
+                this.pushCorrectionEvent(
+                    "time",
+                    "Time",
+                    `${rawTimeLocation.timeOfDay || "Unknown"} | ${rawTimeLocation.clock || "Unknown"}`,
+                    `${this.state.timeOfDay} | ${this.state.clock}`,
+                    timeChangeDetails(rawTimeLocation.timeOfDay, rawTimeLocation.clock, this.state.timeOfDay, this.state.clock),
+                );
+            }
+        }
+
+        const rawYou = rawHeaderValue(rawHeader.youLine, "You");
+        if (rawYou != null) {
+            this.pushCorrectionEvent(
+                "youLine",
+                "You",
+                rawYou,
+                this.state.you,
+                youLineChangeDetails(rawYou, this.state.you),
+            );
+        }
+
+        const rawNpc = rawHeaderValue(rawHeader.npcLine, "NPC");
+        if (rawNpc != null) {
+            this.pushCorrectionEvent(
+                "npcLine",
+                "NPC",
+                rawNpc,
+                this.state.npc,
+                npcLineChangeDetails(rawNpc, this.state.npc),
+            );
+        }
+
+        const rawThread = rawHeaderValue(rawHeader.threadLine, "Thread");
+        if (rawThread != null) {
+            this.pushCorrectionEvent(
+                "threadLine",
+                "Thread",
+                rawThread,
+                this.state.thread,
+                threadLineChangeDetails(rawThread, this.state.thread),
+            );
+        }
+
+        const rawWallet = rawHeaderValue(rawHeader.walletLine, "Wallet");
+        if (rawWallet != null) {
+            this.pushCorrectionEvent(
+                "walletLine",
+                "Wallet",
+                rawWallet,
+                this.state.wallet,
+                walletChangeDetails(rawWallet, this.state.wallet),
+            );
+        }
+    }
+
+    private pushUiEditChangeLogs(previousState: AetherNovaMessageState): void {
+        this.pushFieldChange(
+            "location",
+            "uiEdit",
+            "Location",
+            previousState.location,
+            this.state.location,
+            locationChangeDetails(previousState.location, this.state.location),
+        );
+        this.pushFieldChange(
+            "time",
+            "uiEdit",
+            "Time",
+            `${previousState.timeOfDay} | ${previousState.clock}`,
+            `${this.state.timeOfDay} | ${this.state.clock}`,
+            timeChangeDetails(previousState.timeOfDay, previousState.clock, this.state.timeOfDay, this.state.clock),
+        );
+        this.pushFieldChange(
+            "youLine",
+            "uiEdit",
+            "You",
+            previousState.you,
+            this.state.you,
+            youLineChangeDetails(previousState.you, this.state.you),
+        );
+        this.pushFieldChange(
+            "npcLine",
+            "uiEdit",
+            "NPC",
+            previousState.npc,
+            this.state.npc,
+            npcLineChangeDetails(previousState.npc, this.state.npc),
+        );
+        this.pushFieldChange(
+            "threadLine",
+            "uiEdit",
+            "Thread",
+            previousState.thread,
+            this.state.thread,
+            [
+                ...threadLineChangeDetails(previousState.thread, this.state.thread),
+                ...lockedThreadChangeDetails(previousState.lockedThreadItems, this.state.lockedThreadItems),
+            ],
+        );
+        this.pushFieldChange(
+            "walletLine",
+            "uiEdit",
+            "Wallet",
+            previousState.wallet,
+            this.state.wallet,
+            walletChangeDetails(previousState.wallet, this.state.wallet),
+        );
+
+        const statusDetails = userStatusChangeDetails(previousState.userStatus, this.state.userStatus);
+        if (statusDetails.length > 0) {
+            this.pushDebugEvent("youLine", "uiEdit", "Status User changed", statusDetails);
+        }
+
+        if (JSON.stringify(previousState.privateEvents ?? []) !== JSON.stringify(this.state.privateEvents ?? [])) {
+            this.pushDebugEvent(
+                "privateEvents",
+                "uiEdit",
+                `Private events ${(previousState.privateEvents ?? []).length} -> ${(this.state.privateEvents ?? []).length}`,
+                privateEventChangeDetails(previousState.privateEvents, this.state.privateEvents),
+            );
+        }
+    }
+
+    private pushCorrectionEvent(
+        category: DebugCategory,
+        fieldName: string,
+        rawValue: string,
+        normalizedValue: string,
+        details: string[],
+    ): void {
+        if (cleanFragment(rawValue) === cleanFragment(normalizedValue)) {
+            return;
+        }
+
+        this.pushDebugEvent(
+            category,
+            "afterResponse",
+            `${fieldName} corrected`,
+            [
+                `LLM raw: ${rawValue}`,
+                `Stage normalized: ${normalizedValue}`,
+                ...details,
+            ],
+        );
+    }
+
     private pushDebugEvent(category: DebugCategory, label: string, detail: string, details?: string[]): void {
         this.debugEventId += 1;
         this.debugEvents = [
@@ -436,7 +641,12 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             this.lastSystemMessage = result.systemMessage;
         }
         if (JSON.stringify(previousNpcMemory ?? {}) !== JSON.stringify(this.state.npcMemory ?? {})) {
-            this.pushDebugEvent("npcMemory", "uiMemory", result.systemMessage ?? "NPC memory changed.", [`Command: ${command}`]);
+            this.pushDebugEvent(
+                "npcMemory",
+                "uiMemory",
+                result.systemMessage ?? "NPC memory changed.",
+                [`Command: ${command}`, ...npcMemoryChangeDetails(previousNpcMemory, this.state.npcMemory)],
+            );
         }
         return this.createDebugSnapshot();
     }

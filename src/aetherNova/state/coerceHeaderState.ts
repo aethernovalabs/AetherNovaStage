@@ -4,7 +4,7 @@ import {DEFAULT_STATE} from "../constants";
 import {cleanFragment} from "../utils/text";
 import {createDefaultState} from "./defaultState";
 import {normalizeLocation} from "../header/normalizeLocation";
-import {normalizeClock, timeOfDayForClock} from "../header/normalizeClock";
+import {asTimeOfDay, normalizeClock, timeOfDayForClock} from "../header/normalizeClock";
 import {normalizeYouLine} from "../header/normalizeYouLine";
 import {normalizeNpcLine} from "../header/normalizeNpcLine";
 import {normalizeThreadLine} from "../thread/normalizeThreadLine";
@@ -44,6 +44,13 @@ export function coerceHeaderState(
     const lockedThreadItems = normalizeLockedThreadItems(raw.lockedThreadItems);
     const terminalGrace = normalizeTerminalGraceItems(raw.terminalThreadGraceItems);
     const manualEditOverrides = normalizeManualEditOverrides(raw.manualEditOverrides);
+    const locationWasManuallyEdited = manualEditOverrides?.location != null
+        && typeof raw.location === "string"
+        && cleanFragment(raw.location) === cleanFragment(manualEditOverrides.location);
+    const rawTimeOfDay = typeof raw.timeOfDay === "string" ? asTimeOfDay(raw.timeOfDay) : null;
+    const timeOfDayWasManuallyEdited = manualEditOverrides?.timeOfDay != null
+        && rawTimeOfDay != null
+        && rawTimeOfDay === manualEditOverrides.timeOfDay;
     const threadWasManuallyEdited = manualEditOverrides?.thread != null
         && typeof raw.thread === "string"
         && cleanFragment(raw.thread) === cleanFragment(manualEditOverrides.thread);
@@ -73,8 +80,8 @@ export function coerceHeaderState(
         );
 
     return {
-        location: normalizeLocation(raw.location ?? "", fallback.location),
-        timeOfDay: timeOfDayForClock(clock),
+        location: locationWasManuallyEdited ? cleanFragment(raw.location ?? fallback.location) : normalizeLocation(raw.location ?? "", fallback.location),
+        timeOfDay: timeOfDayWasManuallyEdited ? rawTimeOfDay : timeOfDayForClock(clock),
         clock,
         you: youLine,
         npc,

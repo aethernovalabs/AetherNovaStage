@@ -220,6 +220,9 @@ Cara kerja:
 - Jika AI menulis `Afternoon | 13:12`, stage paksa jadi `Midday | 13:12`.
 - Jika AI menulis `Evening | 23:10`, stage paksa jadi `Night | 23:10`.
 - Jika tidak ada clock dalam response, stage pakai clock dari state sebelumnya.
+- **Clock jump guard:** Jam dari LLM hanya diterima jika sama, maju kecil (maks 20 menit), atau ada time passage cue yang jelas. Loncatan besar seperti `20:07 -> 23:42` ditolak tanpa evidence.
+- Cue samar (`later`, `eventually`, `meanwhile`) hanya boleh mendukung loncatan terbatas (maks 60 menit). Loncatan > 60 menit perlu cue kuat seperti `two hours later`, `hours passed`, `time skip`, tidur/bangun, `next morning`, `midnight`, `dawn`, dll.
+- Jika clock kandidat ditolak, `timeOfDay` juga dipertahankan dari state sebelumnya. Ini menjaga edit manual seperti `Night | 20:07` tidak dikoreksi ulang menjadi `Evening | 20:07` hanya karena clock dipertahankan.
 
 ---
 
@@ -349,6 +352,7 @@ Frasa aksi berpakaian (seperti `pulling on trousers`, `putting my legs into my p
 - Posisi berbaring miring / side-lying dikenali lewat cue `lying sideways`, `on side`, `berbaring`, `miring`, `kasur`, `ranjang`, dll.
 - Posisi grappling/dominance saat combat dikenali lewat cue `pinned`, `holding down`, `straddling`, `mounted`, `menahan`, `menindih`, `di atas musuh`, dll.
 - Posisi dengan spatial relation (`left of`, `beside`, `before`, `behind`, `facing`, `on top of`, `beneath`) butuh evidence di narasi.
+- **Position-location guard:** Position yang membawa anchor lokasi fisik seperti `bed`, `bedside`, `canopy`, `mattress`, atau `sheets` ditolak jika lokasi resmi yang sudah dinormalisasi masih area berbeda seperti `Personal Study, Sofa`, kecuali ada perpindahan lokasi eksplisit. Ini mencegah `Hovering over Meridiane` diganti menjadi `Standing ... by the bed` saat location masih sofa/study.
 - **Guard body language vs position:** Jika teks mengandung keyword body/racial detail (`eye`, `hand`, `finger`, `hair`, dll) dan satu-satunya sinyal posisi berasal dari spatial preposition lemah (`over`, `beneath`, `under`, `above`, `below`), teks tersebut TIDAK dianggap sebagai position — tetap masuk ke detail. Mencegah body language seperti `fingers tightening fractionally over each other` atau `eyes narrowed with something beneath the surface` salah masuk ke slot position.
 - Appearance/body detail yang kebetulan memakai spatial cue (`pink hair tumbled over one shoulder`, `sheet pooling at her hips`) tetap masuk detail, bukan position.
 - Posisi generik seperti `"scene"` di-strip (menjadi fallback).
@@ -888,7 +892,7 @@ interface NpcMemoryEntry {
   - **Relationship With {{user}}**: Array label konservatif (`stranger`, `acquaintance`, `formal`, `ally`, `friend`, `enemy`, `rival`, `subordinate`, `lover`, `romantic tension`). Hanya berubah lewat event besar atau disclosure dasar yang aman seperti memberi nama untuk mengubah `stranger` menjadi `acquaintance/formal` tanpa menulis relationship event besar.
   - **Relationship Events**: Event penting saja, maksimal 10, misalnya confession accepted, alliance formed, betrayal, oath sworn, formal employment.
     - Pemberitahuan nama user **bukan** relationship event. Jika NPC mendengar nama user, simpan sebagai `OnlyKnows` spesifik seperti `Meridiane learned the name used by {{user}}`, tanpa frasa luas seperti `basic identity`.
-    - `enemy/open hostility` hanya dibuat dari bukti konflik eksplisit: declared enemy, betrayal jelas, order capture/execute, attempt to kill, atau attack fisik dengan cue kekerasan/weapon. Cemburu, suspicious, kecanggungan romantis, atau possessive mood tidak cukup untuk membuat event hostility.
+    - `enemy/open hostility` hanya dibuat dari bukti konflik eksplisit yang menargetkan `{{user}}`: NPC menyatakan `you are my enemy`, menyebut user enemy, betrayal oleh/terhadap user, order capture/execute user, ancaman/attempt kill user, atau attack fisik terhadap user dengan cue kekerasan/weapon. Kata kasar, dialog marah, trauma/masa lalu, `betrayal` umum, cemburu, suspicious, kecanggungan romantis, atau possessive mood tidak cukup untuk membuat event hostility.
     - **OnlyKnows**: Extract fakta dari konteks sekitar nama NPC. Hanya fakta **high-value/private** yang disimpan. Fakta yang ditolak:
       - Obrolan biasa, rencana umum scene (`we need to`, `we should`, `let's go`, dll.)
       - Rencana pertemuan/route (`meet your mother`, `go to the palace`)
@@ -1048,12 +1052,12 @@ Debug UI (di `Stage.tsx` render) saat ini: **Aether Nova Stage UI V1.9**.
 Debug UI menampilkan:
 - Current state: Location, Time, You (compact), NPC, Thread, Wallet, Pending NPC Debug, Pending Memory Command.
 - **Minimize UI**: Header UI memiliki tombol **Minimize**. Saat ditekan, panel berubah menjadi mini bar ringkas di bagian atas frame dengan status `Idle/Modified`, versi UI, dan tombol **Open** untuk membuka kembali. Preferensi minimize disimpan di `localStorage` key `aether-nova-stage.debugUiMinimized`, sehingga mobile user tidak selalu tertutup panel debug besar.
-- **Edit Buttons**: Setiap field state utama (Location, You, NPC, Thread, Wallet, Status User) memiliki tombol **Edit**. Saat diklik, kartu edit melebar ke seluruh grid dan berubah menjadi form yang lebih nyaman. Field pendek memakai input, `timeOfDay` memakai select (`Morning/Midday/Afternoon/Evening/Night`), dan field panjang seperti `You`, `NPC`, dan `Thread` memakai textarea. User bisa mengubah value lalu **Save** (menerapkan edit ke state + mencatat di `manualEditOverrides`) atau **Cancel** (kembali ke tampilan baca).
+- **Edit Buttons**: Setiap field state utama (Location, You, NPC, Thread, Wallet, Status User) memiliki tombol **Edit**. Saat diklik, kartu edit melebar ke seluruh grid dan berubah menjadi form yang lebih nyaman. Field pendek memakai input, `timeOfDay` memakai select (`Morning/Midday/Afternoon/Evening/Night`), dan field panjang seperti `You`, `NPC`, dan `Thread` memakai textarea. User bisa mengubah value lalu **Save** (menerapkan edit ke state + mencatat di `manualEditOverrides`, termasuk `location`, `timeOfDay`, `clock`, `you`, `npc`, `thread`, dan `wallet`) atau **Cancel** (kembali ke tampilan baca).
 - **Thread Mission List**: Thread ditampilkan sebagai daftar misi per item ` ; `. Setiap item punya tombol gembok untuk menambah/menghapus lock manual di `lockedThreadItems[]`. Item terminal tidak bisa dikunci.
 - **Status User Editor**: Saat Edit Status User diklik, panel detail berubah menjadi form grid dengan input untuk Gender, Race, dan setiap slot pakaian (Upper, Lower, Footwear, Outerwear, Accessories). Weapons dan Important Items bisa diedit lewat textarea dengan format `name | location | status`; parser juga menerima pemisah `—` atau `-`.
 - **Private Events**: Panel langsung di bawah Status User menampilkan private appointment/deadline/threat event. Tombol **Add From Thread** membuka dropdown item Thread yang belum tertaut dan membuat draft event yang otomatis linked ke `parentThreadKey` thread terkait. Thread yang sudah punya private event tidak ditawarkan lagi. Setiap event punya tombol **Edit**, **Mark Complete**, **Mark Failed**, dan **Delete** dengan confirm dialog untuk aksi terminal/destructive.
 - **Confirm destructive actions**: Aksi yang menghapus/clear data UI meminta konfirmasi lebih dulu (`Clear Logs`, clear log per kategori, `Clear Facts`, dan `Delete` NPC memory) lewat dialog custom React di dalam Stage, bukan `window.confirm()`, agar tetap bekerja di webview/platform yang memblokir dialog browser native.
-- Manual edits yang dilakukan melalui UI disimpan di `manualEditOverrides` dan dipertahankan saat swipe/jump serta melalui normalisasi.
+- Manual edits yang dilakukan melalui UI disimpan di `manualEditOverrides` dan dipertahankan saat swipe/jump serta melalui normalisasi. Location manual yang match override dipercaya saat state di-coerce ulang, sehingga reload/swipe tidak menolak edit location karena tidak ada transition cue.
 - NPC Memory cards: semua NPC yang tersimpan dengan detail lengkap. Setiap kartu NPC punya tombol **Minimize/Expand** untuk menyembunyikan detail panjang; daftar kartu yang diminimize disimpan di `localStorage` key `aether-nova-stage.collapsedNpcCards`.
 - Stage Prompt Directions: isi `stageDirections` terbaru yang diinject ke prompt, ditampilkan di atas Debug Logs.
 - Debug Logs terpisah per kategori:
@@ -1068,6 +1072,10 @@ Debug UI menampilkan:
   - **Wallet Line Log**: perubahan wallet, termasuk gold/silver/copper dan total delta.
   - **Narrative Log**: perubahan format narasi saat response dimodifikasi.
   - **Lifecycle Log**: `init`, `load`, `setState`, `beforePrompt`, `afterResponse`, dan edit UI.
+- Log afterResponse sekarang memiliki dua basis:
+  - **State changed**: `Before -> After` dari state sebelumnya ke state akhir.
+  - **Corrected**: `LLM raw -> Stage normalized` jika LLM menulis header baru yang ditolak/dikoreksi stage. Event ini muncul walaupun state akhir sama dengan state sebelumnya, sehingga user bisa melihat kata/field apa yang stage koreksi dari output LLM terbaru.
+- Log `uiEdit` menulis diff field konkret untuk edit manual UI, bukan hanya `Manual edit applied`.
 - Last System Message: system message terakhir yang dikirim stage.
 - Latest User Message: pesan user terbaru (setelah command dihapus).
 
@@ -1100,8 +1108,9 @@ Stage menggunakan dua set cues untuk mendeteksi perpindahan scene:
 
 Location berubah jika:
 1. Ada cue transisi eksplisit dalam konteks.
-2. Atau kandidat location disebut + ada anchor cue (scene sudah pindah walau tanpa kata transisi eksplisit).
-3. Perubahan hanya di detailed area (main & sub location sama).
+2. Perubahan hanya di detailed area (main & sub location sama).
+3. Kandidat nearby/scene anchor hanya menjadi pendukung setelah transition cue valid; anchor saja tidak cukup.
+4. Manual location override dari UI dipercaya saat state di-coerce ulang.
 
 ---
 
@@ -1125,7 +1134,15 @@ Location berubah jika:
     lockedWaitingThreads?: string[];       // Thread items with waiting/rendezvous status, persisted until resolved
     lockedThreadItems?: string[];          // User-selected thread items kept until terminal status appears
     terminalThreadGraceItems?: string[];   // Terminal items (Complete/Finished/Failed) shown once, then removed next response
-    manualEditOverrides?: Record<string, string>;  // UI manual edit values, preserved across normalization
+    manualEditOverrides?: {
+      location?: string;
+      timeOfDay?: "Morning" | "Midday" | "Afternoon" | "Evening" | "Night";
+      clock?: string;
+      you?: string;
+      npc?: string;
+      thread?: string;
+      wallet?: string;
+    };  // UI manual edit values, preserved across normalization
 }
 ```
 

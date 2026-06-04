@@ -74,8 +74,9 @@ export function normalizeAetherNovaResponse(
         correctionContext,
         previousState.walletInitialized === true,
     );
-    const youLine = normalizeYouLine(extracted.youLine ?? "", previousState.you, correctionContext, {sceneChanged});
-    const npc = normalizeNpcLine(extracted.npcLine ?? "", previousState.npc, correctionContext, {sceneChanged});
+    const statusOptions = {sceneChanged, currentLocation: timeLocation.location};
+    const youLine = normalizeYouLine(extracted.youLine ?? "", previousState.you, correctionContext, statusOptions);
+    const npc = normalizeNpcLine(extracted.npcLine ?? "", previousState.npc, correctionContext, statusOptions);
     const thread = normalizeThreadLine(extracted.threadLine ?? "", previousState.thread, correctionContext, npc);
     const {updatedThread, updatedLockedThreads} = applyThreadWaitingLock(thread, previousState, correctionContext);
     const {updatedThread: lockedThread, updatedLockedThreadItems} = applyThreadItemLocks(

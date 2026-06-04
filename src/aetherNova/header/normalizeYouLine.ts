@@ -744,10 +744,11 @@ export function normalizeStatus(
     const inferredClothing = kind === "you" ? inferYouClothingFromContext(clothingContext) : null;
     const rawClothing = normalizeClothing(inferredClothing ?? rawParts[0] ?? fallbackClothing, fallbackClothing);
     const rawPosition = normalizePosition(rawParts[1] ?? fallbackPosition, fallbackPosition, kind);
+    const positionBlockedByLocation = positionContradictsCurrentLocation(rawPosition, options.currentLocation, context);
     const position = options.trustRawStatus === true
         ? rawPosition
-        : (statusChangeIsSupported(rawPosition, fallbackPosition, context, "position", kind)
-            || (options.sceneChanged === true && rawParts[1] != null && !isGenericStatusPart(rawPosition))
+        : (!positionBlockedByLocation && (statusChangeIsSupported(rawPosition, fallbackPosition, context, "position", kind)
+            || (options.sceneChanged === true && rawParts[1] != null && !isGenericStatusPart(rawPosition)))
             ? rawPosition
             : fallbackPosition);
     let clothing: string;
@@ -771,6 +772,28 @@ export function normalizeStatus(
 function contextSuggestsSceneShift(context: string): boolean {
     const lowerContext = context.toLowerCase();
     return containsAnyCue(lowerContext, LOCATION_TRANSITION_CUES);
+}
+
+function positionContradictsCurrentLocation(candidate: string, currentLocation: string | undefined, context: string): boolean {
+    const location = cleanFragment(currentLocation ?? "").toLowerCase();
+    if (location.length === 0 || location.includes("unknown")) {
+        return false;
+    }
+
+    const lowerContext = context.toLowerCase();
+    const negatesTransition = /\b(?:without|no one|nobody)\s+(?:leaving|leaves|entering|enters|moving|moves|walking|walks|stepping|steps)\b/i.test(lowerContext)
+        || /\b(?:does\s+not|doesn't|do\s+not|don't|did\s+not|didn't)\s+(?:leave|enter|move|walk|step)\b/i.test(lowerContext);
+
+    if (!negatesTransition && /\b(?:enter|enters|entered|walk|walks|walked|move|moves|moved|step|steps|stepped|lead|leads|led|follow|follows|followed)\s+(?:to|into|through|toward|towards|inside|across)\b/i.test(context)) {
+        return false;
+    }
+
+    const lowerCandidate = candidate.toLowerCase();
+    const candidateMentionsBedArea = /\b(?:bed|bedside|bedroom|canopy|mattress|sheet|sheets)\b/i.test(lowerCandidate);
+    const locationAllowsBedArea = /\b(?:bed|bedside|bedroom|chamber|suite|canopy|mattress)\b/i.test(location);
+    const locationIsDifferentSeatingArea = /\b(?:study|office|library|sofa|couch|armchair|chair)\b/i.test(location);
+
+    return candidateMentionsBedArea && !locationAllowsBedArea && locationIsDifferentSeatingArea;
 }
 
 function inferYouClothingFromContext(context: string): string | null {

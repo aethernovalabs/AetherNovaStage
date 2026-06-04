@@ -138,6 +138,56 @@ function looksLikeLocationTimeLine(value: string): boolean {
         && (CLOCK_PATTERN.test(value) || TIME_OF_DAYS.some((timeOfDay) => lower.includes(timeOfDay.toLowerCase())));
 }
 
+function clockMinutes(clock: string): number | null {
+    const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(clock);
+    if (match == null) {
+        return null;
+    }
+
+    return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function forwardClockDelta(previousClock: string, candidateClock: string): number | null {
+    const previous = clockMinutes(previousClock);
+    const candidate = clockMinutes(candidateClock);
+    if (previous == null || candidate == null) {
+        return null;
+    }
+
+    return (candidate - previous + 1440) % 1440;
+}
+
+function hasStrongTimePassage(context: string): boolean {
+    return /\b(?:time skip|hours? pass|day passes?|days pass|by the time|wait(?:s|ed|ing)? until|sleep|sleeps|slept|wake|wakes|woke|next morning|next day|midnight|dawn|dusk|sunrise|sunset)\b/i.test(context)
+        || /\b(?:after|for|within)\s+(?:one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:hour|hours|day|days)\b/i.test(context)
+        || /\b(?:one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:hour|hours|day|days)\s+(?:later|pass|passes|passed)\b/i.test(context);
+}
+
+function hasVagueTimePassage(context: string): boolean {
+    return /\b(?:time passes?|minutes? pass|later|meanwhile|afterward|afterwards|eventually)\b/i.test(context)
+        || /\b(?:after|for|within)\s+(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:minute|minutes|hour|hours|day|days)\b/i.test(context)
+        || /\b(?:one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:minute|minutes|hour|hours|day|days)\s+(?:later|pass|passes|passed)\b/i.test(context);
+}
+
+function normalizeClockForResponse(rawValue: string, previousClock: string, context: string): string {
+    const candidate = normalizeClock(rawValue, previousClock);
+
+    if (candidate === previousClock) {
+        return previousClock;
+    }
+
+    const delta = forwardClockDelta(previousClock, candidate);
+    if (delta == null) {
+        return previousClock;
+    }
+
+    if (delta > 0 && delta <= 20) {
+        return candidate;
+    }
+
+    return hasStrongTimePassage(context) || (delta <= 60 && hasVagueTimePassage(context)) ? candidate : previousClock;
+}
+
 export function normalizeLocation(rawLocation: string, previousLocation: string, context: string = ""): string {
     const clean = cleanHeaderText(rawLocation).replace(/^(?:location|time)\s*:\s*/i, "");
     const previous = previousLocation || DEFAULT_STATE.location;
@@ -186,12 +236,12 @@ export function normalizeLocationTimeLine(
     const clean = cleanHeaderText(rawLine).replace(/^(?:location|time)\s*:\s*/i, "");
     const segments = clean.split("|").map(cleanFragment).filter((segment) => segment.length > 0);
     const clockSource = segments.find((segment) => CLOCK_PATTERN.test(segment)) ?? clean;
-    const clock = normalizeClock(clockSource, previousState.clock);
+    const clock = normalizeClockForResponse(clockSource, previousState.clock, context);
     const locationSource = segments.find((segment) => !CLOCK_PATTERN.test(segment) && asTimeOfDay(segment) == null) ?? "";
 
     return {
         location: normalizeLocation(locationSource, previousState.location, context),
-        timeOfDay: timeOfDayForClock(clock),
+        timeOfDay: clock === previousState.clock ? previousState.timeOfDay : timeOfDayForClock(clock),
         clock,
     };
 }

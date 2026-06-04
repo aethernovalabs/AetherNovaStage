@@ -195,7 +195,17 @@ function hasEnemyRelationshipEvidence(context: string): boolean {
         return false;
     }
 
-    if (/\b(?:declares? (?:you|{{user}}) (?:an )?enemy|enemy declared|sworn enemy|betrayal|betrays? (?:you|{{user}})|orders? (?:your|{{user}}'s) capture|tries? to kill (?:you|{{user}})|attempts? to kill (?:you|{{user}})|orders? (?:you|{{user}}) executed?)\b/i.test(context)) {
+    const directEnemyDeclaration = /\b(?:declares? (?:you|{{user}}) (?:an? )?enemy|calls? (?:you|{{user}}) (?:an? )?enemy|(?:you|{{user}}) (?:are|is) (?:an? )?(?:enemy|sworn enemy)|enemy of mine)\b/i;
+    const userBetrayal = /\b(?:(?:you|{{user}}) betrayed|betrays? (?:you|{{user}})|betrayal by (?:you|{{user}})|(?:your|{{user}}'s) betrayal)\b/i;
+    const captureOrExecutionOrder = /\b(?:orders? (?:your|{{user}}'s) capture|orders? (?:you|{{user}}) (?:captured|arrested|executed)|sentences? (?:you|{{user}}) to death)\b/i;
+    const killThreat = /\b(?:tries? to kill (?:you|{{user}})|attempts? to kill (?:you|{{user}})|threatens? to kill (?:you|{{user}})|swears? to kill (?:you|{{user}})|will kill (?:you|{{user}}))\b/i;
+
+    if (
+        directEnemyDeclaration.test(context)
+        || userBetrayal.test(context)
+        || captureOrExecutionOrder.test(context)
+        || killThreat.test(context)
+    ) {
         return true;
     }
 
