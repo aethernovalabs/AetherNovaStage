@@ -213,6 +213,14 @@ function isDefaultClothingValue(value: string): boolean {
         || clean === "simple clothes";
 }
 
+function clothingValueMeansNaked(value: string): boolean {
+    return /\b(?:naked|nude|unclothed)\b/i.test(value);
+}
+
+function contextHasDressingAction(context: string): boolean {
+    return /\b(?:put(?:s|ting)? on|pull(?:s|ed|ing)? on|get(?:s|ting)? dressed|got dressed|dress(?:es|ed|ing)? in|change(?:s|d|ing)? into|slip(?:s|ped|ping)? into|wrap(?:s|ped|ping)? (?:himself|herself|yourself|themselves)?\s*(?:in|into|with)?|cover(?:s|ed|ing)? (?:himself|herself|yourself|their body|his body|her body)|mengenakan|memakai)\b/i.test(context);
+}
+
 function positionSignalScore(value: string): number {
     const lower = value.toLowerCase();
 
@@ -600,6 +608,11 @@ function youClothingChangeIsSupported(candidate: string, previous: string, conte
         return false;
     }
 
+    if (clothingValueMeansNaked(previous) && !clothingValueMeansNaked(candidate)) {
+        return contextHasDressingAction(context)
+            && (clothingIsMentioned(candidate, context) || isDefaultClothingValue(candidate));
+    }
+
     if (!isGenericStatusPart(previous) && isDefaultClothingValue(candidate)) {
         return contextMentionsCandidate(candidate, lowerContext);
     }
@@ -664,6 +677,11 @@ function statusChangeIsSupported(
         }
 
         return true;
+    }
+
+    if (field === "clothing" && clothingValueMeansNaked(previous) && !clothingValueMeansNaked(candidate)) {
+        return contextHasDressingAction(context)
+            && (clothingIsMentioned(candidate, context) || isDefaultClothingValue(candidate));
     }
 
     if (field === "clothing" && looksLikeClothingSlot(candidate) && clothingIsMentioned(candidate, context)) {

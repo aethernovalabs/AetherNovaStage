@@ -195,11 +195,11 @@ Cara kerja:
   - Sama persis dengan lokasi sebelumnya → diterima.
   - Lokasi sebelumnya default/unknown → diterima.
   - Main & Sub location sama (hanya detailed area berubah) → diterima.
-  - Ada **LOCATION_TRANSITION_CUES** dalam konteks: `move`, `travel`, `arrive`, `enter`, `leave`, `combat`, `teleport`, `time skip`, `scene transition`, `meanwhile`, `later`, `afterward`.
-  - Ada **LOCATION_SCENE_ANCHOR_CUES** dalam narasi yang cocok dengan lokasi kandidat: `inside`, `within`, `room`, `chamber`, `doorway`, `counter`, `table`, dll.
-  - Kandidat location disebut dalam narasi terbaru + ada anchor cue.
-  - Kandidat location pernah disebut di lokasi sebelumnya (nearby target).
-- Perubahan location tanpa cue di atas akan ditolak (kembali ke state sebelumnya).
+  - Main/Sub location berubah hanya jika ada perpindahan lokasi yang eksplisit: `arrived at/in`, `entered [room/study/chamber]`, `left [room/study/chamber]`, `moved/walked/stepped/led/followed/traveled to/into/through`, `teleport`, `time skip`, `scene transition`, `meanwhile`, `later`, `afterward`.
+  - Scene anchor (`room`, `chamber`, `doorway`, `table`, dll.) hanya menjadi evidence pendukung setelah ada transition cue, bukan alasan tunggal untuk pindah lokasi.
+  - Nearby target tidak boleh divalidasi dari owner/name token seperti `Meridiane's`, `Queen`, `Private`, atau `Personal`; harus ada overlap lokasi nyata seperti `study`, `courtyard`, `fountain`, `sofa`, dll.
+- Kalimat yang menegaskan tetap di lokasi lama (`scene stays/remains/still in`, `nobody leaves/enters/moves`, `does not leave/enter/move`) membatalkan transition cue.
+- Perubahan location tanpa cue di atas akan ditolak (kembali ke state sebelumnya). Furniture/detail seperti bed/sheets/canopy tidak boleh memindahkan lokasi dari study ke chamber tanpa aksi berpindah tempat.
 
 ---
 
@@ -283,6 +283,8 @@ interface UserStatusState {
 - Evidence dari dialog (dalam tanda kutip) diabaikan via `stripDoubleQuotedText()`.
 - Jika tidak ada evidence, stage pakai clothing dari state sebelumnya.
 - **Inferensi langsung dari konteks:** Stage bisa detect `"naked"`, `"shirtless"`, `"without armor"`, `"only pants"` langsung dari konteks non-dialog.
+- **Naked sticky guard:** Jika clothing sebelumnya `Naked/Nude/Unclothed`, stage tidak menerima pakaian baru seperti `Formal Court Attire` atau `Night-Robe` kecuali narasi non-dialog berisi aksi berpakaian eksplisit (`put on`, `pull on`, `get dressed`, `dress in`, `change into`, `slip into`, `wrap in`, `cover himself/herself`, `memakai`, `mengenakan`) dan garment kandidat memang disebut.
+- **Status User naked override:** Jika header `You` yang sudah dinormalisasi berisi `Naked`, `Status User.clothing.upper` dan `Status User.clothing.lower` dipaksa menjadi `Naked`. State lama seperti `Standard Clothes`/`Regular clothing` tidak boleh bertahan di slot lower saat user telanjang. Untuk `Naked except for ...`, exception garment ditempatkan ke slot yang sesuai jika bisa dikenali.
 
 ### Posture/Body Language Guard (Clothing Slot)
 
@@ -407,7 +409,10 @@ Sebutan noun saja (tanpa ownership anchor) tidak cukup untuk membuat item/weapon
 
 #### Anatomy False Positive Guard
 
-Body/anatomy phrase tidak boleh disalahartikan sebagai weapon. Contoh: `your right shoulder blade` adalah anatomi, bukan `blade` weapon; tracker mengabaikan mention `blade` dalam konteks `shoulder blade` dan membersihkan false-positive `blade @ shoulder` yang telanjur tercatat saat narasi terbaru masih memuat phrase anatomi itu.
+Body/anatomy phrase tidak boleh disalahartikan sebagai weapon atau important item.
+
+- Weapon: `your right shoulder blade` adalah anatomi, bukan `blade` weapon; tracker mengabaikan mention `blade` dalam konteks `shoulder blade` dan membersihkan false-positive `blade @ shoulder` yang telanjur tercatat saat narasi terbaru masih memuat phrase anatomi itu.
+- Important item: `crown` hanya valid jika benar-benar mahkota/item. Frasa anatomis/metaforis seperti `crown on the first inch of your veined flesh` ditolak; location dengan `first inch`, `inch`, `veined`, `flesh`, `skin`, `pulse`, dll. tidak valid dan false-positive yang telanjur tersimpan dibersihkan dari `importantItems`.
 
 ---
 
@@ -443,6 +448,7 @@ Cara kerja:
   - Human/default: `"Regular clothing; Standing nearby; posture attentive"`
 - Position NPC berubah lebih permisif daripada You (lebih banyak cue diterima).
 - Clothing NPC bisa berubah dengan `CLOTHING_ADJUSTMENT_CUES` (fix, adjust, straighten, fasten, smooth).
+- Existing NPC yang sebelumnya `Naked/Nude/Unclothed` memakai guard yang sama dengan `You`: clothing baru tidak diterima tanpa aksi berpakaian eksplisit. Deskripsi seperti robe yang `hiked`, `slipped`, atau `partially removed` tidak boleh membuat NPC tiba-tiba berpakaian jika state sebelumnya naked.
 
 ---
 

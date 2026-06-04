@@ -20,10 +20,11 @@ const LOCATION_RING_PATTERNS = [
 ];
 
 const LOCATION_CONTEXT_WORDS = /\b(?:passed\s+through|entered|arrived\s+at|moved\s+into|walked\s+into|through\s+the\s+archway|streets|district|avenue|architecture|marble|crowds|buildings|ring\s+of\s+the\s+city)\b/i;
+const ANATOMICAL_ITEM_FALSE_LOCATION = /\b(?:first\s+inch|inch|veined|flesh|skin|pulse|heartbeat|breath|groin|belly|abdomen|breasts?)\b/i;
 
 function isValidLocationValue(location: string): boolean {
   const clean = cleanFragment(location).toLowerCase();
-  return clean.length > 2 && !INVALID_LOCATION_VALUES.has(clean);
+  return clean.length > 2 && !INVALID_LOCATION_VALUES.has(clean) && !ANATOMICAL_ITEM_FALSE_LOCATION.test(clean);
 }
 
 function hasUserOwnership(context: string, itemName: string): boolean {
@@ -71,6 +72,33 @@ function isLocationPhraseItem(context: string, itemName: string): boolean {
     if (LOCATION_CONTEXT_WORDS.test(context) && new RegExp(`\\b${escapeRegExp(itemName)}\\b`, "i").test(context)) return true;
   }
   return false;
+}
+
+function isAnatomicalItemMention(context: string, item: string, matchIndex: number): boolean {
+  if (!sameText(item, "crown")) {
+    return false;
+  }
+
+  const window = context.slice(Math.max(0, matchIndex - 60), matchIndex + item.length + 80);
+  return ANATOMICAL_ITEM_FALSE_LOCATION.test(window);
+}
+
+function hasNonAnatomicalItemMention(context: string, item: string): boolean {
+  const re = new RegExp(`\\b${escapeRegExp(item)}\\b`, "gi");
+  let match = re.exec(context);
+
+  while (match != null) {
+    if (!isAnatomicalItemMention(context, item, match.index)) {
+      return true;
+    }
+    match = re.exec(context);
+  }
+
+  return false;
+}
+
+function isAnatomicalItemFalsePositive(entry: UserStatusState["importantItems"][number]): boolean {
+  return ANATOMICAL_ITEM_FALSE_LOCATION.test(entry.location);
 }
 
 function isAnatomicalWeaponMention(context: string, weapon: string, matchIndex: number): boolean {
@@ -182,9 +210,14 @@ export function updateUserItems(
   previous: UserStatusState["importantItems"],
   narrativeContext: string,
 ): UserStatusState["importantItems"] {
-  const items = previous.filter((i) => i.status !== "destroyed" && i.status !== "removed" && i.status !== "lost");
+  const items = previous.filter((i) =>
+    i.status !== "destroyed"
+    && i.status !== "removed"
+    && i.status !== "lost"
+    && !isAnatomicalItemFalsePositive(i)
+  );
   const itemMentions = ITEM_KEYWORDS.filter((w) =>
-    new RegExp(`\\b${escapeRegExp(w)}\\b`, "i").test(narrativeContext),
+    hasNonAnatomicalItemMention(narrativeContext, w),
   );
 
   const removeCues = [

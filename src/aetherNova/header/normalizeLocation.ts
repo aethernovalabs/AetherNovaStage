@@ -29,10 +29,61 @@ function locationCandidateIsSceneAnchored(candidateParts: string[], lowerContext
     return mentionsCandidatePlace && hasSceneAnchor;
 }
 
+const LOCATION_OWNER_OR_TITLE_TOKENS = new Set([
+    "queen", "king", "prince", "princess", "lord", "lady", "sir", "madam",
+    "personal", "private",
+]);
+
+const LOCATION_NOUN_TOKENS = new Set([
+    "study", "chamber", "room", "hall", "courtyard", "fountain", "garden",
+    "gate", "tower", "balcony", "terrace", "library", "office", "bedroom",
+    "sofa", "couch", "bed", "desk", "table",
+]);
+
+function possessiveOwnerTokens(value: string): Set<string> {
+    const owners = new Set<string>();
+    const re = /\b([a-z][a-z0-9]{2,})['’]s\b/gi;
+    let match = re.exec(value);
+
+    while (match != null) {
+        owners.add(match[1].toLowerCase());
+        match = re.exec(value);
+    }
+
+    return owners;
+}
+
 function locationCandidateWasNearbyTarget(candidateParts: string[], previous: string): boolean {
     const previousLower = previous.toLowerCase();
-    return meaningfulLocationTokens(candidateParts.slice(1).join(" "))
-        .some((token) => containsAnyCue(previousLower, [token]));
+    const ownerTokens = new Set([
+        ...possessiveOwnerTokens(previous),
+        ...possessiveOwnerTokens(candidateParts.join(" ")),
+    ]);
+    const overlaps = meaningfulLocationTokens(candidateParts.slice(1).join(" "))
+        .filter((token) => !ownerTokens.has(token) && !LOCATION_OWNER_OR_TITLE_TOKENS.has(token))
+        .filter((token) => containsAnyCue(previousLower, [token]));
+
+    return overlaps.length >= 2 || overlaps.some((token) => LOCATION_NOUN_TOKENS.has(token));
+}
+
+function hasExplicitLocationTransition(context: string): boolean {
+    const lowerContext = context.toLowerCase();
+
+    if (
+        /\b(?:scene\s+stays?|stays?|remains?|still)\s+(?:in|inside|within|at)\b/i.test(context)
+        || /\b(?:without|no one|nobody)\s+(?:leaving|leaves|entering|enters|moving|moves)\b/i.test(context)
+        || /\b(?:does\s+not|doesn't|do\s+not|don't|did\s+not|didn't)\s+(?:leave|enter|move)\b/i.test(context)
+    ) {
+        return false;
+    }
+
+    if (containsAnyCue(lowerContext, ["teleport", "time skip", "scene transition", "meanwhile", "later", "afterward", "afterwards"])) {
+        return true;
+    }
+
+    return /\b(?:arrive|arrives|arrived)\s+(?:at|in|into|before|outside|inside|near)\b/i.test(context)
+        || /\b(?:enter|enters|entered|leave|leaves|left)\s+(?:the|this|that|a|an|his|her|their)?\s*(?:room|hall|study|chamber|palace|courtyard|area|place|building|bedroom|garden|gate|tower)\b/i.test(context)
+        || /\b(?:move|moves|moved|walk|walks|walked|step|steps|stepped|lead|leads|led|follow|follows|followed|travel|travels|traveled|journey)\s+(?:to|into|through|toward|towards|across|from|inside|outside)\b/i.test(context);
 }
 
 function locationChangeIsSupported(candidate: string, previous: string, context: string): boolean {
@@ -46,6 +97,8 @@ function locationChangeIsSupported(candidate: string, previous: string, context:
 
     const candidateParts = splitLocation(candidate);
     const previousParts = splitLocation(previous);
+    const lowerContext = context.toLowerCase();
+    const hasTransitionCue = hasExplicitLocationTransition(context);
 
     if (
         candidateParts.length >= 3
@@ -56,7 +109,10 @@ function locationChangeIsSupported(candidate: string, previous: string, context:
         return true;
     }
 
-    const lowerContext = context.toLowerCase();
+    if (!hasTransitionCue) {
+        return false;
+    }
+
     if (
         candidateParts.length >= 2
         && previousParts.length >= 1
@@ -73,7 +129,7 @@ function locationChangeIsSupported(candidate: string, previous: string, context:
         return true;
     }
 
-    return LOCATION_TRANSITION_CUES.some((cue) => lowerContext.includes(cue));
+    return hasTransitionCue;
 }
 
 function looksLikeLocationTimeLine(value: string): boolean {

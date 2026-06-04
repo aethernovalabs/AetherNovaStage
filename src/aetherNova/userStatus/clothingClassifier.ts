@@ -104,6 +104,31 @@ export function coerceClothing(raw: unknown): UserStatusState["clothing"] {
   return result;
 }
 
+function clothingValueMeansNaked(value: string): boolean {
+  return /\b(?:naked|nude|unclothed)\b/i.test(value);
+}
+
+function nakedClothingState(value: string): UserStatusState["clothing"] {
+  const result: UserStatusState["clothing"] = {
+    upper: "Naked",
+    lower: "Naked",
+  };
+  const exceptionMatch = value.match(/\bexcept for\s+(.+)$/i);
+  const exception = exceptionMatch == null ? "" : cleanFragment(exceptionMatch[1]);
+
+  if (exception.length > 0) {
+    const garment = GARMENT_NAMES.find((g) => new RegExp(`\\b${escapeRegExp(g)}\\b`, "i").test(exception));
+    const slot = garment == null ? null : inferClothingSlot(garment);
+    if (slot === "upper") result.upper = exception;
+    else if (slot === "lower") result.lower = exception;
+    else if (slot === "footwear") result.footwear = exception;
+    else if (slot === "outerwear") result.outerwear = exception;
+    else if (slot === "accessories") result.accessories = [exception];
+  }
+
+  return result;
+}
+
 export function updateUserClothing(
   previous: UserStatusState["clothing"],
   youStatus: string,
@@ -123,6 +148,11 @@ export function updateUserClothing(
   const youParts = youStatus.split(";").map((s) => s.trim()).filter(Boolean);
   const youClothingRaw = youParts[0] ?? "";
   const normalizedYouClothing = normalizeStableClothingValue(youClothingRaw, clothing.upper);
+
+  if (clothingValueMeansNaked(normalizedYouClothing)) {
+    return nakedClothingState(normalizedYouClothing);
+  }
+
   const hasConcreteGarmentInYouLine = GARMENT_NAMES.some((g) =>
     new RegExp(`\\b${escapeRegExp(g)}\\b`, "i").test(normalizedYouClothing),
   );
