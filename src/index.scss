@@ -334,25 +334,6 @@ html, body, #root {
   gap: 8px;
 }
 
-.aether-debug-command-guide {
-  display: grid;
-  gap: 6px;
-  margin-bottom: 8px;
-  padding: 8px;
-  border: 1px solid rgba(215, 180, 106, 0.22);
-  border-radius: 8px;
-  background: #171a1a !important;
-}
-
-.aether-debug-command-guide code {
-  display: block;
-  color: #f2d08d;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  font-size: 0.73rem;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
 .aether-debug-memory-card {
   padding: 10px;
 }

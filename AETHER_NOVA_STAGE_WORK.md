@@ -127,17 +127,20 @@ Stage adalah React component (`Stage.tsx`) yang mengimplementasikan `StageBase` 
 - Memanggil `createInitialHeaderState()` dari `src/aetherNova/state/coerceHeaderState.ts` yang meneruskan ke `coerceHeaderState()` untuk menormalkan state masuk atau membuat default.
 - Fungsi `createDefaultState()` dari `src/aetherNova/state/defaultState.ts` memakai state netral (`NPC: None`, `Thread: None`) agar stage tidak mengunci character utama sebagai NPC/thread default sebelum ada evidence dari header/narasi.
 - State default: `DEFAULT_STATE` dari `src/aetherNova/constants.ts`.
+- Stage juga menyimpan `baseState` netral dan checkpoint rollback ephemeral. Checkpoint ini tidak dipersist sebagai history panjang; hanya dipakai untuk kembali ke state sebelum prompt terbaru jika platform mengirim `SET` kosong/null setelah user menghapus branch terakhir.
 
 ### load()
 - Mengembalikan `success: true` dan `messageState` saat ini.
 - Tidak membuat state baru.
 
 ### beforePrompt(userMessage)
-1. Mendeteksi `[debug: npc Name]` dalam pesan user (disimpan ke localStorage).
-2. `prepareAetherNovaStateForPrompt()`: update npcMemory dari header NPC terakhir.
-3. `applyNpcMemoryCommands()`: parsing dan eksekusi command `npc memory ...`, membersihkan command dari pesan user.
-4. `buildStageDirections()`: menyusun string stageDirections berisi NPC memory context, private event context yang relevan, dan debug (jika ada) — header state penuh tidak diinject ke prompt, hanya digunakan internal untuk koreksi respons LLM.
-5. Kembali: `stageDirections`, `messageState`, `modifiedMessage` (jika ada command memory), `systemMessage` (jika command `show`).
+1. Jika runtime message membawa `messageState`/`previousMessageState`/`lastMessageState`/`parentMessageState`, Stage restore state dari situ lebih dulu agar branch/delete tidak memakai state response yang sudah tidak aktif.
+2. Stage menyimpan checkpoint `stateBeforeCurrentPrompt` sebelum command/prompt mutation, sehingga rollback bisa kembali ke state pesan bot terakhir yang masih aktif.
+3. Mendeteksi `[debug: npc Name]` dalam pesan user (disimpan ke localStorage).
+4. `prepareAetherNovaStateForPrompt()`: update npcMemory dari header NPC terakhir.
+5. `applyNpcMemoryCommands()`: parsing dan eksekusi command `npc memory ...`, membersihkan command dari pesan user.
+6. `buildStageDirections()`: menyusun string stageDirections berisi NPC memory context, private event context yang relevan, dan debug (jika ada) — header state penuh tidak diinject ke prompt, hanya digunakan internal untuk koreksi respons LLM.
+7. Kembali: `stageDirections`, `messageState`, `modifiedMessage` (jika ada command memory), `systemMessage` (jika command `show`).
 
 ### afterResponse(botMessage)
 1. `normalizeAetherNovaResponse()`: fungsi inti yang melakukan:
@@ -151,13 +154,16 @@ Stage adalah React component (`Stage.tsx`) yang mengimplementasikan `StageBase` 
    - `updatePrivateEvents()`: update janji/pertemuan privat/deadline/threat conditional dari thread + narasi terbaru.
    - `formatResponse()`: menggabungkan header terkoreksi + narasi yang diformat.
 2. Re-apply NPC memory commands (untuk persist efek command).
-3. Kembali: `modifiedMessage`, `messageState`, `systemMessage`.
+3. Simpan rollback checkpoint dari state sebelum prompt saat ini. Jika user menghapus prompt+response terbaru dan platform mengirim `SET` kosong/null, Stage restore checkpoint ini.
+4. Kembali: `modifiedMessage`, `messageState`, `systemMessage`.
 
 **Wallet mutation hanya terjadi di `afterResponse`.** `prepareAetherNovaStateForPrompt` dan `beforePrompt` tidak mengubah wallet.
 
 ### setState(state)
 - Dipanggil saat user swipe/jump ke message lain.
 - `coerceHeaderState()`: restore state sesuai message yang dituju.
+- Restore memakai `baseState` netral sebagai fallback, bukan `this.state` terbaru, agar state dari response yang sudah dihapus tidak bocor ke branch lama.
+- Jika `state` kosong/null, Stage memakai rollback checkpoint terakhir (`stateBeforeCurrentPrompt` yang disimpan sebelum response terbaru) lalu fallback ke `baseState`. Ini menangani platform/webview yang tidak memberi messageState lengkap saat branch terakhir dihapus.
 
 ---
 
@@ -990,7 +996,7 @@ Mentioned-only NPCs (identity only):
 - `Behavior toward {{user}}: None stable yet` → **tetap ada** (wajib)
 - `Relationship with {{user}}: stranger` → **tetap ada** (wajib)
 
-### Commands Manual
+### Commands Manual (Advanced/Internal)
 Command dideteksi dengan regex `NPC_MEMORY_COMMAND_PATTERN` di mana pun dalam pesan user, lalu dihapus sebelum dikirim ke LLM.
 
 - `npc memory delete: Name` → hapus seluruh data NPC.
@@ -1066,6 +1072,7 @@ Debug UI juga bisa mengatur NPC Memory:
 - **Edit**: mengubah Name, Role/Title, Race, Physical Extra, Current Mood, Last Tone, Relationship, Behavior, Behavior Scores, Relationship Events, dan OnlyKnows.
 - **Clear Facts**: mengosongkan OnlyKnows NPC.
 - **Delete**: menghapus seluruh memory NPC.
+- Command guide text untuk `npc memory ...` tidak lagi ditampilkan di UI. User normal memakai form Create/Edit/Clear/Delete langsung; command manual tetap didukung sebagai advanced/internal path dan untuk re-apply pending command.
 
 Setiap aksi UI memakai command internal `npc memory ...`, mengubah state internal langsung, dan mengisi `pendingNpcMemoryCommand` agar efeknya diterapkan ulang pada lifecycle berikutnya.
 
@@ -1118,9 +1125,9 @@ Location berubah jika:
 
 ### State Flow
 1. **constructor/load**: State di-restore dari messageState chat. Jika null, buat default.
-2. **beforePrompt**: State dikirim + diupdate dengan NPC memory.
-3. **afterResponse**: State diupdate dari hasil normalisasi.
-4. **setState (swipe)**: State di-coerce dari messageState tujuan.
+2. **beforePrompt**: Restore runtime messageState jika ada, buat rollback checkpoint, lalu state dikirim + diupdate dengan NPC memory.
+3. **afterResponse**: State diupdate dari hasil normalisasi dan checkpoint rollback disimpan untuk branch/delete terbaru.
+4. **setState (swipe/delete/branch)**: State di-coerce dari messageState tujuan dengan fallback base netral; jika state kosong/null, pakai rollback checkpoint.
 
 ---
 

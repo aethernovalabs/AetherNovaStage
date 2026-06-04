@@ -694,18 +694,6 @@ export function AetherNovaDebugPanel({
                     <h2>NPC Memory</h2>
                     <span>{npcMemoryEntries.length}</span>
                 </div>
-                <div className="aether-debug-command-guide" aria-label="NPC memory command examples">
-                    <code>npc memory delete: Debi</code>
-                    <code>npc memory clearfacts: Debi</code>
-                    <code>npc memory mood: Debi | mood=tense | tone=guarded</code>
-                    <code>npc memory behavior: Debi | behavior=suspicious, formal</code>
-                    <code>npc memory behavior score: Debi | suspicious +1</code>
-                    <code>npc memory relationship: Debi | relationship=ally, suspicious</code>
-                    <code>npc memory relation event: Debi | event=Debi formed a temporary alliance with {'{{user}}'}</code>
-                    <code>npc memory add fact: Debi | fact={'{{user}}'} paid Kaelen to find Debi</code>
-                    <code>npc memory show: Debi</code>
-                    <code>npc memory set: Debi | role=Market broker | race=Human | physical=none | mood=calm | behavior=suspicious, formal | relationship=acquaintance, formal | onlyKnows={'{{user}}'} paid Kaelen to find Debi</code>
-                </div>
                 <details className="aether-debug-create">
                     <summary>Create NPC Memory</summary>
                     <NpcMemoryEditor

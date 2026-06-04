@@ -5,6 +5,7 @@ import {
     applyNpcMemoryCommands,
     buildStageDirections,
     coerceHeaderState,
+    createDefaultState,
     createInitialHeaderState,
     debugNpcQuery,
     normalizeAetherNovaResponse,
@@ -43,7 +44,10 @@ type ChatStateType = Record<string, never>;
 
 export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateType, ConfigType> {
 
+    private readonly baseState: AetherNovaMessageState;
     private state: AetherNovaMessageState;
+    private rollbackState: AetherNovaMessageState | null;
+    private stateBeforeCurrentPrompt: AetherNovaMessageState | null;
     private latestUserMessage: string;
     private debugUiEnabled: boolean;
     private debugEventId: number;
@@ -55,7 +59,10 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 
     constructor(data: InitialData<InitStateType, ChatStateType, MessageStateType, ConfigType>) {
         super(data);
+        this.baseState = createDefaultState(data.characters);
         this.state = createInitialHeaderState(data.characters, data.messageState);
+        this.rollbackState = null;
+        this.stateBeforeCurrentPrompt = null;
         this.latestUserMessage = "";
         this.debugUiEnabled = data.config?.debugUi !== false;
         this.debugEventId = 0;
@@ -80,11 +87,21 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
     }
 
     async setState(state: MessageStateType): Promise<void> {
-        this.state = coerceHeaderState(state, this.state);
-        this.pushDebugEvent("lifecycle", "setState", `branch/swipe state restored; ${countNpcMemory(this.state)} NPC memory entries`);
+        const incomingState = state == null ? this.rollbackState ?? this.baseState : state;
+        this.state = this.coerceExternalState(incomingState);
+        this.latestUserMessage = "";
+        this.latestNpcMemoryCommandMessage = "";
+        this.stateBeforeCurrentPrompt = null;
+        this.pushDebugEvent(
+            "lifecycle",
+            "setState",
+            `branch/swipe state restored${state == null ? " from rollback checkpoint" : ""}; ${countNpcMemory(this.state)} NPC memory entries`,
+        );
     }
 
     async beforePrompt(userMessage: Message): Promise<Partial<StageResponse<ChatStateType, MessageStateType>>> {
+        this.syncStateFromRuntimeMessage(userMessage, "beforePrompt");
+        this.stateBeforeCurrentPrompt = this.cloneState(this.state);
         const originalUserMessage = userMessage.content;
         const previousNpcMemory = this.state.npcMemory;
         const previousNpcMemoryCount = countNpcMemory(this.state);
@@ -166,6 +183,8 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             pendingNpcMemoryCommand: null,
         };
         const changedFields = changedStateFields(previousState, finalState);
+        this.rollbackState = this.cloneState(this.stateBeforeCurrentPrompt ?? previousState);
+        this.stateBeforeCurrentPrompt = null;
         this.state = finalState;
         this.lastModifiedMessageChanged = normalized.content !== botMessage.content;
         this.lastSystemMessage = joinSystemMessages(normalized.systemMessage, afterResponseCommand?.systemMessage);
@@ -314,6 +333,46 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         };
         this.pushDebugEvent("lifecycle", "uiEdit", `Manual edit applied: ${Object.keys(patch).join(", ")}`);
         return this.createDebugSnapshot();
+    }
+
+    private coerceExternalState(incomingState: unknown): AetherNovaMessageState {
+        return coerceHeaderState(incomingState, this.baseState);
+    }
+
+    private cloneState(state: AetherNovaMessageState): AetherNovaMessageState {
+        return this.coerceExternalState(state);
+    }
+
+    private runtimeMessageState(message: Message): unknown {
+        const runtimeMessage = message as Message & {
+            messageState?: unknown;
+            previousMessageState?: unknown;
+            lastMessageState?: unknown;
+            parentMessageState?: unknown;
+        };
+
+        return runtimeMessage.messageState
+            ?? runtimeMessage.previousMessageState
+            ?? runtimeMessage.lastMessageState
+            ?? runtimeMessage.parentMessageState
+            ?? null;
+    }
+
+    private syncStateFromRuntimeMessage(message: Message, label: string): void {
+        const runtimeState = this.runtimeMessageState(message);
+        if (runtimeState == null || typeof runtimeState !== "object") {
+            return;
+        }
+
+        const previousState = this.state;
+        this.state = this.coerceExternalState(runtimeState);
+        if (JSON.stringify(previousState) !== JSON.stringify(this.state)) {
+            this.pushDebugEvent(
+                "lifecycle",
+                label,
+                `runtime messageState restored before prompt; ${countNpcMemory(this.state)} NPC memory entries`,
+            );
+        }
     }
 
     private createDebugSnapshot(): DebugSnapshot {
