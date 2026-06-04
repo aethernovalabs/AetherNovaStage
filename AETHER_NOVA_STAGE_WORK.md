@@ -1064,22 +1064,25 @@ Debug UI menampilkan:
   - **Stage Prompt To LLM Log**: history prompt/stageDirections yang diberikan kepada LLM.
   - **NPC Memory Log**: perubahan nyata pada NPC memory, termasuk diff field konkret seperti `Aveline Montreval currentMood: neutral -> wary`.
   - **Private Event Log**: perubahan `privateEvents`, termasuk status, urgency, knownBy, timeAnchor, deadline, location, context, threat, consequence, dan keywords.
-  - **Location Log**: perubahan location yang dilakukan stage, termasuk diff segment (`Location region/place/area: before -> after`).
-  - **Time Log**: perubahan `timeOfDay` dan `clock` yang dilakukan stage, termasuk `Time of day: before -> after` dan `Clock: before -> after`.
-  - **You Line Log**: perubahan line `You` dan detail `Status User`, termasuk diff field konkret seperti `You clothing: kemeja -> Naked` atau `You position: duduk di kursi -> duduk bersandar di kursi`.
-  - **NPC Line Log**: perubahan line `NPC`, termasuk diff per NPC seperti `Kaelen clothing: travel cloak -> torn travel cloak` atau `Kaelen position: standing nearby -> sitting beside you`.
-  - **Thread Line Log**: perubahan thread dan lock thread manual, termasuk item added/removed dan status mission (`Thread status Mission A: Ongoing -> Completed`).
-  - **Wallet Line Log**: perubahan wallet, termasuk gold/silver/copper dan total delta.
+  - **Location Log**: perubahan location yang dilakukan stage, termasuk trace `Previous message state`, `LLM raw -> Stage normalized`, dan diff segment (`Location region/place/area: before -> after`).
+  - **Time Log**: perubahan `timeOfDay` dan `clock` yang dilakukan stage, termasuk trace `Previous message state`, `LLM raw -> Stage normalized`, `Time of day: before -> after`, dan `Clock: before -> after`.
+  - **You Line Log**: perubahan line `You` dan detail `Status User`, termasuk trace `Previous message state`, `LLM raw -> Stage normalized`, serta diff field konkret seperti `You clothing: kemeja -> Naked` atau `You position: duduk di kursi -> duduk bersandar di kursi`.
+  - **NPC Line Log**: perubahan line `NPC`, termasuk trace `Previous message state`, `LLM raw -> Stage normalized`, dan diff per NPC seperti `Kaelen clothing: travel cloak -> torn travel cloak` atau `Kaelen position: standing nearby -> sitting beside you`.
+  - **Thread Line Log**: perubahan thread dan lock thread manual, termasuk trace `Previous message state`, `LLM raw -> Stage normalized`, item added/removed, dan status mission (`Thread status Mission A: Ongoing -> Completed`).
+  - **Wallet Line Log**: perubahan wallet, termasuk trace `Previous message state`, `LLM raw -> Stage normalized`, gold/silver/copper, dan total delta.
   - **Narrative Log**: perubahan format narasi saat response dimodifikasi.
   - **Lifecycle Log**: `init`, `load`, `setState`, `beforePrompt`, `afterResponse`, dan edit UI.
-- Log afterResponse sekarang memiliki dua basis:
-  - **State changed**: `Before -> After` dari state sebelumnya ke state akhir.
-  - **Corrected**: `LLM raw -> Stage normalized` jika LLM menulis header baru yang ditolak/dikoreksi stage. Event ini muncul walaupun state akhir sama dengan state sebelumnya, sehingga user bisa melihat kata/field apa yang stage koreksi dari output LLM terbaru.
+- Log `afterResponse` untuk field header utama sekarang membaca tiga sumber:
+  - **Previous message state**: state dari pesan sebelumnya sebelum response LLM terbaru diproses.
+  - **LLM raw**: header mentah dari response LLM terbaru untuk field itu. Jika LLM tidak menulis header field terkait, log memakai `[not present in latest LLM header]`.
+  - **Stage normalized**: state akhir setelah Stage melakukan normalisasi, guard, inference, wallet calculation, thread lock/grace cleanup, dan update lain yang relevan.
+- Event **State changed** pada Location/Time/You/NPC/Thread/Wallet memakai format detail `Previous message state`, `LLM raw -> Stage normalized`, `LLM raw`, dan `Stage normalized`, lalu diikuti diff field konkret.
+- Event **Corrected** tetap muncul jika LLM menulis header baru yang ditolak/dikoreksi stage. Event ini juga mencatat `Previous message state`, `LLM raw -> Stage normalized`, `LLM raw`, dan `Stage normalized`, walaupun state akhir sama dengan state sebelumnya, sehingga user bisa melihat kata/field apa yang stage koreksi dari output LLM terbaru.
 - Log `uiEdit` menulis diff field konkret untuk edit manual UI, bukan hanya `Manual edit applied`.
 - Last System Message: system message terakhir yang dikirim stage.
 - Latest User Message: pesan user terbaru (setelah command dihapus).
 
-Debug Logs berada di bagian paling bawah UI dan menyimpan maksimal 120 event terbaru. Tombol **Clear Logs** di header menghapus semua log sementara. Setiap box log juga punya tombol **Clear** untuk menghapus kategori itu saja, tanpa menghapus state utama atau NPC Memory. Stage tidak mencatat log field jika output LLM sudah benar dan tidak perlu dikoreksi untuk field itu.
+Debug Logs berada di bagian paling bawah UI dan menyimpan maksimal 120 event terbaru. Tombol **Clear Logs** di header menghapus semua log sementara. Setiap box log juga punya tombol **Clear** untuk menghapus kategori itu saja, tanpa menghapus state utama atau NPC Memory. Stage tidak mencatat event field jika state tidak berubah dan tidak ada koreksi raw LLM untuk field itu.
 
 Debug UI juga bisa mengatur NPC Memory:
 - **Create NPC Memory**: membuat memory NPC baru dari form.

@@ -44,9 +44,21 @@ type ConfigType = {
 };
 type InitStateType = Record<string, never>;
 type ChatStateType = Record<string, never>;
+type RawFieldValues = {
+    location: string | null;
+    time: string | null;
+    you: string | null;
+    npc: string | null;
+    thread: string | null;
+    wallet: string | null;
+};
+type FieldChangeTrace = {
+    llmRaw: string | null;
+};
 
 const RAW_TIME_OF_DAY_PATTERN = /\b(Morning|Midday|Afternoon|Evening|Night)\b/i;
 const RAW_CLOCK_PATTERN = /\b([01]?\d|2[0-3]):([0-5]\d)\b/;
+const MISSING_LLM_RAW_VALUE = "[not present in latest LLM header]";
 
 function rawHeaderValue(rawLine: string | null, label: string): string | null {
     if (rawLine == null) {
@@ -206,6 +218,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         const previousNpcMemory = this.state.npcMemory;
         const previousNpcMemoryCount = countNpcMemory(this.state);
         const rawHeader = extractHeader(botMessage.content);
+        const rawFields = this.rawFieldValues(rawHeader);
         const storedDebugQuery = this.state.pendingNpcDebugQuery ?? readPendingDebugQuery();
         if (storedDebugQuery != null) {
             this.state = {
@@ -241,6 +254,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             previousState.location,
             this.state.location,
             locationChangeDetails(previousState.location, this.state.location),
+            {llmRaw: rawFields.location},
         );
         this.pushFieldChange(
             "time",
@@ -249,6 +263,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             `${previousState.timeOfDay} | ${previousState.clock}`,
             `${this.state.timeOfDay} | ${this.state.clock}`,
             timeChangeDetails(previousState.timeOfDay, previousState.clock, this.state.timeOfDay, this.state.clock),
+            {llmRaw: rawFields.time},
         );
         const youDetails = [
             ...youLineChangeDetails(previousState.you, this.state.you),
@@ -262,8 +277,9 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             previousState.you,
             this.state.you,
             youDetails,
+            {llmRaw: rawFields.you},
         );
-        this.pushFieldChange("npcLine", "afterResponse", "NPC", previousState.npc, this.state.npc, npcDetails);
+        this.pushFieldChange("npcLine", "afterResponse", "NPC", previousState.npc, this.state.npc, npcDetails, {llmRaw: rawFields.npc});
         this.pushFieldChange(
             "threadLine",
             "afterResponse",
@@ -274,6 +290,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                 ...threadLineChangeDetails(previousState.thread, this.state.thread),
                 ...lockedThreadChangeDetails(previousState.lockedThreadItems, this.state.lockedThreadItems),
             ],
+            {llmRaw: rawFields.thread},
         );
         this.pushFieldChange(
             "walletLine",
@@ -282,8 +299,9 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             previousState.wallet,
             this.state.wallet,
             walletChangeDetails(previousState.wallet, this.state.wallet),
+            {llmRaw: rawFields.wallet},
         );
-        this.pushRawHeaderCorrectionLogs(rawHeader);
+        this.pushRawHeaderCorrectionLogs(rawHeader, previousState);
         if (this.lastModifiedMessageChanged) {
             this.pushDebugEvent(
                 "narrative",
@@ -432,7 +450,22 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         };
     }
 
-    private pushRawHeaderCorrectionLogs(rawHeader: ReturnType<typeof extractHeader>): void {
+    private rawFieldValues(rawHeader: ReturnType<typeof extractHeader>): RawFieldValues {
+        const rawTimeLocation = rawLocationTime(rawHeader.locationLine);
+
+        return {
+            location: rawTimeLocation?.location ?? null,
+            time: rawTimeLocation == null
+                ? null
+                : `${rawTimeLocation.timeOfDay || "Unknown"} | ${rawTimeLocation.clock || "Unknown"}`,
+            you: rawHeaderValue(rawHeader.youLine, "You"),
+            npc: rawHeaderValue(rawHeader.npcLine, "NPC"),
+            thread: rawHeaderValue(rawHeader.threadLine, "Thread"),
+            wallet: rawHeaderValue(rawHeader.walletLine, "Wallet"),
+        };
+    }
+
+    private pushRawHeaderCorrectionLogs(rawHeader: ReturnType<typeof extractHeader>, previousState: AetherNovaMessageState): void {
         const rawTimeLocation = rawLocationTime(rawHeader.locationLine);
         if (rawTimeLocation != null) {
             if (rawTimeLocation.location.length > 0) {
@@ -442,6 +475,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                     rawTimeLocation.location,
                     this.state.location,
                     locationChangeDetails(rawTimeLocation.location, this.state.location),
+                    previousState.location,
                 );
             }
             if (rawTimeLocation.timeOfDay.length > 0 || rawTimeLocation.clock.length > 0) {
@@ -451,6 +485,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                     `${rawTimeLocation.timeOfDay || "Unknown"} | ${rawTimeLocation.clock || "Unknown"}`,
                     `${this.state.timeOfDay} | ${this.state.clock}`,
                     timeChangeDetails(rawTimeLocation.timeOfDay, rawTimeLocation.clock, this.state.timeOfDay, this.state.clock),
+                    `${previousState.timeOfDay} | ${previousState.clock}`,
                 );
             }
         }
@@ -463,6 +498,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                 rawYou,
                 this.state.you,
                 youLineChangeDetails(rawYou, this.state.you),
+                previousState.you,
             );
         }
 
@@ -474,6 +510,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                 rawNpc,
                 this.state.npc,
                 npcLineChangeDetails(rawNpc, this.state.npc),
+                previousState.npc,
             );
         }
 
@@ -485,6 +522,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                 rawThread,
                 this.state.thread,
                 threadLineChangeDetails(rawThread, this.state.thread),
+                previousState.thread,
             );
         }
 
@@ -496,6 +534,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                 rawWallet,
                 this.state.wallet,
                 walletChangeDetails(rawWallet, this.state.wallet),
+                previousState.wallet,
             );
         }
     }
@@ -574,6 +613,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         rawValue: string,
         normalizedValue: string,
         details: string[],
+        previousValue?: string,
     ): void {
         if (cleanFragment(rawValue) === cleanFragment(normalizedValue)) {
             return;
@@ -584,6 +624,8 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             "afterResponse",
             `${fieldName} corrected`,
             [
+                ...(previousValue == null ? [] : [`Previous message state: ${previousValue}`]),
+                "LLM raw -> Stage normalized",
                 `LLM raw: ${rawValue}`,
                 `Stage normalized: ${normalizedValue}`,
                 ...details,
@@ -613,21 +655,37 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         previous: string,
         next: string,
         extraDetails?: string[],
+        trace?: FieldChangeTrace,
     ): void {
         if (previous === next && (extraDetails == null || extraDetails.length === 0)) {
             return;
         }
+
+        const baseDetails = trace == null
+            ? [
+                `Before: ${previous}`,
+                `After: ${next}`,
+            ]
+            : [
+                `Previous message state: ${previous}`,
+                "LLM raw -> Stage normalized",
+                `LLM raw: ${this.debugRawValue(trace.llmRaw)}`,
+                `Stage normalized: ${next}`,
+            ];
 
         this.pushDebugEvent(
             category,
             label,
             `${fieldName} changed`,
             [
-                `Before: ${previous}`,
-                `After: ${next}`,
+                ...baseDetails,
                 ...(extraDetails ?? []),
             ],
         );
+    }
+
+    private debugRawValue(rawValue: string | null): string {
+        return rawValue == null || cleanFragment(rawValue).length === 0 ? MISSING_LLM_RAW_VALUE : rawValue;
     }
 
     private applyUiNpcMemoryCommand(command: string): DebugSnapshot {
